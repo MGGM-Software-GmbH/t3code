@@ -43,7 +43,7 @@ index 101e31d39..2ddde408a 100644
  	syncLineAnnotations(lineAnnotations) {
  		if (lineAnnotations == null || lineAnnotations === this.lineAnnotations) return false;
  		if (lineAnnotations.length === 0 && this.lineAnnotations.length === 0) return false;
-+		// Beim Entfernen nur die Kommentarhöhe abziehen; umgebrochene Codezeilen bleiben gemessen.
++		// Subtract only annotation height on removal, preserving measured wrapped code rows.
 +		const nextLines = new Set(lineAnnotations.map((annotation) => annotation.lineNumber));
 +		for (const annotation of this.lineAnnotations) {
 +			if (nextLines.has(annotation.lineNumber)) continue;
