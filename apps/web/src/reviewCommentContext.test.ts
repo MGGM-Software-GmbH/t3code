@@ -12,6 +12,7 @@ import {
   restoreDiffReviewCommentRange,
   restoreFileReviewCommentRange,
   remapFileReviewComments,
+  refreshFileReviewComments,
 } from "./reviewCommentContext";
 
 describe("file comment snapshot anchors", () => {
@@ -23,6 +24,50 @@ describe("file comment snapshot anchors", () => {
     endLine: 3,
     contents,
     text: "Keep this",
+  });
+
+  it("refreshes closed files once per path before formatting current line references", async () => {
+    const paths: string[] = [];
+    const diffComment = { ...comment, id: "diff", sectionId: "working" };
+    const updated = await refreshFileReviewComments(
+      [comment, { ...comment, id: "second" }, diffComment],
+      async (path) => {
+        paths.push(path);
+        return { previousContents: contents, contents: `inserted\n${contents}` };
+      },
+    );
+    expect(paths).toEqual(["example.ts"]);
+    expect(updated.slice(0, 2).map((entry) => entry.rangeLabel)).toEqual(["L4", "L4"]);
+    expect(updated[2]).toBe(diffComment);
+    expect(appendReviewCommentsToPrompt("Review", updated)).toContain('rangeLabel="L4"');
+  });
+
+  it("does not format stale current references when the authoritative read fails", async () => {
+    await expect(
+      refreshFileReviewComments([comment], async () => {
+        throw new Error("Offline");
+      }),
+    ).rejects.toThrow("Offline");
+    expect(comment.rangeLabel).toBe("L3");
+  });
+
+  it("handles a large rewrite with shared boundaries", () => {
+    const previous = `header\n${Array.from({ length: 2000 }, (_, index) => `old ${index}`).join("\n")}\n`;
+    const next = previous.replaceAll("old", "new");
+    const selected = {
+      ...buildFileReviewComment({
+        id: "rewrite",
+        filePath: "file.ts",
+        contents: previous,
+        startLine: 2,
+        endLine: 2001,
+        text: "Review",
+      }),
+    };
+    expect(remapFileReviewComments(previous, next, [selected])[0]).toMatchObject({
+      sourceStatus: "current",
+      diff: next.split("\n").slice(1, -1).join("\n"),
+    });
   });
 
   it("finds moved code without mutating the input comment", () => {
@@ -53,15 +98,50 @@ describe("file comment snapshot anchors", () => {
 
   it("handles legacy snapshots without context conservatively", () => {
     const { sourceAnchor: _sourceAnchor, ...legacy } = comment;
-    expect(restoreFileReviewCommentRange(contents, legacy)).toEqual({ startLine: 3, endLine: 3 });
+    expect(restoreFileReviewCommentRange(contents, legacy)).toBeNull();
     expect(restoreFileReviewCommentRange(`target\n${contents}`, legacy)).toBeNull();
   });
 
-  it("retains a unique selection when its neighboring lines change", () => {
+  it("does not infer identity from a unique surviving snippet without its context", () => {
     expect(
       restoreFileReviewCommentRange(contents.replace("before", "inserted\nchanged"), comment),
-    ).toEqual({ startLine: 4, endLine: 4 });
+    ).toBeNull();
   });
+
+  it.each([
+    [
+      "head\ntarget\nneighbor\ntail",
+      "head\nnew neighbor\ntail",
+      false,
+      "unresolved",
+      "target",
+      "L2",
+    ],
+    ["head\nsame\nother\nsame\ntail", "head\nother\nsame\ntail", true, "unresolved", "same", "L2"],
+    [
+      "head\ntarget\ntail",
+      "head\nreplacement first\nreplacement second\ntail",
+      false,
+      "current",
+      "replacement first\nreplacement second",
+      "L2 to L3",
+    ],
+  ])(
+    "maps a selected range conservatively: %s → %s",
+    (previous, next, remount, sourceStatus, diff, rangeLabel) => {
+      const selected = buildFileReviewComment({
+        id: "selected",
+        filePath: "file.ts",
+        contents: previous,
+        startLine: 2,
+        endLine: 2,
+        text: "Review this",
+      });
+      expect(remapFileReviewComments(remount ? null : previous, next, [selected])[0]).toMatchObject(
+        { sourceStatus, diff, rangeLabel },
+      );
+    },
+  );
 
   it("maps insertions even when the editor changes CRLF to LF", () => {
     const previous = contents.replaceAll("\n", "\r\n");
