@@ -839,6 +839,7 @@ function EditableFileSurface({
                     rangeLabel={formatFileCommentRange(entry.startLine, entry.endLine)}
                     text={entry.kind === "draft" ? draftText : entry.text}
                     {...(entry.kind === "draft" ? { onTextChange: setDraftText } : {})}
+                    onEdit={(text) => submitAnnotationEntry(entry.id, text)}
                     onCancel={() => removeAnnotationEntry(entry.id)}
                     onComment={(text) => submitAnnotationEntry(entry.id, text)}
                     onDelete={() => removeAnnotationEntry(entry.id)}

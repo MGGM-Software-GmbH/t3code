@@ -21,6 +21,7 @@ describe("ComposerPendingReviewComments", () => {
           },
         ]}
         onRemove={vi.fn()}
+        onEdit={vi.fn()}
       />,
     );
 

@@ -1,4 +1,4 @@
-import { MessageCircle, Trash2 } from "lucide-react";
+import { MessageCircle, Pencil, Trash2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -21,6 +21,7 @@ interface DiffCommentAnnotationProps {
   onCancel: () => void;
   onComment: (text: string) => void;
   onDelete?: () => void;
+  onEdit?: (text: string) => void;
   placeholder?: string;
   submitLabel?: string;
   pending?: boolean;
@@ -28,7 +29,7 @@ interface DiffCommentAnnotationProps {
   focusOnMount?: boolean;
 }
 
-/** The shared inline comment treatment for file previews, thread diffs, and pull-request diffs. */
+/** Gemeinsames Kommentarfeld für Dateien, Thread-Diffs und Pull-Request-Diffs mit getrenntem Bearbeitungsentwurf. */
 export function DiffCommentAnnotation({
   kind,
   rangeLabel,
@@ -37,26 +38,38 @@ export function DiffCommentAnnotation({
   onCancel,
   onComment,
   onDelete,
+  onEdit,
   placeholder = "Add a comment…",
   submitLabel = "Comment",
   pending = false,
   secondaryAction,
   focusOnMount = true,
 }: DiffCommentAnnotationProps) {
-  const [localDraftText, setLocalDraftText] = useState("");
-  const displayedText = kind === "draft" && !onTextChange ? localDraftText : text;
+  const [localDraftText, setLocalDraftText] = useState(text);
+  const [editing, setEditing] = useState(false);
+  const isForm = kind === "draft" || editing;
+  const displayedText = editing || (kind === "draft" && !onTextChange) ? localDraftText : text;
   const trimmedText = displayedText.trim();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const cancel = () => (editing ? setEditing(false) : onCancel());
+  const submit = () => {
+    if (editing) {
+      onEdit?.(trimmedText);
+      setEditing(false);
+    } else {
+      onComment(trimmedText);
+    }
+  };
 
   useLayoutEffect(() => {
-    if (kind !== "draft" || !focusOnMount) return;
+    if (!isForm || !focusOnMount) return;
     const frame = window.requestAnimationFrame(() => {
       textareaRef.current?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [focusOnMount, kind]);
+  }, [focusOnMount, isForm]);
 
-  if (kind === "comment") {
+  if (!isForm) {
     return (
       <div
         data-diff-comment-annotation
@@ -66,6 +79,19 @@ export function DiffCommentAnnotation({
       >
         <MessageCircle className="mt-0.5 size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
         <p className="min-w-0 flex-1 whitespace-pre-wrap text-[13px] leading-5">{displayedText}</p>
+        {onEdit ? (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Edit comment"
+            onClick={() => {
+              setLocalDraftText(text);
+              setEditing(true);
+            }}
+          >
+            <Pencil className="size-3" />
+          </Button>
+        ) : null}
         {onDelete ? (
           <Button
             className="-my-1 -mr-1 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/comment:opacity-100 focus-visible:opacity-100 max-sm:opacity-100"
@@ -97,7 +123,9 @@ export function DiffCommentAnnotation({
         value={displayedText}
         placeholder={placeholder}
         aria-label={`Comment on lines ${rangeLabel}`}
-        onChange={(event) => (onTextChange ?? setLocalDraftText)(event.target.value)}
+        onChange={(event) =>
+          (editing ? setLocalDraftText : (onTextChange ?? setLocalDraftText))(event.target.value)
+        }
         onFocus={(event) => {
           const end = event.currentTarget.value.length;
           event.currentTarget.setSelectionRange(end, end);
@@ -105,11 +133,11 @@ export function DiffCommentAnnotation({
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
-            onCancel();
+            cancel();
           }
           if (isCommentSubmitShortcut(event, trimmedText, pending)) {
             event.preventDefault();
-            onComment(trimmedText);
+            submit();
           }
         }}
       />
@@ -119,11 +147,11 @@ export function DiffCommentAnnotation({
           className="text-muted-foreground hover:text-foreground"
           variant="ghost"
           size="xs"
-          onClick={onCancel}
+          onClick={cancel}
         >
           Cancel
         </Button>
-        {secondaryAction ? (
+        {!editing && secondaryAction ? (
           <Button
             size="xs"
             variant="outline"
@@ -134,8 +162,8 @@ export function DiffCommentAnnotation({
             {secondaryAction.label}
           </Button>
         ) : null}
-        <Button size="xs" disabled={pending || !trimmedText} onClick={() => onComment(trimmedText)}>
-          {submitLabel}
+        <Button size="xs" disabled={pending || !trimmedText} onClick={submit}>
+          {editing ? "Save comment" : submitLabel}
         </Button>
       </div>
     </div>

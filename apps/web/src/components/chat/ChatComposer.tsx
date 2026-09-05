@@ -1476,6 +1476,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const removeComposerDraftReviewComment = useComposerDraftStore(
     (store) => store.removeReviewComment,
   );
+  const addComposerDraftReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const clearComposerDraftPersistedAttachments = useComposerDraftStore(
     (store) => store.clearPersistedAttachments,
   );
@@ -5149,6 +5150,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 composerReviewComments.length > 0 && (
                   <ComposerPendingReviewComments
                     comments={composerReviewComments}
+                    onEdit={(commentId, text) => {
+                      const comment = composerReviewComments.find(
+                        (candidate) => candidate.id === commentId,
+                      );
+                      if (comment)
+                        addComposerDraftReviewComment(composerDraftTarget, { ...comment, text });
+                    }}
                     onRemove={(commentId) =>
                       removeComposerDraftReviewComment(composerDraftTarget, commentId)
                     }

@@ -1,4 +1,6 @@
 import { MessageCircle, X } from "lucide-react";
+import { useState } from "react";
+import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 
 import {
   COMPOSER_INLINE_CHIP_CLASS_NAME,
@@ -13,14 +15,18 @@ import { cn } from "~/lib/utils";
 interface ComposerPendingReviewCommentsProps {
   comments: ReadonlyArray<ReviewCommentContext>;
   onRemove: (commentId: string) => void;
+  onEdit: (commentId: string, text: string) => void;
   className?: string;
 }
 
 export function ComposerPendingReviewComments({
   comments,
   onRemove,
+  onEdit,
   className,
 }: ComposerPendingReviewCommentsProps) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingComment = comments.find((comment) => comment.id === editingId);
   if (comments.length === 0) return null;
 
   return (
@@ -30,7 +36,14 @@ export function ComposerPendingReviewComments({
         const chip = (
           <span key={comment.id} className={cn(COMPOSER_INLINE_CHIP_CLASS_NAME, "pr-1")}>
             <MessageCircle className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
-            <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{label}</span>
+            <button
+              type="button"
+              className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}
+              aria-label={`Edit comment on ${label}`}
+              onClick={() => setEditingId(comment.id)}
+            >
+              {label}
+            </button>
             <button
               type="button"
               aria-label={`Remove comment on ${label}`}
@@ -55,6 +68,26 @@ export function ComposerPendingReviewComments({
           </Tooltip>
         );
       })}
+      {editingComment ? (
+        <div className="w-full rounded border border-border">
+          <p className="px-3 pt-2 text-xs text-muted-foreground">
+            Selected snapshot. Line numbers refer to the file at selection time.
+          </p>
+          <pre className="max-h-40 overflow-auto px-3 text-xs">{editingComment.diff}</pre>
+          <DiffCommentAnnotation
+            key={editingComment.id}
+            kind="draft"
+            rangeLabel={editingComment.rangeLabel}
+            text={editingComment.text}
+            submitLabel="Save comment"
+            onCancel={() => setEditingId(null)}
+            onComment={(text) => {
+              onEdit(editingComment.id, text);
+              setEditingId(null);
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

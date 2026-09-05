@@ -291,6 +291,10 @@ export function AnnotatableCodeView({
                   onCancel={() => removeEntry(entry.id)}
                   onComment={(text) => submitEntry(entry.id, text)}
                   onDelete={() => removeEntry(entry.id)}
+                  onEdit={(text) => {
+                    const comment = reviewComments.find((candidate) => candidate.id === entry.id);
+                    if (comment) addReviewComment(composerDraftTarget, { ...comment, text });
+                  }}
                 />
               ))}
             </div>
