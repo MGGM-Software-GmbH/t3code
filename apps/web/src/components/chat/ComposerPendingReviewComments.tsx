@@ -32,7 +32,7 @@ export function ComposerPendingReviewComments({
   return (
     <div className={cn("flex flex-wrap gap-1.5", className)}>
       {comments.map((comment) => {
-        const label = `${comment.filePath} ${comment.rangeLabel}`;
+        const label = `${comment.filePath} ${comment.rangeLabel}${comment.sourceStatus === "removed" ? " (removed)" : comment.sourceStatus === "unresolved" ? " (unresolved)" : ""}`;
         const chip = (
           <span key={comment.id} className={cn(COMPOSER_INLINE_CHIP_CLASS_NAME, "pr-1")}>
             <MessageCircle className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />

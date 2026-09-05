@@ -11,6 +11,7 @@ import {
   parseReviewCommentMessageSegments,
   restoreDiffReviewCommentRange,
   restoreFileReviewCommentRange,
+  remapFileReviewComments,
 } from "./reviewCommentContext";
 
 describe("file comment snapshot anchors", () => {
@@ -24,7 +25,7 @@ describe("file comment snapshot anchors", () => {
     text: "Keep this",
   });
 
-  it("relocates a snapshot after insertions without rewriting prompt context", () => {
+  it("finds moved code without mutating the input comment", () => {
     expect(restoreFileReviewCommentRange(contents, comment)).toEqual({ startLine: 3, endLine: 3 });
     expect(restoreFileReviewCommentRange(`new\n${contents}`, comment)).toEqual({
       startLine: 4,
@@ -32,7 +33,7 @@ describe("file comment snapshot anchors", () => {
     });
     expect(comment.diff).toBe("target");
     expect(comment.rangeLabel).toBe("L3");
-    expect(formatReviewCommentContext(comment)).toContain('lineReference="snapshot"');
+    expect(formatReviewCommentContext(comment)).toContain('lineReference="current"');
   });
 
   it("does not attach a snapshot to replaced, deleted or ambiguous code", () => {
@@ -54,6 +55,83 @@ describe("file comment snapshot anchors", () => {
     const { sourceAnchor: _sourceAnchor, ...legacy } = comment;
     expect(restoreFileReviewCommentRange(contents, legacy)).toEqual({ startLine: 3, endLine: 3 });
     expect(restoreFileReviewCommentRange(`target\n${contents}`, legacy)).toBeNull();
+  });
+
+  it("retains a unique selection when its neighboring lines change", () => {
+    expect(
+      restoreFileReviewCommentRange(contents.replace("before", "inserted\nchanged"), comment),
+    ).toEqual({ startLine: 4, endLine: 4 });
+  });
+
+  it("maps insertions even when the editor changes CRLF to LF", () => {
+    const previous = contents.replaceAll("\n", "\r\n");
+    const selected = buildFileReviewComment({
+      id: "crlf",
+      filePath: "example.ts",
+      contents: previous,
+      startLine: 3,
+      endLine: 3,
+      text: "Keep this",
+    });
+    expect(remapFileReviewComments(previous, `new\n${contents}`, [selected])[0]).toMatchObject({
+      rangeLabel: "L4",
+      diff: "target",
+    });
+  });
+
+  it("moves live coordinates and prompt context through nearby and separated edits", () => {
+    const next = contents.replace("before", "inserted\nchanged").replace("footer", "end");
+    const [moved] = remapFileReviewComments(contents, next, [comment]);
+    expect(moved).toMatchObject({
+      rangeLabel: "L4",
+      startIndex: 3,
+      endIndex: 3,
+      diff: "target",
+      text: "Keep this",
+    });
+    expect(formatReviewCommentContext(moved!)).toContain('lineReference="current"');
+    const [restored] = remapFileReviewComments(next, contents, [moved!]);
+    expect(restored).toMatchObject({ rangeLabel: "L3", diff: "target" });
+  });
+
+  it("tracks edits within the selection and does not move a deleted selection onto unrelated code", () => {
+    const replaced = contents.replace("target", "replacement");
+    expect(remapFileReviewComments(contents, replaced, [comment])[0]).toMatchObject({
+      rangeLabel: "L3",
+      diff: "replacement",
+      sourceStatus: "current",
+    });
+    const deleted = contents.replace("target\n", "");
+    const [removed] = remapFileReviewComments(contents, deleted, [comment]);
+    expect(removed).toMatchObject({ sourceStatus: "removed", diff: "target", text: "Keep this" });
+    expect(restoreFileReviewCommentRange(deleted, removed!)).toBeNull();
+  });
+
+  it("keeps repeated lines attached to the edited occurrence and expands multiline selections", () => {
+    const previous = "header\nsame\nsame\nfooter";
+    const selected = buildFileReviewComment({
+      id: "repeat",
+      filePath: "example.ts",
+      contents: previous,
+      startLine: 3,
+      endLine: 3,
+      text: "Second",
+    });
+    expect(remapFileReviewComments(previous, `new\n${previous}`, [selected])[0]).toMatchObject({
+      rangeLabel: "L4",
+      text: "Second",
+    });
+    const range = buildFileReviewComment({
+      id: "range",
+      filePath: "example.ts",
+      contents,
+      startLine: 2,
+      endLine: 4,
+      text: "Range",
+    });
+    expect(
+      remapFileReviewComments(contents, contents.replace("target", "target\ninserted"), [range])[0],
+    ).toMatchObject({ rangeLabel: "L2 to L5", diff: "before\ntarget\ninserted\nafter" });
   });
 });
 
