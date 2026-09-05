@@ -51,7 +51,7 @@ describe("file comment snapshot anchors", () => {
     expect(comment.rangeLabel).toBe("L3");
   });
 
-  it("handles a large rewrite with shared boundaries", () => {
+  it("retains edit drafts when remapping code and handles a large rewrite with shared boundaries", () => {
     const previous = `header\n${Array.from({ length: 2000 }, (_, index) => `old ${index}`).join("\n")}\n`;
     const next = previous.replaceAll("old", "new");
     const selected = {
@@ -63,9 +63,11 @@ describe("file comment snapshot anchors", () => {
         endLine: 2001,
         text: "Review",
       }),
+      editDraft: "Unsaved edit",
     };
     expect(remapFileReviewComments(previous, next, [selected])[0]).toMatchObject({
       sourceStatus: "current",
+      editDraft: "Unsaved edit",
       diff: next.split("\n").slice(1, -1).join("\n"),
     });
   });

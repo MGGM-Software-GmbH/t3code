@@ -629,6 +629,9 @@ function EditableFileSurface({
 }: EditableFileSurfaceProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
+  const setReviewCommentEditDraft = useComposerDraftStore(
+    (store) => store.setReviewCommentEditDraft,
+  );
   const reviewComments = useComposerDraftStore(
     (store) =>
       store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_FILE_REVIEW_COMMENTS,
@@ -833,6 +836,10 @@ function EditableFileSurface({
                 onCancel={() => removeAnnotationEntry(comment.id)}
                 onDelete={() => removeAnnotationEntry(comment.id)}
                 onEdit={(text) => submitAnnotationEntry(comment.id, text)}
+                editDraft={comment.editDraft}
+                onEditDraftChange={(text) =>
+                  setReviewCommentEditDraft(composerDraftTarget, comment.id, text)
+                }
                 onComment={(text) => submitAnnotationEntry(comment.id, text)}
               />
             </div>
@@ -897,6 +904,13 @@ function EditableFileSurface({
                     text={entry.kind === "draft" ? draftText : entry.text}
                     {...(entry.kind === "draft" ? { onTextChange: setDraftText } : {})}
                     onEdit={(text) => submitAnnotationEntry(entry.id, text)}
+                    editDraft={reviewComments.find((comment) => comment.id === entry.id)?.editDraft}
+                    {...(entry.kind === "comment"
+                      ? {
+                          onEditDraftChange: (text: string | null) =>
+                            setReviewCommentEditDraft(composerDraftTarget, entry.id, text),
+                        }
+                      : {})}
                     onCancel={() => removeAnnotationEntry(entry.id)}
                     onComment={(text) => submitAnnotationEntry(entry.id, text)}
                     onDelete={() => removeAnnotationEntry(entry.id)}
