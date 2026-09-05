@@ -830,6 +830,7 @@ function EditableFileSurface({
                 text={comment.text}
                 onCancel={() => removeAnnotationEntry(comment.id)}
                 onDelete={() => removeAnnotationEntry(comment.id)}
+                onEdit={(text) => submitAnnotationEntry(comment.id, text)}
                 onComment={(text) => submitAnnotationEntry(comment.id, text)}
               />
             </div>

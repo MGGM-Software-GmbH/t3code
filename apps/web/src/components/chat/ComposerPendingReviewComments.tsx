@@ -71,7 +71,9 @@ export function ComposerPendingReviewComments({
       {editingComment ? (
         <div className="w-full rounded border border-border">
           <p className="px-3 pt-2 text-xs text-muted-foreground">
-            Selected snapshot. Line numbers refer to the file at selection time.
+            {editingComment.sourceStatus === "current"
+              ? "Code and line numbers follow the latest file contents loaded in the file view."
+              : "Source snapshot. Line numbers refer to the last identified location."}
           </p>
           <pre className="max-h-40 overflow-auto px-3 text-xs">{editingComment.diff}</pre>
           <DiffCommentAnnotation

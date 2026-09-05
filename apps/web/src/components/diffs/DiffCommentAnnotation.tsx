@@ -81,6 +81,7 @@ export function DiffCommentAnnotation({
         <p className="min-w-0 flex-1 whitespace-pre-wrap text-[13px] leading-5">{displayedText}</p>
         {onEdit ? (
           <Button
+            className="-my-1 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/comment:opacity-100 focus-visible:opacity-100 max-sm:opacity-100"
             variant="ghost"
             size="icon-xs"
             aria-label="Edit comment"
