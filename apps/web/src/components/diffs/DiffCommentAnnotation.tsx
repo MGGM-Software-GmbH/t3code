@@ -46,6 +46,8 @@ export function DiffCommentAnnotation({
   const [localDraftText, setLocalDraftText] = useState(text);
   const displayedText = kind === "draft" && !onTextChange ? localDraftText : text;
   const trimmedText = displayedText.trim();
+  const isForm = kind === "draft";
+  const formRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useLayoutEffect(() => {
@@ -55,6 +57,44 @@ export function DiffCommentAnnotation({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [focusOnMount, kind]);
+
+  useLayoutEffect(() => {
+    const form = formRef.current;
+    const textarea = textareaRef.current;
+    if (!isForm || !form || !textarea) return;
+    let viewport = form.parentElement;
+    while (viewport && !/(auto|scroll)/.test(getComputedStyle(viewport).overflowY)) {
+      viewport = viewport.parentElement;
+    }
+    if (!viewport) return;
+    const scrollContainer = viewport;
+    let frame: number | undefined;
+    const keepFormVisible = () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        const availableHeight = scrollContainer.clientHeight;
+        const controlsHeight = form.offsetHeight - textarea.offsetHeight;
+        textarea.style.maxHeight = `${Math.max(48, Math.min(240, availableHeight - controlsHeight - 16))}px`;
+        // Nur das aktive Formular nachführen, niemals beim Lesen anderer Kommentare scrollen.
+        if (!form.contains(document.activeElement)) return;
+        const bounds = form.getBoundingClientRect();
+        const viewportBounds = scrollContainer.getBoundingClientRect();
+        const bottom = viewportBounds.top + scrollContainer.clientTop + availableHeight;
+        if (bounds.bottom > bottom) scrollContainer.scrollTop += bounds.bottom - bottom;
+        else if (bounds.top < viewportBounds.top)
+          scrollContainer.scrollTop += bounds.top - viewportBounds.top;
+      });
+    };
+    const observer = new ResizeObserver(keepFormVisible);
+    observer.observe(form);
+    observer.observe(scrollContainer);
+    keepFormVisible();
+    return () => {
+      observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+    };
+  }, [isForm]);
 
   if (kind === "comment") {
     return (
@@ -84,6 +124,7 @@ export function DiffCommentAnnotation({
 
   return (
     <div
+      ref={formRef}
       data-diff-comment-annotation
       className="px-3 py-2 font-sans text-foreground"
       contentEditable={false}
@@ -94,7 +135,14 @@ export function DiffCommentAnnotation({
       <Textarea
         ref={textareaRef}
         unstyled
-        style={{ caretColor: "auto", userSelect: "text", WebkitUserSelect: "text" }}
+        style={{
+          caretColor: "auto",
+          userSelect: "text",
+          WebkitUserSelect: "text",
+          maxHeight: 240,
+          overflowY: "auto",
+          resize: "none",
+        }}
         className="relative inline-flex w-full rounded-md border border-border/50 bg-background/20 font-sans text-foreground transition-colors focus-within:border-border/70 [&_[data-slot=textarea]]:min-h-12 [&_[data-slot=textarea]]:cursor-text [&_[data-slot=textarea]]:caret-foreground [&_[data-slot=textarea]]:px-2.5 [&_[data-slot=textarea]]:py-1.5 [&_[data-slot=textarea]]:font-sans [&_[data-slot=textarea]]:text-xs [&_[data-slot=textarea]]:leading-5 max-sm:[&_[data-slot=textarea]]:min-h-12"
         size="sm"
         value={displayedText}
@@ -112,7 +160,7 @@ export function DiffCommentAnnotation({
           }
         }}
       />
-      <div className="mt-1.5 flex items-center gap-1">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
         <span className="mr-auto text-[10px] text-muted-foreground/70">⌘/Ctrl Enter to send</span>
         <Button
           className="text-muted-foreground hover:text-foreground"
