@@ -10,7 +10,52 @@ import {
   inferReviewCommentFenceLanguage,
   parseReviewCommentMessageSegments,
   restoreDiffReviewCommentRange,
+  restoreFileReviewCommentRange,
 } from "./reviewCommentContext";
+
+describe("file comment snapshot anchors", () => {
+  const contents = "header\nbefore\ntarget\nafter\nfooter";
+  const comment = buildFileReviewComment({
+    id: "snapshot",
+    filePath: "example.ts",
+    startLine: 3,
+    endLine: 3,
+    contents,
+    text: "Keep this",
+  });
+
+  it("relocates a snapshot after insertions without rewriting prompt context", () => {
+    expect(restoreFileReviewCommentRange(contents, comment)).toEqual({ startLine: 3, endLine: 3 });
+    expect(restoreFileReviewCommentRange(`new\n${contents}`, comment)).toEqual({
+      startLine: 4,
+      endLine: 4,
+    });
+    expect(comment.diff).toBe("target");
+    expect(comment.rangeLabel).toBe("L3");
+    expect(formatReviewCommentContext(comment)).toContain('lineReference="snapshot"');
+  });
+
+  it("does not attach a snapshot to replaced, deleted or ambiguous code", () => {
+    expect(
+      restoreFileReviewCommentRange(contents.replace("target", "replacement"), comment),
+    ).toBeNull();
+    expect(restoreFileReviewCommentRange(contents.replace("target\n", ""), comment)).toBeNull();
+    expect(restoreFileReviewCommentRange(`${contents}\n${contents}`, comment)).toBeNull();
+  });
+
+  it("uses surrounding lines to distinguish repeated selections", () => {
+    expect(restoreFileReviewCommentRange(`target\n${contents}`, comment)).toEqual({
+      startLine: 4,
+      endLine: 4,
+    });
+  });
+
+  it("handles legacy snapshots without context conservatively", () => {
+    const { sourceAnchor: _sourceAnchor, ...legacy } = comment;
+    expect(restoreFileReviewCommentRange(contents, legacy)).toEqual({ startLine: 3, endLine: 3 });
+    expect(restoreFileReviewCommentRange(`target\n${contents}`, legacy)).toBeNull();
+  });
+});
 
 describe("review comment context parsing", () => {
   it("extracts comment metadata, user text, and fenced diff without raw wrapper text", () => {

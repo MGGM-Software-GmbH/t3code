@@ -122,6 +122,7 @@ export function AnnotatableCodeView({
   const [draft, setDraft] = useState<{
     fileKey: string;
     annotation: DiffCommentLineAnnotation;
+    comment: ReviewCommentContext;
   } | null>(null);
   const [draftText, setDraftText] = useState("");
 
@@ -148,7 +149,9 @@ export function AnnotatableCodeView({
             });
           }, []);
         const annotations =
-          draft?.fileKey === fileKey ? [...persisted, draft.annotation] : persisted;
+          draft?.fileKey === fileKey && restoreDiffReviewCommentRange(fileDiff, draft.comment)
+            ? [...persisted, draft.annotation]
+            : persisted;
         return {
           id: fileKey,
           type: "diff",
@@ -187,23 +190,13 @@ export function AnnotatableCodeView({
       const entry = draft?.annotation.metadata.entries.find(
         (candidate) => candidate.id === entryId,
       );
-      const file = draft ? filesByKey.get(draft.fileKey) : undefined;
-      if (!entry || !file) return;
-      const comment = buildDiffReviewComment({
-        id: entry.id,
-        sectionId,
-        sectionTitle,
-        filePath: file.filePath,
-        fileDiff: file.fileDiff,
-        range: entry.range,
-        text,
-      });
-      if (comment) addReviewComment(composerDraftTarget, comment);
+      if (!entry || !draft) return;
+      addReviewComment(composerDraftTarget, { ...draft.comment, text: text.trim() });
       setSelectedLines(null);
       setDraft(null);
       setDraftText("");
     },
-    [addReviewComment, composerDraftTarget, draft, filesByKey, sectionId, sectionTitle],
+    [addReviewComment, composerDraftTarget, draft],
   );
 
   const beginComment = useCallback(
@@ -227,6 +220,7 @@ export function AnnotatableCodeView({
       setDraftText("");
       setDraft({
         fileKey: item.id,
+        comment,
         annotation: {
           side: annotationSide(range),
           lineNumber: range.end,
@@ -240,49 +234,69 @@ export function AnnotatableCodeView({
   );
 
   const hasOpenComment = draft !== null;
+  const draftFile = draft ? filesByKey.get(draft.fileKey) : undefined;
+  const detachedDraft =
+    draft && (!draftFile || !restoreDiffReviewCommentRange(draftFile.fileDiff, draft.comment));
   return (
-    <StyledDiffCodeView<DiffCommentAnnotationGroup>
-      key={codeViewKey}
-      {...(viewerRef ? { viewerRef } : {})}
-      {...(className ? { className } : {})}
-      items={items}
-      selectedLines={selectedLines}
-      onSelectedLinesChange={setSelectedLines}
-      options={{
-        ...options,
-        enableGutterUtility: !hasOpenComment,
-        enableLineSelection: !hasOpenComment,
-        onGutterUtilityClick: beginComment,
-      }}
-      renderHeaderFilenameSuffix={(item) =>
-        item.type === "diff" ? renderHeaderFilenameSuffix(item.fileDiff) : null
-      }
-      renderHeaderPrefix={(item) =>
-        item.type === "diff"
-          ? renderHeaderPrefix(item.fileDiff, item.id, item.collapsed === true)
-          : null
-      }
-      renderAnnotation={(annotation) => {
-        const hasDraft = annotation.metadata.entries.some((entry) => entry.kind === "draft");
-        return (
-          <div
-            className={hasDraft ? "py-1" : "divide-y divide-border/30 border-y border-border/30"}
-          >
-            {annotation.metadata.entries.map((entry) => (
-              <DiffCommentAnnotation
-                key={entry.id}
-                kind={entry.kind}
-                rangeLabel={entry.rangeLabel}
-                text={entry.kind === "draft" ? draftText : entry.text}
-                onTextChange={setDraftText}
-                onCancel={() => removeEntry(entry.id)}
-                onComment={(text) => submitEntry(entry.id, text)}
-                onDelete={() => removeEntry(entry.id)}
-              />
-            ))}
-          </div>
-        );
-      }}
-    />
+    <div className="flex min-h-0 flex-1 flex-col">
+      {detachedDraft && draft ? (
+        <div>
+          <p className="px-3 text-xs text-muted-foreground">
+            Source changed. This comment refers to the selected snapshot, not the current lines.
+          </p>
+          <DiffCommentAnnotation
+            kind="draft"
+            rangeLabel={draft.comment.rangeLabel}
+            text={draftText}
+            onTextChange={setDraftText}
+            onCancel={() => removeEntry(draft.comment.id)}
+            onComment={(text) => submitEntry(draft.comment.id, text)}
+          />
+        </div>
+      ) : null}
+      <StyledDiffCodeView<DiffCommentAnnotationGroup>
+        key={codeViewKey}
+        {...(viewerRef ? { viewerRef } : {})}
+        {...(className ? { className } : {})}
+        items={items}
+        selectedLines={selectedLines}
+        onSelectedLinesChange={setSelectedLines}
+        options={{
+          ...options,
+          enableGutterUtility: !hasOpenComment,
+          enableLineSelection: !hasOpenComment,
+          onGutterUtilityClick: beginComment,
+        }}
+        renderHeaderFilenameSuffix={(item) =>
+          item.type === "diff" ? renderHeaderFilenameSuffix(item.fileDiff) : null
+        }
+        renderHeaderPrefix={(item) =>
+          item.type === "diff"
+            ? renderHeaderPrefix(item.fileDiff, item.id, item.collapsed === true)
+            : null
+        }
+        renderAnnotation={(annotation) => {
+          const hasDraft = annotation.metadata.entries.some((entry) => entry.kind === "draft");
+          return (
+            <div
+              className={hasDraft ? "py-1" : "divide-y divide-border/30 border-y border-border/30"}
+            >
+              {annotation.metadata.entries.map((entry) => (
+                <DiffCommentAnnotation
+                  key={entry.id}
+                  kind={entry.kind}
+                  rangeLabel={entry.rangeLabel}
+                  text={entry.kind === "draft" ? draftText : entry.text}
+                  onTextChange={setDraftText}
+                  onCancel={() => removeEntry(entry.id)}
+                  onComment={(text) => submitEntry(entry.id, text)}
+                  onDelete={() => removeEntry(entry.id)}
+                />
+              ))}
+            </div>
+          );
+        }}
+      />
+    </div>
   );
 }
