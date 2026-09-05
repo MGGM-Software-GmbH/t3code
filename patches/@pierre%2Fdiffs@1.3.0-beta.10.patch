@@ -65,7 +65,7 @@ index 101e31d39..cbf7d1f25 100644
  	syncLineAnnotations(lineAnnotations) {
  		if (lineAnnotations == null || lineAnnotations === this.lineAnnotations) return false;
  		if (lineAnnotations.length === 0 && this.lineAnnotations.length === 0) return false;
-+		// Beim Entfernen nur die Kommentarhöhe abziehen; umgebrochene Codezeilen bleiben gemessen.
++		// Subtract only annotation height on removal, preserving measured wrapped code rows.
 +		const nextLines = new Set(lineAnnotations.map((annotation) => annotation.lineNumber));
 +		for (const annotation of this.lineAnnotations) {
 +			if (nextLines.has(annotation.lineNumber)) continue;
@@ -158,7 +158,7 @@ index 101e31d39..cbf7d1f25 100644
  			if (renderRange.bufferAfter !== previousRenderRange.bufferAfter) this.updateBuffers(renderRange);
  		}
  	}
-+	// Bei externen Aktualisierungen bleiben Messwerte unveränderter Codezeilen gültig.
++	// Measurements of unchanged code rows remain valid across external updates.
 +	updateFileLayoutCache(file, anchorLine) {
 +		const previous = this.file;
 +		if (previous == null || previous.name !== file.name || previous.lang !== file.lang) {
@@ -207,7 +207,7 @@ index 101e31d39..cbf7d1f25 100644
  		this.file = file;
  		fileContainer = this.getOrCreateFileContainerNode(fileContainer);
  		if (this.file == null) {
-@@ -325,7 +399,7 @@ var VirtualizedFile = class extends File {
+@@ -325,8 +399,17 @@ var VirtualizedFile = class extends File {
  			this.top ??= this.getVirtualizedTop();
  			if (didFileChange && this.isSimpleMode()) {
  				this.getSimpleVirtualizer()?.markDOMDirty();
@@ -216,13 +216,24 @@ index 101e31d39..cbf7d1f25 100644
  			}
  		}
  		if (!this.isVisible && this.isSimpleMode()) return this.renderPlaceholder(this.height);
+-		const windowSpecs = this.virtualizer.getWindowSpecs();
++		let windowSpecs = this.virtualizer.getWindowSpecs();
++		if (this.pendingRefreshAnchor != null) {
++			const position = this.getLinePosition(Number(this.pendingRefreshAnchor.lineIndex) + 1);
++			if (position != null) {
++				// Render the mapped row before restoring its measured viewport offset.
++				const anchorTop = (this.top ?? 0) + position.top;
++				const margin = (windowSpecs.bottom - windowSpecs.top) / 2;
++				windowSpecs = { top: anchorTop - margin, bottom: anchorTop + margin };
++			}
++		}
 @@ -340,7 +414,13 @@ var VirtualizedFile = class extends File {
  			forceRender: (forceRenderOverride ?? forceRender) || annotationsChanged,
  			...props
  		});
 -		if (this.isSimpleMode() && rendered) this.getSimpleVirtualizer()?.requestHeightReconcile(this);
 +		if (this.isSimpleMode() && rendered) {
-+			if (this.pendingRefreshAnchor != null) {
++			if (this.pendingRefreshAnchor != null && fileContainer.shadowRoot?.querySelector(`[data-line][data-line-index="${this.pendingRefreshAnchor.lineIndex}"]`) instanceof HTMLElement) {
 +				this.getSimpleVirtualizer()?.scrollFix(this.pendingRefreshAnchor);
 +				this.pendingRefreshAnchor = void 0;
 +			}
@@ -260,6 +271,26 @@ index ff78e2a..f9df318 100644
  			});
  			fileInstance.rerender();
  		}
+@@ -408,6 +405,7 @@ var Editor = class {
+ 		const shouldRebuildDocument = this.#textDocument === void 0 || this.#fileInfo === void 0 || this.#fileInfo.name !== fileOrDiff.name || this.#fileInfo.lang !== fileOrDiff.lang || this.#fileInfo.cacheKey !== fileOrDiff.cacheKey;
+ 		const persistedCacheKey = this.#isStatePersistenceEnabled ? requirePersistedCacheKey(fileOrDiff) : void 0;
++		const isSameFileRefresh = this.#textDocument !== void 0 && this.#fileInfo?.name === fileOrDiff.name && this.#fileInfo.lang === fileOrDiff.lang;
+ 		let persistedStateTarget;
+ 		if (shouldRebuildDocument) {
+ 			let contents = "";
+ 			if ("contents" in fileOrDiff) contents = fileOrDiff.contents;
+@@ -424,9 +422,10 @@ var Editor = class {
+ 			this.#textDocument = textDocument;
+ 			if (persistedCacheKey !== void 0) {
+ 				this.#textDocumentCache.set(persistedCacheKey, textDocument);
+-				persistedStateTarget = {
++				// The virtualizer tracks live refreshes; cached pixel offsets belong to remounts.
++				if (!isSameFileRefresh) persistedStateTarget = {
+ 					cacheKey: persistedCacheKey,
+ 					textDocument
+ 				};
+ 			}
+ 			this.#tokenizer?.cleanUp();
 @@ -908,6 +905,7 @@ var Editor = class {
  				return lineNumber - 1;
  			};
@@ -400,3 +431,15 @@ index ff61c90..1e170e5 100644
      }
    },
    "publishConfig": {
+diff --git a/dist/components/Virtualizer.js b/dist/components/Virtualizer.js
+--- a/dist/components/Virtualizer.js
++++ b/dist/components/Virtualizer.js
+@@ -295,6 +295,8 @@ var Virtualizer = class {
+ 			behavior: "instant"
+ 		});
+ 		this.markDOMDirty();
++		// A synchronous render after correction must not use the previous viewport window.
++		this.windowSpecs = { top: 0, bottom: 0 };
+ 	}
+ 	getScrollAnchor(viewportHeight) {
+ 		const scrollContainer = this.getScrollContainerElement();

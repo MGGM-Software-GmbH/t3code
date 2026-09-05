@@ -1,8 +1,10 @@
 import {
   getSharedHighlighter,
+  File,
   VirtualizedFile,
   Virtualizer,
   type FileContents,
+  type FileRenderProps,
 } from "@pierre/diffs";
 import { Editor, TextDocument } from "@pierre/diffs/editor";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -196,6 +198,106 @@ class MeasuredFile extends VirtualizedFile {
 const instances: MeasuredFile[] = [];
 
 describe("external file refresh layout", () => {
+  it.each([1, 1000])(
+    "renders the mapped anchor before restoring scroll after inserting %i lines",
+    (insertedCount) => {
+      class GeometryElement {
+        scrollTop = 0;
+        scrollHeight = 100000;
+        clientHeight = 400;
+        shadowRoot: { querySelector(selector: string): GeometryElement | null } | undefined;
+        constructor(readonly top: () => number = () => 0) {}
+        getBoundingClientRect() {
+          return { top: this.top(), height: 100000 };
+        }
+        scrollTo({ top }: { top: number }) {
+          this.scrollTop = top;
+        }
+      }
+      vi.stubGlobal("HTMLElement", GeometryElement);
+      vi.stubGlobal("Document", vi.fn());
+      const root = new GeometryElement();
+      root.scrollTop = 10008;
+      const virtualizer = new Virtualizer();
+      const container = new GeometryElement(() => -root.scrollTop);
+      Object.assign(virtualizer, {
+        root,
+        height: 400,
+        windowSpecs: { top: 9408, bottom: 11008 },
+        requestHeightReconcile: vi.fn(),
+        getScrollAnchor: () => ({
+          fileElement: container,
+          lineIndex: "500",
+          lineOffset: 0,
+          fileOffset: -10008,
+          fileTypeOffset: "top",
+        }),
+      });
+      const file = {
+        name: "example.txt",
+        contents: Array.from({ length: 3000 }, (_, index) => `line ${index}`).join("\n"),
+        cacheKey: "before",
+      };
+      class RefreshFile extends VirtualizedFile {
+        refresh(next: FileContents) {
+          return this.renderPreparedFile({
+            file: next,
+            fileContainer: container as unknown as HTMLElement,
+          });
+        }
+      }
+      const instance = new RefreshFile(
+        { disableFileHeader: true, overflow: "scroll" },
+        virtualizer,
+      );
+      Object.assign(instance, {
+        file,
+        top: 0,
+        isVisible: true,
+        isSetup: true,
+        fileContainer: container,
+        getOrCreateFileContainerNode: () => container,
+      });
+      // Control only the DOM renderer; range selection and scroll restoration use production code.
+      const prototype = File.prototype as unknown as {
+        renderPreparedFile(props: FileRenderProps<undefined>): boolean;
+      };
+      const render = vi
+        .spyOn(prototype, "renderPreparedFile")
+        .mockImplementation(({ renderRange }) => {
+          container.shadowRoot = {
+            querySelector: (selector) => {
+              const index = Number(selector.match(/data-line-index="(\d+)"/)?.[1]);
+              if (
+                !renderRange ||
+                index < renderRange.startingLine ||
+                index >= renderRange.startingLine + renderRange.totalLines
+              )
+                return null;
+              return new GeometryElement(() => index * 20 + 8 - root.scrollTop);
+            },
+          };
+          return true;
+        });
+      try {
+        const inserted = Array.from(
+          { length: insertedCount },
+          (_, index) => `inserted ${index}`,
+        ).join("\n");
+        const next = { ...file, contents: `${inserted}\n${file.contents}`, cacheKey: "after" };
+        instance.refresh(next);
+        expect(root.scrollTop).toBe(10008 + insertedCount * 20);
+        instance.refresh(next);
+        expect(
+          container.shadowRoot?.querySelector(
+            `[data-line][data-line-index="${500 + insertedCount}"]`,
+          ),
+        ).not.toBeNull();
+      } finally {
+        render.mockRestore();
+      }
+    },
+  );
   it("retains measured rows and the anchor between separate changes", async () => {
     const { instance, file } = await makeFixture();
     const lines = file.contents.split("\n");
@@ -692,7 +794,12 @@ class EditorElement extends MeasuredElement {
   }
 }
 
-async function makeEditorFixture(lineCount: number) {
+async function makeEditorFixture(
+  lineCount: number,
+  stateStorage?: NonNullable<
+    ConstructorParameters<typeof Editor<undefined>>[0]
+  >["persistStateStorage"],
+) {
   const { instance, file } = await makeFixture("wrap", lineCount);
   vi.stubGlobal("SVGSVGElement", EditorElement);
   vi.stubGlobal("Document", EditorElement);
@@ -739,7 +846,10 @@ async function makeEditorFixture(lineCount: number) {
     langs: ["text"],
     preferredHighlighter: "shiki-wasm",
   });
-  const editor = new Editor<undefined>();
+  const editor = new Editor<undefined>({
+    persistState: stateStorage !== undefined,
+    ...(stateStorage ? { persistStateStorage: stateStorage } : {}),
+  });
   editors.push(editor);
   editor.edit(instance);
   editor.__syncRenderView(highlighter, measuredElement(host), file, undefined, {
@@ -766,8 +876,30 @@ async function makeEditorFixture(lineCount: number) {
       },
     ]);
   };
-  return { instance, editor, append, remove };
+  const sync = (next: FileContents) =>
+    editor.__syncRenderView(highlighter, measuredElement(host), next, undefined, {
+      startingLine: 0,
+      totalLines: 1,
+      bufferBefore: 0,
+      bufferAfter: 0,
+    });
+  return { instance, editor, file, sync, append, remove };
 }
+
+it("restores persisted view state on file changes, but not over a live same-file refresh", async () => {
+  const storage = { get: vi.fn(), set: vi.fn() };
+  const { editor, file, sync } = await makeEditorFixture(2, storage);
+  expect(storage.get).toHaveBeenCalledOnce();
+  const state = { selections: [], view: { scrollTop: 1500, scrollLeft: 0 } };
+  storage.get.mockReturnValue(state);
+  const restore = vi.spyOn(editor, "setState");
+  sync({ ...file, contents: `inserted\n${file.contents}`, cacheKey: "refresh" });
+  expect(storage.get).toHaveBeenCalledOnce();
+  expect(restore).not.toHaveBeenCalled();
+  sync({ ...file, name: "other.txt", cacheKey: "other" });
+  expect(storage.get).toHaveBeenCalledTimes(2);
+  expect(restore).toHaveBeenCalledWith(state);
+});
 
 describe("editor gutter-width changes", () => {
   it.each([
