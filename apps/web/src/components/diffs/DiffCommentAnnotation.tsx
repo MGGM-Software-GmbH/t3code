@@ -43,7 +43,7 @@ export function DiffCommentAnnotation({
   secondaryAction,
   focusOnMount = true,
 }: DiffCommentAnnotationProps) {
-  const [localDraftText, setLocalDraftText] = useState("");
+  const [localDraftText, setLocalDraftText] = useState(text);
   const displayedText = kind === "draft" && !onTextChange ? localDraftText : text;
   const trimmedText = displayedText.trim();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -62,6 +62,7 @@ export function DiffCommentAnnotation({
         data-diff-comment-annotation
         className="group/comment flex min-w-0 items-start gap-2.5 border-s-2 border-primary/55 bg-primary/[0.045] px-3 py-2.5 font-sans text-foreground"
         contentEditable={false}
+        style={{ userSelect: "text", WebkitUserSelect: "text" }}
         onPointerDown={(event) => event.stopPropagation()}
       >
         <MessageCircle className="mt-0.5 size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
@@ -86,22 +87,20 @@ export function DiffCommentAnnotation({
       data-diff-comment-annotation
       className="px-3 py-2 font-sans text-foreground"
       contentEditable={false}
+      style={{ userSelect: "text", WebkitUserSelect: "text" }}
+      onKeyDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <Textarea
         ref={textareaRef}
-        autoFocus={focusOnMount}
         unstyled
+        style={{ caretColor: "auto", userSelect: "text", WebkitUserSelect: "text" }}
         className="relative inline-flex w-full rounded-md border border-border/50 bg-background/20 font-sans text-foreground transition-colors focus-within:border-border/70 [&_[data-slot=textarea]]:min-h-12 [&_[data-slot=textarea]]:cursor-text [&_[data-slot=textarea]]:caret-foreground [&_[data-slot=textarea]]:px-2.5 [&_[data-slot=textarea]]:py-1.5 [&_[data-slot=textarea]]:font-sans [&_[data-slot=textarea]]:text-xs [&_[data-slot=textarea]]:leading-5 max-sm:[&_[data-slot=textarea]]:min-h-12"
         size="sm"
         value={displayedText}
         placeholder={placeholder}
         aria-label={`Comment on lines ${rangeLabel}`}
         onChange={(event) => (onTextChange ?? setLocalDraftText)(event.target.value)}
-        onFocus={(event) => {
-          const end = event.currentTarget.value.length;
-          event.currentTarget.setSelectionRange(end, end);
-        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();

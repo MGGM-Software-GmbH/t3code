@@ -24,7 +24,7 @@ describe("DiffCommentAnnotation", () => {
     expect(markup).toContain("⌘/Ctrl Enter to send");
     expect(markup).toContain("Add a comment…");
     expect(markup).toContain(">Comment</button>");
-    expect(markup).toContain("autofocus");
+    expect(markup).not.toContain("autofocus");
     const textareaControl = markup.match(/<span[^>]*data-slot="textarea-control"[^>]*>/)?.[0];
     expect(textareaControl).toBeDefined();
     expect(textareaControl).not.toContain("ring-ring");
