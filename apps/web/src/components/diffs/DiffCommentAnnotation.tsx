@@ -76,7 +76,7 @@ export function DiffCommentAnnotation({
         const availableHeight = scrollContainer.clientHeight;
         const controlsHeight = form.offsetHeight - textarea.offsetHeight;
         textarea.style.maxHeight = `${Math.max(48, Math.min(240, availableHeight - controlsHeight - 16))}px`;
-        // Nur das aktive Formular nachführen, niemals beim Lesen anderer Kommentare scrollen.
+        // Keep only the active form in view; do not scroll while another comment is being read.
         if (!form.contains(document.activeElement)) return;
         const bounds = form.getBoundingClientRect();
         const viewportBounds = scrollContainer.getBoundingClientRect();

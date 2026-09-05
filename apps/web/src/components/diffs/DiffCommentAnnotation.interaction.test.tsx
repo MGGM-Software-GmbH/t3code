@@ -40,7 +40,7 @@ async function mount(props: ComponentProps<typeof DiffCommentAnnotation>) {
 }
 
 describe("comment editing", () => {
-  it("retains an uncontrolled draft and focuses without changing its selection or scroll", async () => {
+  it("retains an uncontrolled draft and requests focus with preventScroll", async () => {
     const onComment = vi.fn();
     const root = await mount({
       kind: "draft",
