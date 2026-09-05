@@ -265,7 +265,12 @@ import {
   formatElementContextLabel,
 } from "../lib/elementContext";
 import { appendPreviewAnnotationPrompt } from "../lib/previewAnnotation";
-import { appendReviewCommentsToPrompt, type ReviewCommentContext } from "../reviewCommentContext";
+import {
+  appendReviewCommentsToPrompt,
+  refreshFileReviewComments,
+  type ReviewCommentContext,
+} from "../reviewCommentContext";
+import { readProjectFileForReview } from "./files/projectFilesQueryState";
 import { environmentCatalog } from "../connection/catalog";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
@@ -6378,7 +6383,25 @@ export default function ChatView(props: ChatViewProps) {
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerElementContextsSnapshot = [...composerElementContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
-    const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
+    sendInFlightRef.current = true;
+    let composerReviewCommentsSnapshot: ReviewCommentContext[];
+    try {
+      composerReviewCommentsSnapshot = await refreshFileReviewComments(
+        composerReviewComments,
+        (filePath) => {
+          if (!activeWorkspaceRoot)
+            throw new Error("Cannot refresh review comments without a workspace.");
+          return readProjectFileForReview(environmentId, activeWorkspaceRoot, filePath);
+        },
+      );
+    } catch (error) {
+      sendInFlightRef.current = false;
+      setThreadError(
+        threadIdForSend,
+        error instanceof Error ? error.message : "Could not refresh review comments.",
+      );
+      return;
+    }
     const messageTextWithContexts = appendElementContextsToPrompt(
       appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
@@ -6399,6 +6422,7 @@ export default function ChatView(props: ChatViewProps) {
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+      sendInFlightRef.current = false;
       return;
     }
 
@@ -6418,7 +6442,6 @@ export default function ChatView(props: ChatViewProps) {
       };
     };
 
-    sendInFlightRef.current = true;
     const attachmentCapabilitiesBeforeUpload = readLiveAttachmentCapabilities();
     if (attachmentCapabilitiesBeforeUpload.fileBlockReason !== null) {
       sendInFlightRef.current = false;

@@ -275,12 +275,12 @@ export function buildFileReviewComment(input: {
   };
 }
 
-/** Eindeutige Ausschnitte benötigen keine unveränderten Nachbarzeilen; Kontext unterscheidet Wiederholungen. */
+/** Without the previous file, require the stored context to identify the same occurrence. */
 export function restoreFileReviewCommentRange(
   contents: string,
   comment: ReviewCommentContext,
 ): { startLine: number; endLine: number } | null {
-  if (comment.sourceStatus === "removed") return null;
+  if (comment.sourceStatus === "removed" || !comment.sourceAnchor) return null;
   const lines = contents.replace(/\r(?=\n|$)/g, "").split("\n");
   const before = (comment.sourceAnchor?.before ?? "").replace(/\r(?=\n|$)/g, "");
   const snippet = comment.diff.replace(/\r(?=\n|$)/g, "");
@@ -288,14 +288,6 @@ export function restoreFileReviewCommentRange(
   const anchor = `${before}${snippet}${comment.sourceAnchor?.after ?? ""}`
     .replace(/\r(?=\n|$)/g, "")
     .split("\n");
-  const selections: number[] = [];
-  for (let index = 0; index <= lines.length - selected.length; index += 1) {
-    if (selected.every((line, offset) => lines[index + offset] === line))
-      selections.push(index + 1);
-  }
-  if (selections.length === 1) {
-    return { startLine: selections[0]!, endLine: selections[0]! + selected.length - 1 };
-  }
   let match: number | undefined;
   for (let index = 0; index <= lines.length - anchor.length; index += 1) {
     if (!anchor.every((line, offset) => lines[index + offset] === line)) continue;
@@ -305,7 +297,39 @@ export function restoreFileReviewCommentRange(
   return match === undefined ? null : { startLine: match, endLine: match + selected.length - 1 };
 }
 
-/** Verschiebt Kommentare anhand der Dateiänderung und aktualisiert Code sowie Koordinaten gemeinsam. */
+/** Trim shared boundaries before checking whether an edit search is necessary. */
+function fileLineChanges(previous: string[], current: string[]) {
+  let start = 0;
+  while (start < previous.length && start < current.length && previous[start] === current[start])
+    start += 1;
+  let previousEnd = previous.length;
+  let currentEnd = current.length;
+  while (
+    previousEnd > start &&
+    currentEnd > start &&
+    previous[previousEnd - 1] === current[currentEnd - 1]
+  ) {
+    previousEnd -= 1;
+    currentEnd -= 1;
+  }
+  const removed = previous.slice(start, previousEnd);
+  const added = current.slice(start, currentEnd);
+  const lineSet = new Set(added);
+  // Disjoint blocks have no common subsequence, including rewrites with a shared header or EOF.
+  const changes = removed.some((line) => lineSet.has(line))
+    ? diffArrays(removed, added)
+    : [
+        { removed: true, added: false, count: removed.length },
+        { removed: false, added: true, count: added.length },
+      ];
+  return [
+    { removed: false, added: false, count: start },
+    ...changes,
+    { removed: false, added: false, count: previous.length - previousEnd },
+  ];
+}
+
+/** Track comments through file changes, updating their code context and coordinates together. */
 export function remapFileReviewComments(
   previousContents: string | null,
   contents: string,
@@ -315,22 +339,23 @@ export function remapFileReviewComments(
   const lines = contents.length === 0 ? [] : contents.replace(/\r(?=\n|$)/g, "").split("\n");
   const previousLines = previousContents?.replace(/\r(?=\n|$)/g, "").split("\n");
   const mapping = new Map<number, number>();
+  const replacements: { oldStart: number; oldEnd: number; newStart: number; newEnd: number }[] = [];
   if (previousLines && previousContents !== contents) {
     let oldIndex = 0;
     let newIndex = 0;
     let removedStart = 0;
     let addedStart = 0;
     const flushReplacement = () => {
-      if (newIndex > addedStart) {
-        for (let index = removedStart; index < oldIndex; index += 1) {
-          mapping.set(
-            index,
-            addedStart + Math.min(index - removedStart, newIndex - addedStart - 1),
-          );
-        }
+      if (oldIndex > removedStart && newIndex > addedStart) {
+        replacements.push({
+          oldStart: removedStart,
+          oldEnd: oldIndex - 1,
+          newStart: addedStart,
+          newEnd: newIndex - 1,
+        });
       }
     };
-    for (const change of diffArrays(previousLines, lines)) {
+    for (const change of fileLineChanges(previousLines, lines)) {
       if (change.removed) oldIndex += change.count;
       else if (change.added) newIndex += change.count;
       else {
@@ -348,28 +373,48 @@ export function remapFileReviewComments(
   return comments.map((comment) => {
     if (comment.sourceStatus === "removed") return comment;
     let range: { startLine: number; endLine: number } | null;
-    // Nur bereits auf den vorherigen Stand bezogene Indizes dürfen durch dessen Diff laufen.
+    // Map indices through the diff only when they still identify the previous file contents.
     const previousSelection = previousLines
       ?.slice(comment.startIndex, comment.endIndex + 1)
       .join("\n");
     if (
       previousContents !== null &&
       previousContents !== contents &&
+      comment.sourceStatus !== "unresolved" &&
       previousSelection === comment.diff.replace(/\r(?=\n|$)/g, "")
     ) {
       const mapped: number[] = [];
+      let ambiguous = false;
+      for (const replacement of replacements) {
+        if (replacement.oldEnd < comment.startIndex || replacement.oldStart > comment.endIndex)
+          continue;
+        // A partial replacement cannot distinguish an edited line from a deleted neighbor.
+        if (replacement.oldStart < comment.startIndex || replacement.oldEnd > comment.endIndex) {
+          ambiguous = true;
+          break;
+        }
+        mapped.push(replacement.newStart, replacement.newEnd);
+      }
       for (let index = comment.startIndex; index <= comment.endIndex; index += 1) {
         const line = mapping.get(index);
         if (line !== undefined) mapped.push(line);
       }
-      if (mapped.length === 0) {
+      if (!ambiguous && mapped.length === 0) {
         return {
           ...comment,
           sourceStatus: "removed" as const,
           sectionTitle: "Source removed (last known lines)",
         };
       }
-      range = { startLine: mapped[0]! + 1, endLine: mapped.at(-1)! + 1 };
+      range = ambiguous
+        ? null
+        : { startLine: Math.min(...mapped) + 1, endLine: Math.max(...mapped) + 1 };
+    } else if (
+      comment.sourceStatus !== "unresolved" &&
+      previousContents === contents &&
+      previousSelection === comment.diff
+    ) {
+      range = { startLine: comment.startIndex + 1, endLine: comment.endIndex + 1 };
     } else {
       range = restoreFileReviewCommentRange(contents, comment);
     }
@@ -382,15 +427,46 @@ export function remapFileReviewComments(
             sectionTitle: "Source location unresolved (last known lines)",
           };
     }
-    const updated = buildFileReviewComment({
-      id: comment.id,
-      filePath: comment.filePath,
-      text: comment.text,
-      contents,
-      ...range,
-    });
+    const updated = {
+      ...comment,
+      ...buildFileReviewComment({
+        id: comment.id,
+        filePath: comment.filePath,
+        text: comment.text,
+        contents,
+        ...range,
+      }),
+    };
     return JSON.stringify(updated) === JSON.stringify(comment) ? comment : updated;
   });
+}
+
+/** Refresh file comments once per file before formatting a prompt, including closed previews. */
+export async function refreshFileReviewComments(
+  comments: ReadonlyArray<ReviewCommentContext>,
+  readFile: (filePath: string) => Promise<{ previousContents: string | null; contents: string }>,
+): Promise<ReviewCommentContext[]> {
+  const paths = [
+    ...new Set(
+      comments
+        .filter((comment) => comment.sectionId === `file:${comment.filePath}`)
+        .map((comment) => comment.filePath),
+    ),
+  ];
+  const updated = new Map<string, ReviewCommentContext>();
+  await Promise.all(
+    paths.map(async (filePath) => {
+      const { previousContents, contents } = await readFile(filePath);
+      for (const comment of remapFileReviewComments(
+        previousContents,
+        contents,
+        comments.filter((entry) => entry.sectionId === `file:${filePath}`),
+      )) {
+        updated.set(comment.id, comment);
+      }
+    }),
+  );
+  return comments.map((comment) => updated.get(comment.id) ?? comment);
 }
 
 export function inferReviewCommentFenceLanguage(filePath: string): string {

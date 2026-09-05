@@ -20,7 +20,7 @@ import {
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 import { Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
 import * as Schema from "effect/Schema";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
@@ -636,7 +636,7 @@ function EditableFileSurface({
   const [draft, setDraft] = useState<ReviewCommentContext | null>(null);
   const [draftText, setDraftText] = useState("");
   const previousContentsRef = useRef<{ path: string; contents: string } | null>(null);
-  useLayoutEffect(() => {
+  useEffect(() => {
     const previous =
       previousContentsRef.current?.path === relativePath
         ? previousContentsRef.current.contents
@@ -645,7 +645,11 @@ function EditableFileSurface({
     const store = useComposerDraftStore.getState();
     const comments = store.getComposerDraft(composerDraftTarget)?.reviewComments ?? [];
     const fileComments = comments.filter((comment) => comment.sectionId === `file:${relativePath}`);
-    const updated = remapFileReviewComments(previous, contents, fileComments);
+    const remapped = remapFileReviewComments(previous, contents, [
+      ...fileComments,
+      ...(draft ? [draft] : []),
+    ]);
+    const updated = remapped.slice(0, fileComments.length);
     if (updated.some((comment, index) => comment !== fileComments[index])) {
       const byId = new Map(updated.map((comment) => [comment.id, comment]));
       store.setReviewComments(
@@ -653,10 +657,8 @@ function EditableFileSurface({
         comments.map((comment) => byId.get(comment.id) ?? comment),
       );
     }
-    setDraft((current) =>
-      current ? remapFileReviewComments(previous, contents, [current])[0]! : null,
-    );
-  }, [composerDraftTarget, contents, relativePath]);
+    if (draft) setDraft(remapped.at(-1)!);
+  }, [composerDraftTarget, contents, relativePath, draft]);
   const lineAnnotations = useMemo<FileCommentLineAnnotation[]>(() => {
     const lines = contents.replace(/\r(?=\n|$)/g, "").split("\n");
     const comments = reviewComments.filter(
