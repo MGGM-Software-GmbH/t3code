@@ -11,17 +11,20 @@ diff --git a/dist/components/VirtualizedFile.d.ts b/dist/components/VirtualizedF
      fileContainer,
      file,
 diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFile.js
+index 101e31d39..2ddde408a 100644
 --- a/dist/components/VirtualizedFile.js
 +++ b/dist/components/VirtualizedFile.js
-@@ -20,6 +20,7 @@
+@@ -19,7 +19,9 @@ var VirtualizedFile = class extends File {
+ 	height = 0;
  	cache = {
  		heights: /* @__PURE__ */ new Map(),
++		annotationHeights: /* @__PURE__ */ new Map(),
  		checkpoints: [],
 +		codeWidth: void 0,
  		fileAnnotationHeight: 0
  	};
  	isVisible = false;
-@@ -31,6 +32,8 @@
+@@ -31,6 +33,8 @@ var VirtualizedFile = class extends File {
  		super(options, workerManager, isContainerManaged);
  		this.virtualizer = virtualizer;
  		this.metrics = metrics;
@@ -30,7 +33,35 @@ diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFil
  	}
  	setMetrics(metrics, force = false) {
  		if (!force && areObjectsEqual(this.metrics, metrics)) return;
-@@ -70,10 +73,12 @@
+@@ -38,11 +42,26 @@ var VirtualizedFile = class extends File {
+ 		this.resetLayoutCache();
+ 	}
+ 	setLineAnnotations(lineAnnotations) {
+-		if (this.syncLineAnnotations(lineAnnotations)) this.resetLayoutCache();
++		this.syncLineAnnotations(lineAnnotations);
+ 	}
+ 	syncLineAnnotations(lineAnnotations) {
+ 		if (lineAnnotations == null || lineAnnotations === this.lineAnnotations) return false;
+ 		if (lineAnnotations.length === 0 && this.lineAnnotations.length === 0) return false;
++		// Beim Entfernen nur die Kommentarhöhe abziehen; umgebrochene Codezeilen bleiben gemessen.
++		const nextLines = new Set(lineAnnotations.map((annotation) => annotation.lineNumber));
++		for (const annotation of this.lineAnnotations) {
++			if (nextLines.has(annotation.lineNumber)) continue;
++			if (annotation.lineNumber === 0) this.cache.fileAnnotationHeight = 0;
++			else {
++				const lineIndex = annotation.lineNumber - 1;
++				const annotationHeight = this.cache.annotationHeights.get(lineIndex) ?? 0;
++				if (annotationHeight > 0) this.cache.heights.set(lineIndex, this.getLineHeight(lineIndex) - annotationHeight);
++				this.cache.annotationHeights.delete(lineIndex);
++			}
++		}
++		this.layoutDirty = true;
++		this.cache.checkpoints = [];
++		this.renderRange = void 0;
+ 		super.setLineAnnotations(lineAnnotations);
+ 		return true;
+ 	}
+@@ -70,10 +89,14 @@ var VirtualizedFile = class extends File {
  		if (this.isAdvancedMode()) throw new Error("VirtualizedFile.setThemeType cannot be used inside CodeView. Update CodeView options instead.");
  		super.setThemeType(themeType);
  	}
@@ -43,10 +74,12 @@ diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFil
 +		// Dropping unchanged wrapped rows moves the viewport before they can be remeasured.
 +		if (startLine === 0) this.cache.heights.clear();
 +		else for (const lineIndex of this.cache.heights.keys()) if (lineIndex >= startLine) this.cache.heights.delete(lineIndex);
++		if (startLine === 0) this.cache.annotationHeights.clear();
++		else for (const lineIndex of this.cache.annotationHeights.keys()) if (lineIndex >= startLine) this.cache.annotationHeights.delete(lineIndex);
  		if (this.cache.checkpoints.length > 0) this.cache.checkpoints.length = 0;
  		if (this.renderRange != null && resetRenderRange) this.renderRange = void 0;
  		if (recompute && this.isSimpleMode()) this.computeApproximateSize();
-@@ -91,6 +96,13 @@
+@@ -91,6 +114,13 @@ var VirtualizedFile = class extends File {
  		if (this.code == null) return hasHeightChange;
  		const content = this.code.children[1];
  		if (!(content instanceof HTMLElement)) return hasHeightChange;
@@ -60,7 +93,33 @@ diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFil
  		const hasFileAnnotations = includesFileAnnotations(this.lineAnnotations);
  		if (this.renderRange != null && hasFileAnnotations && shouldRenderFileAnnotations(this.renderRange)) {
  			const nextFileAnnotationHeight = measureFileAnnotationHeight(content) ?? 0;
-@@ -287,11 +299,11 @@
+@@ -109,9 +139,12 @@ var VirtualizedFile = class extends File {
+ 			const lineIndex = Number(lineIndexAttr);
+ 			let measuredHeight = line.getBoundingClientRect().height;
+ 			let hasMetadata = false;
++			this.cache.annotationHeights.delete(lineIndex);
+ 			if (line.nextElementSibling instanceof HTMLElement && ("lineAnnotation" in line.nextElementSibling.dataset || "noNewline" in line.nextElementSibling.dataset)) {
+ 				if ("noNewline" in line.nextElementSibling.dataset) hasMetadata = true;
+-				measuredHeight += line.nextElementSibling.getBoundingClientRect().height;
++				const metadataHeight = line.nextElementSibling.getBoundingClientRect().height;
++				measuredHeight += metadataHeight;
++				if ("lineAnnotation" in line.nextElementSibling.dataset) this.cache.annotationHeights.set(lineIndex, metadataHeight);
+ 			}
+ 			const expectedHeight = this.getLineHeight(lineIndex, hasMetadata);
+ 			if (measuredHeight === expectedHeight) continue;
+@@ -128,9 +161,9 @@ var VirtualizedFile = class extends File {
+ 		return this.render({ file: this.file });
+ 	};
+ 	prepareCodeViewItem(file, top, reset, lineAnnotations) {
+-		const annotationsChanged = this.syncLineAnnotations(lineAnnotations);
++		this.syncLineAnnotations(lineAnnotations);
+ 		const unkeyedContentsChanged = this.fileRenderer.hasUnkeyedFileContentsChanged(file);
+-		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true || annotationsChanged || unkeyedContentsChanged;
++		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true || unkeyedContentsChanged;
+ 		if (reset?.metrics != null) {
+ 			this.metrics = reset.metrics;
+ 			shouldResetLayoutCache = true;
+@@ -287,11 +320,11 @@ var VirtualizedFile = class extends File {
  		this.forceRenderOverride = true;
  		this.virtualizer.instanceChanged(this, false);
  	}
@@ -74,6 +133,21 @@ diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFil
  		if (shouldUpdateBuffer && previousRenderRange !== void 0 && this.file !== void 0) {
  			const windowSpecs = this.virtualizer.getWindowSpecs();
  			const renderRange = this.computeRenderRangeFromWindow(this.file, this.top ?? 0, windowSpecs);
+@@ -303,7 +336,6 @@ var VirtualizedFile = class extends File {
+ 		const { forceRenderOverride, isSetup } = this;
+ 		this.forceRenderOverride = void 0;
+ 		const annotationsChanged = this.syncLineAnnotations(lineAnnotations);
+-		if (annotationsChanged) this.resetLayoutCache();
+ 		this.file = file;
+ 		fileContainer = this.getOrCreateFileContainerNode(fileContainer);
+ 		if (this.file == null) {
+@@ -525,4 +557,4 @@ function measureFileAnnotationHeight(content) {
+ //#endregion
+ export { VirtualizedFile };
+ 
+-//# sourceMappingURL=VirtualizedFile.js.map
+\ No newline at end of file
++//# sourceMappingURL=VirtualizedFile.js.map
 diff --git a/dist/editor/editor.js b/dist/editor/editor.js
 index ff78e2a..f9df318 100644
 --- a/dist/editor/editor.js
