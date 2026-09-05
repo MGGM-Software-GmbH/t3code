@@ -20,7 +20,7 @@ import {
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 import { Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
 import * as Schema from "effect/Schema";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
@@ -46,6 +46,7 @@ import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import {
   buildFileReviewComment,
   restoreFileReviewCommentRange,
+  remapFileReviewComments,
   type ReviewCommentContext,
 } from "~/reviewCommentContext";
 import { assetEnvironment } from "~/state/assets";
@@ -634,13 +635,42 @@ function EditableFileSurface({
   );
   const [draft, setDraft] = useState<ReviewCommentContext | null>(null);
   const [draftText, setDraftText] = useState("");
+  const previousContentsRef = useRef<{ path: string; contents: string } | null>(null);
+  useLayoutEffect(() => {
+    const previous =
+      previousContentsRef.current?.path === relativePath
+        ? previousContentsRef.current.contents
+        : null;
+    previousContentsRef.current = { path: relativePath, contents };
+    const store = useComposerDraftStore.getState();
+    const comments = store.getComposerDraft(composerDraftTarget)?.reviewComments ?? [];
+    const fileComments = comments.filter((comment) => comment.sectionId === `file:${relativePath}`);
+    const updated = remapFileReviewComments(previous, contents, fileComments);
+    if (updated.some((comment, index) => comment !== fileComments[index])) {
+      const byId = new Map(updated.map((comment) => [comment.id, comment]));
+      store.setReviewComments(
+        composerDraftTarget,
+        comments.map((comment) => byId.get(comment.id) ?? comment),
+      );
+    }
+    setDraft((current) =>
+      current ? remapFileReviewComments(previous, contents, [current])[0]! : null,
+    );
+  }, [composerDraftTarget, contents, relativePath]);
   const lineAnnotations = useMemo<FileCommentLineAnnotation[]>(() => {
+    const lines = contents.replace(/\r(?=\n|$)/g, "").split("\n");
     const comments = reviewComments.filter(
       (comment) => comment.sectionId === `file:${relativePath}`,
     );
     return [...comments, ...(draft ? [draft] : [])].reduce<FileCommentLineAnnotation[]>(
       (annotations, comment) => {
-        const range = restoreFileReviewCommentRange(contents, comment);
+        if (comment.sourceStatus === "removed" || comment.sourceStatus === "unresolved")
+          return annotations;
+        const range =
+          comment.sourceStatus === "current" &&
+          lines.slice(comment.startIndex, comment.endIndex + 1).join("\n") === comment.diff
+            ? { startLine: comment.startIndex + 1, endLine: comment.endIndex + 1 }
+            : restoreFileReviewCommentRange(contents, comment);
         if (!range) return annotations;
         const entry = {
           id: comment.id,
@@ -780,7 +810,31 @@ function EditableFileSurface({
   return (
     <EditProvider editor={editor}>
       <div ref={surfaceRef} className="flex min-h-0 flex-1 flex-col">
-        {draft && !restoreFileReviewCommentRange(contents, draft) ? (
+        {reviewComments
+          .filter(
+            (comment) =>
+              comment.sectionId === `file:${relativePath}` &&
+              (comment.sourceStatus === "removed" || comment.sourceStatus === "unresolved"),
+          )
+          .map((comment) => (
+            <div key={comment.id} className="max-h-48 overflow-auto border-b border-border">
+              <p className="px-3 text-xs text-muted-foreground">
+                {comment.sourceStatus === "removed"
+                  ? "Commented lines were removed."
+                  : "Comment location could not be identified."}{" "}
+                Last known location: {comment.rangeLabel}.
+              </p>
+              <DiffCommentAnnotation
+                kind="comment"
+                rangeLabel={comment.rangeLabel}
+                text={comment.text}
+                onCancel={() => removeAnnotationEntry(comment.id)}
+                onDelete={() => removeAnnotationEntry(comment.id)}
+                onComment={(text) => submitAnnotationEntry(comment.id, text)}
+              />
+            </div>
+          ))}
+        {draft && draft.sourceStatus !== "current" ? (
           <div>
             <p className="px-3 text-xs text-muted-foreground">
               Source changed. This comment refers to the selected snapshot, not the current lines.

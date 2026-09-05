@@ -1,6 +1,7 @@
 import type { FileDiffMetadata, SelectedLineRange, SelectionSide } from "@pierre/diffs";
 import type { PullRequestReviewPosition } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import { diffArrays } from "diff";
 
 const ReviewCommentSelectionSchema = Schema.Struct({
   start: Schema.Number,
@@ -23,6 +24,7 @@ export const ReviewCommentContextSchema = Schema.Struct({
   fenceLanguage: Schema.optional(Schema.String),
   selection: Schema.optional(ReviewCommentSelectionSchema),
   sourceAnchor: Schema.optional(Schema.Struct({ before: Schema.String, after: Schema.String })),
+  sourceStatus: Schema.optional(Schema.Literals(["current", "removed", "unresolved"])),
 });
 
 export interface ReviewCommentContext {
@@ -38,6 +40,7 @@ export interface ReviewCommentContext {
   readonly fenceLanguage?: string | undefined;
   readonly selection?: ReviewCommentSelection | undefined;
   readonly sourceAnchor?: { readonly before: string; readonly after: string } | undefined;
+  readonly sourceStatus?: "current" | "removed" | "unresolved" | undefined;
 }
 
 interface DiffReviewLine {
@@ -218,7 +221,7 @@ export function formatReviewCommentContext(comment: ReviewCommentContext): strin
       ` startIndex="${comment.startIndex}"`,
       ` endIndex="${comment.endIndex}"`,
       ` rangeLabel="${escapeReviewCommentAttribute(comment.rangeLabel)}"`,
-      ' lineReference="snapshot"',
+      ` lineReference="${comment.sourceStatus === "current" ? "current" : "snapshot"}"`,
       ">",
     ].join(""),
     neutralizeReviewCommentTags(comment.text.trim()),
@@ -249,14 +252,14 @@ export function buildFileReviewComment(input: {
 }): ReviewCommentContext {
   const startLine = Math.max(1, Math.min(input.startLine, input.endLine));
   const endLine = Math.max(startLine, Math.max(input.startLine, input.endLine));
-  const lines = input.contents.split("\n");
+  const lines = input.contents.replace(/\r(?=\n|$)/g, "").split("\n");
   const selectedLines = lines.slice(startLine - 1, endLine);
   const before = lines.slice(Math.max(0, startLine - 4), startLine - 1);
   const after = lines.slice(endLine, endLine + 3);
   return {
     id: input.id,
     sectionId: `file:${input.filePath}`,
-    sectionTitle: "File snapshot (line numbers at selection time)",
+    sectionTitle: "File (current lines)",
     filePath: input.filePath,
     startIndex: startLine - 1,
     endIndex: endLine - 1,
@@ -264,6 +267,7 @@ export function buildFileReviewComment(input: {
     text: input.text.trim(),
     diff: selectedLines.join("\n"),
     fenceLanguage: inferReviewCommentFenceLanguage(input.filePath),
+    sourceStatus: "current",
     sourceAnchor: {
       before: before.length > 0 ? `${before.join("\n")}\n` : "",
       after: after.length > 0 ? `\n${after.join("\n")}` : "",
@@ -271,15 +275,27 @@ export function buildFileReviewComment(input: {
   };
 }
 
-/** Ordnet den unveränderten Ausschnitt nur bei eindeutigem Kontext einer aktuellen Zeile zu. */
+/** Eindeutige Ausschnitte benötigen keine unveränderten Nachbarzeilen; Kontext unterscheidet Wiederholungen. */
 export function restoreFileReviewCommentRange(
   contents: string,
   comment: ReviewCommentContext,
 ): { startLine: number; endLine: number } | null {
-  const lines = contents.split("\n");
-  const before = comment.sourceAnchor?.before ?? "";
-  const selected = comment.diff.split("\n");
-  const anchor = `${before}${comment.diff}${comment.sourceAnchor?.after ?? ""}`.split("\n");
+  if (comment.sourceStatus === "removed") return null;
+  const lines = contents.replace(/\r(?=\n|$)/g, "").split("\n");
+  const before = (comment.sourceAnchor?.before ?? "").replace(/\r(?=\n|$)/g, "");
+  const snippet = comment.diff.replace(/\r(?=\n|$)/g, "");
+  const selected = snippet.split("\n");
+  const anchor = `${before}${snippet}${comment.sourceAnchor?.after ?? ""}`
+    .replace(/\r(?=\n|$)/g, "")
+    .split("\n");
+  const selections: number[] = [];
+  for (let index = 0; index <= lines.length - selected.length; index += 1) {
+    if (selected.every((line, offset) => lines[index + offset] === line))
+      selections.push(index + 1);
+  }
+  if (selections.length === 1) {
+    return { startLine: selections[0]!, endLine: selections[0]! + selected.length - 1 };
+  }
   let match: number | undefined;
   for (let index = 0; index <= lines.length - anchor.length; index += 1) {
     if (!anchor.every((line, offset) => lines[index + offset] === line)) continue;
@@ -287,6 +303,94 @@ export function restoreFileReviewCommentRange(
     match = index + before.split("\n").length;
   }
   return match === undefined ? null : { startLine: match, endLine: match + selected.length - 1 };
+}
+
+/** Verschiebt Kommentare anhand der Dateiänderung und aktualisiert Code sowie Koordinaten gemeinsam. */
+export function remapFileReviewComments(
+  previousContents: string | null,
+  contents: string,
+  comments: ReadonlyArray<ReviewCommentContext>,
+): ReviewCommentContext[] {
+  if (comments.length === 0) return [];
+  const lines = contents.length === 0 ? [] : contents.replace(/\r(?=\n|$)/g, "").split("\n");
+  const previousLines = previousContents?.replace(/\r(?=\n|$)/g, "").split("\n");
+  const mapping = new Map<number, number>();
+  if (previousLines && previousContents !== contents) {
+    let oldIndex = 0;
+    let newIndex = 0;
+    let removedStart = 0;
+    let addedStart = 0;
+    const flushReplacement = () => {
+      if (newIndex > addedStart) {
+        for (let index = removedStart; index < oldIndex; index += 1) {
+          mapping.set(
+            index,
+            addedStart + Math.min(index - removedStart, newIndex - addedStart - 1),
+          );
+        }
+      }
+    };
+    for (const change of diffArrays(previousLines, lines)) {
+      if (change.removed) oldIndex += change.count;
+      else if (change.added) newIndex += change.count;
+      else {
+        flushReplacement();
+        for (let offset = 0; offset < change.count; offset += 1)
+          mapping.set(oldIndex + offset, newIndex + offset);
+        oldIndex += change.count;
+        newIndex += change.count;
+        removedStart = oldIndex;
+        addedStart = newIndex;
+      }
+    }
+    flushReplacement();
+  }
+  return comments.map((comment) => {
+    if (comment.sourceStatus === "removed") return comment;
+    let range: { startLine: number; endLine: number } | null;
+    // Nur bereits auf den vorherigen Stand bezogene Indizes dürfen durch dessen Diff laufen.
+    const previousSelection = previousLines
+      ?.slice(comment.startIndex, comment.endIndex + 1)
+      .join("\n");
+    if (
+      previousContents !== null &&
+      previousContents !== contents &&
+      previousSelection === comment.diff.replace(/\r(?=\n|$)/g, "")
+    ) {
+      const mapped: number[] = [];
+      for (let index = comment.startIndex; index <= comment.endIndex; index += 1) {
+        const line = mapping.get(index);
+        if (line !== undefined) mapped.push(line);
+      }
+      if (mapped.length === 0) {
+        return {
+          ...comment,
+          sourceStatus: "removed" as const,
+          sectionTitle: "Source removed (last known lines)",
+        };
+      }
+      range = { startLine: mapped[0]! + 1, endLine: mapped.at(-1)! + 1 };
+    } else {
+      range = restoreFileReviewCommentRange(contents, comment);
+    }
+    if (!range) {
+      return comment.sourceStatus === "unresolved"
+        ? comment
+        : {
+            ...comment,
+            sourceStatus: "unresolved" as const,
+            sectionTitle: "Source location unresolved (last known lines)",
+          };
+    }
+    const updated = buildFileReviewComment({
+      id: comment.id,
+      filePath: comment.filePath,
+      text: comment.text,
+      contents,
+      ...range,
+    });
+    return JSON.stringify(updated) === JSON.stringify(comment) ? comment : updated;
+  });
 }
 
 export function inferReviewCommentFenceLanguage(filePath: string): string {
