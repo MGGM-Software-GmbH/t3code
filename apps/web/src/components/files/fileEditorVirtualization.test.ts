@@ -166,6 +166,12 @@ class MeasuredFile extends VirtualizedFile {
     content.width = contentWidth;
   }
 
+  refreshLayout(file: FileContents, anchorLine?: number) {
+    const nextAnchorLine = this.updateFileLayoutCache(file, anchorLine);
+    this.prepareCodeViewItem(file, 0);
+    return nextAnchorLine;
+  }
+
   observeLayout() {
     const pre = new MeasuredElement();
     if (!(this.code instanceof MeasuredElement)) throw new Error("Expected measured code");
@@ -188,6 +194,74 @@ class MeasuredFile extends VirtualizedFile {
 }
 
 const instances: MeasuredFile[] = [];
+
+describe("external file refresh layout", () => {
+  it("retains measured rows and the anchor between separate changes", async () => {
+    const { instance, file } = await makeFixture();
+    const lines = file.contents.split("\n");
+    lines[lines.length - 1] = "changed last line";
+    const changed = { ...file, contents: `inserted\n${lines.join("\n")}`, cacheKey: "two-edits" };
+    expect(instance.refreshLayout(changed, 4999)).toBe(5000);
+    expect(instance.getLineHeight(121)).toBe(60);
+  });
+  it("moves measured wrapped heights with an unchanged suffix after insertion and deletion", async () => {
+    const { instance, file } = await makeFixture();
+    const before = instance.getLinePosition(5000)?.top;
+    const inserted = { ...file, contents: `inserted\n${file.contents}`, cacheKey: "inserted" };
+    expect(instance.refreshLayout(inserted, 4999)).toBe(5000);
+    expect(instance.getLineHeight(121)).toBe(60);
+    expect(instance.getLinePosition(5001)?.top).toBe(before! + 20);
+    expect(instance.refreshLayout(file, 5000)).toBe(4999);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLinePosition(5000)?.top).toBe(before);
+  });
+
+  it("invalidates changed rows while retaining unchanged prefix and suffix measurements", async () => {
+    const { instance, file } = await makeFixture();
+    instance.measure([
+      [120, 60],
+      [121, 80],
+      [122, 100],
+    ]);
+    const lines = file.contents.split("\n");
+    lines[121] = "changed";
+    instance.refreshLayout({ ...file, contents: lines.join("\n"), cacheKey: "changed" });
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLineHeight(121)).toBe(20);
+    expect(instance.getLineHeight(122)).toBe(100);
+  });
+
+  it("does not carry annotation heights to new line numbers", async () => {
+    const { instance, file } = await makeFixture();
+    instance.setLineAnnotations([{ lineNumber: 121 }]);
+    instance.measure([[120, 60]], 226.25, [[120, 100]]);
+    instance.refreshLayout({
+      ...file,
+      contents: `inserted\n${file.contents}`,
+      cacheKey: "inserted",
+    });
+    expect(instance.getLineHeight(121)).toBe(60);
+  });
+
+  it("retains layout for an unchanged refresh and invalidates a different file", async () => {
+    const { instance, file } = await makeFixture();
+    expect(instance.refreshLayout({ ...file, cacheKey: "refetched" }, 120)).toBe(120);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.refreshLayout({ ...file, name: "other.txt" }, 120)).toBeUndefined();
+    expect(instance.getLineHeight(120)).toBe(20);
+  });
+
+  it("preserves CRLF row measurements and clamps a removed anchor to the replacement", async () => {
+    const { instance, file } = await makeFixture();
+    const crlf = { ...file, contents: file.contents.replaceAll("\n", "\r\n"), cacheKey: "crlf" };
+    instance.refreshLayout(crlf);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(
+      instance.refreshLayout({ ...file, contents: "replacement", cacheKey: "replacement" }, 120),
+    ).toBe(0);
+    expect(instance.getLineHeight(120)).toBe(20);
+  });
+});
 
 describe("comment annotation layout", () => {
   it("retains an existing comment height and removes only annotations when clearing", async () => {
