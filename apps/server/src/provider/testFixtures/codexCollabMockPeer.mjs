@@ -54,6 +54,12 @@ rl.on("line", (line) => {
     });
     return;
   }
+  if (script.recordTurnRequests && (method === "turn/start" || method === "turn/steer")) {
+    NodeFS.appendFileSync(
+      `${process.env.T3_CODEX_COLLAB_SCRIPT}.requests`,
+      `${JSON.stringify({ method, params: message.params })}\n`,
+    );
+  }
   if (method === undefined && script.serverRequests?.some((request) => request.id === id)) {
     NodeFS.appendFileSync(
       `${process.env.T3_CODEX_COLLAB_SCRIPT}.responses`,
@@ -160,6 +166,14 @@ rl.on("line", (line) => {
       return;
     }
     write({ id, result: fixture.responses.threadStart });
+    return;
+  }
+  if (method === "turn/steer") {
+    if (script.steerError || message.params?.expectedTurnId !== activeTurn?.id) {
+      write({ id, error: { code: -32600, message: script.steerError ?? "Turn mismatch" } });
+    } else {
+      write({ id, result: script.invalidSteerResponse ? {} : { turnId: activeTurn.id } });
+    }
     return;
   }
   if (method === "turn/start") {

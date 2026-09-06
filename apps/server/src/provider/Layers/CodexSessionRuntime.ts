@@ -2582,6 +2582,21 @@ export const makeCodexSessionRuntime = (
               options.mcpCapabilities,
             ),
           });
+          const activeSession = yield* Ref.get(sessionRef);
+          if (activeSession.activeTurnId !== undefined) {
+            // Follow-ups belong to the active turn. Never retry a failed steer
+            // as turn/start: the input may already have been accepted.
+            const response = yield* client.request("turn/steer", {
+              threadId: providerThreadId,
+              expectedTurnId: activeSession.activeTurnId,
+              input: params.input,
+            });
+            return {
+              threadId: options.threadId,
+              turnId: TurnId.make(response.turnId),
+              resumeCursor: { threadId: providerThreadId },
+            } satisfies ProviderTurnStartResult;
+          }
           yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(

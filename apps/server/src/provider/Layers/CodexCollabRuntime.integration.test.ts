@@ -166,6 +166,70 @@ const peerPath = NodePath.join(
 );
 
 describe("CodexSessionRuntime collab integration", () => {
+  for (const outcome of ["accepted", "rejected", "invalid-response"] as const) {
+    it.live(`steers active turns without a duplicate start when ${outcome}`, () =>
+      Effect.gen(function* () {
+        const testDirectory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-codex-steer-"));
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => NodeFS.rmSync(testDirectory, { recursive: true })),
+        );
+        const turnScriptPath = NodePath.join(testDirectory, "script.json");
+        NodeFS.writeFileSync(
+          turnScriptPath,
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          JSON.stringify({
+            rootThreadId: ROOT,
+            holdTurnOpen: true,
+            recordTurnRequests: true,
+            steerError: outcome === "rejected" ? "Active turn is not steerable" : undefined,
+            invalidSteerResponse: outcome === "invalid-response",
+            notifications: [],
+          }),
+        );
+        const runtime = yield* makeCodexSessionRuntime({
+          threadId: ThreadId.make(`thread-codex-steer-${outcome}`),
+          binaryPath: peerPath,
+          cwd: testDirectory,
+          runtimeMode: "full-access",
+          environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: turnScriptPath },
+        });
+        yield* runtime.start();
+        const first = yield* runtime.sendTurn({ input: "keep working" });
+        const followUp = runtime.sendTurn({
+          input: "change direction",
+          attachments: [{ type: "image", url: "data:image/png;base64,c3RlZXI=" }],
+        });
+        if (outcome === "accepted") {
+          const steered = yield* followUp;
+          assert.equal(steered.turnId, first.turnId);
+          assert.deepEqual(steered.resumeCursor, first.resumeCursor);
+        } else {
+          const error = yield* Effect.flip(followUp);
+          assert.equal(error._tag, "CodexAppServerRequestError");
+          assert.propertyVal(error, "method", "turn/steer");
+        }
+        const requests = NodeFS.readFileSync(`${turnScriptPath}.requests`, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line) as { method: string; params: Record<string, unknown> });
+        assert.deepEqual(
+          requests.map((request) => request.method),
+          ["turn/start", "turn/steer"],
+        );
+        assert.deepEqual(requests[1]?.params, {
+          threadId: ROOT,
+          expectedTurnId: first.turnId,
+          input: [
+            { type: "text", text: "change direction" },
+            { type: "image", url: "data:image/png;base64,c3RlZXI=" },
+          ],
+        });
+        assert.equal((yield* runtime.getSession).activeTurnId, first.turnId);
+        yield* runtime.close;
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    );
+  }
+
   it.effect("looks up child model metadata once after activity registration", () =>
     Effect.gen(function* () {
       const script = {
@@ -707,7 +771,7 @@ describe("CodexSessionRuntime collab integration", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.live("Stop targets the active turn when Codex has accepted a queued follow-up", () =>
+  it.live("Stop targets the active turn when Codex has accepted a steered follow-up", () =>
     Effect.gen(function* () {
       const activeTurnId = "019fe3e8-f908-7f31-8d51-283f4a47897a";
       const queuedTurnId = "019fe3eb-8faf-7de3-a85b-ac64c7f9c8c3";
