@@ -1039,6 +1039,32 @@ describe("openCodexThread", () => {
     }),
   );
 
+  it.effect("does not replace a conversation when another client owns its writer", () =>
+    Effect.gen(function* () {
+      const methods: Array<string> = [];
+      const conflict = new CodexErrors.CodexAppServerRequestError({
+        code: -32600,
+        errorMessage: "thread native-thread already has an active writer",
+      });
+      const error = yield* openCodexThread({
+        client: {
+          request: (method) => {
+            methods.push(method);
+            return Effect.fail(conflict);
+          },
+        },
+        threadId: ThreadId.make("thread-external-writer"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: undefined,
+        serviceTier: undefined,
+        resumeThreadId: "native-thread",
+      }).pipe(Effect.flip);
+      NodeAssert.equal(error, conflict);
+      NodeAssert.deepStrictEqual(methods, ["thread/resume"]);
+    }),
+  );
+
   it.effect("propagates non-recoverable resume failures", () =>
     Effect.gen(function* () {
       const client = {

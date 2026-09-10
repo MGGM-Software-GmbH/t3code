@@ -1461,6 +1461,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           );
         }
         const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+        let previousInstanceToStop: ProviderInstanceId | undefined;
         if (
           persistedBinding?.provider === resolvedProvider &&
           persistedBinding.providerInstanceId !== resolvedInstanceId &&
@@ -1480,10 +1481,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               `Thread '${threadId}' cannot switch from instance '${previousInstanceId}' to '${resolvedInstanceId}' because their provider resume state is incompatible.`,
             );
           }
+          previousInstanceToStop = previousInstanceId;
         }
         const effectiveResumeCursor =
           input.resumeCursor ??
-          (persistedBinding?.providerInstanceId === resolvedInstanceId
+          (persistedBinding?.provider === resolvedProvider
             ? persistedBinding.resumeCursor
             : undefined);
         const effectiveCwd =
@@ -1525,6 +1527,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           }
         }
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
+        if (previousInstanceToStop !== undefined) {
+          // Compatible instances share a native conversation and its writer lock.
+          // Release the source before resuming, but retain its binding if startup fails.
+          const previousAdapter = yield* registry.getByInstance(previousInstanceToStop);
+          if (yield* previousAdapter.hasSession(threadId)) {
+            yield* previousAdapter.stopSession(threadId);
+            yield* clearTurnAnalyticsSession(previousInstanceToStop, threadId);
+            yield* analytics.record("provider.session.stopped", {
+              provider: previousAdapter.provider,
+            });
+          }
+        }
         yield* clearTurnAnalyticsSession(resolvedInstanceId, threadId);
         yield* prepareMcpSession(threadId, resolvedInstanceId);
         const session = yield* adapter
