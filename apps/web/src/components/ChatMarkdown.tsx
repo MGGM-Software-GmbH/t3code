@@ -1,5 +1,6 @@
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { useAtomValue } from "@effect/atom-react";
+import { MermaidDiagram } from "./MermaidDiagram";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextClipboardHtml,
@@ -3289,6 +3290,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
         }
         isStreaming={isStreaming}
       >
+        {language === "mermaid" && !isStreaming ? (
+          <MermaidDiagram code={codeBlock.code} theme={resolvedTheme} />
+        ) : (
         <RenderErrorBoundary
           resetKeys={[codeBlock.code, language, diffThemeName, isStreaming]}
           fallback={<pre {...props}>{children}</pre>}
@@ -3310,6 +3314,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             />
           </Suspense>
         </RenderErrorBoundary>
+        )}
       </MarkdownCodeBlock>
     );
   },
