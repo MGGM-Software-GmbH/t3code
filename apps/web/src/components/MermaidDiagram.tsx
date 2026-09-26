@@ -97,6 +97,9 @@ export function MermaidDiagram({ code, theme }: { code: string; theme: "light" |
             style={{
               display: "inline-block",
               maxWidth: actualSize ? "none" : "100%",
+              // Fit must include height so tall diagrams do not stay at their intrinsic size.
+              maxHeight: actualSize ? "none" : "70vh",
+              verticalAlign: "top",
               height: "auto",
             }}
           />
