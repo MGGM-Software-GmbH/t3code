@@ -5,6 +5,30 @@ const cache = new Map<string, string>();
 let renderQueue: Promise<unknown> = Promise.resolve();
 let nextId = 0;
 
+/** SVG images need intrinsic dimensions; a percentage width otherwise defaults to 300px. */
+export function mermaidImageSource(svg: string): string {
+  const root = svg.match(/<svg\b[^>]*>/)?.[0];
+  const viewBox = root
+    ?.match(/\bviewBox="([^"]+)"/)?.[1]
+    ?.trim()
+    .split(/\s+/)
+    .map(Number);
+  if (
+    !root ||
+    !viewBox ||
+    viewBox.length !== 4 ||
+    !viewBox.every(Number.isFinite) ||
+    viewBox[2]! <= 0 ||
+    viewBox[3]! <= 0
+  ) {
+    throw new Error("Mermaid returned an SVG without valid dimensions.");
+  }
+  const sizedRoot = root
+    .replace(/\s(?:width|height)="[^"]*"/g, "")
+    .replace("<svg", `<svg width="${viewBox[2]}" height="${viewBox[3]}"`);
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg.replace(root, sizedRoot))}`;
+}
+
 /** Keep copied diagrams usable as Markdown, including backticks in labels. */
 export function mermaidMarkdown(code: string): string {
   const longestFence = Math.max(2, ...Array.from(code.matchAll(/`+/g), (match) => match[0].length));
@@ -59,7 +83,7 @@ export function renderMermaid(code: string, theme: "light" | "dark"): Promise<st
     try {
       const { svg } = await mermaid.render(`t3-mermaid-${++nextId}`, code, container);
       // An image isolates SVG styles and prevents diagram links/scripts from acting on the app.
-      const image = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = mermaidImageSource(svg);
       if (image.length <= MAX_CACHE_BYTES) {
         cache.set(key, image);
         while (

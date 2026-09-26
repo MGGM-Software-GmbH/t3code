@@ -5,6 +5,7 @@ import { mermaidMarkdown, renderMermaid } from "../lib/mermaidRendering";
 export function MermaidDiagram({ code, theme }: { code: string; theme: "light" | "dark" }) {
   const container = React.useRef<HTMLDivElement>(null);
   const [showSource, setShowSource] = React.useState(false);
+  const [actualSize, setActualSize] = React.useState(false);
   const [visible, setVisible] = React.useState(false);
   const [result, setResult] = React.useState<{
     code: string;
@@ -55,6 +56,17 @@ export function MermaidDiagram({ code, theme }: { code: string; theme: "light" |
       style={{ padding: "8px 12px 12px" }}
     >
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        {!showSource && current?.image && (
+          <button
+            type="button"
+            className="chat-markdown-chrome-action"
+            aria-pressed={actualSize}
+            onClick={() => setActualSize((value) => !value)}
+            style={{ fontSize: 12, padding: "4px 8px", borderRadius: 4 }}
+          >
+            {actualSize ? "Fit" : "Actual size"}
+          </button>
+        )}
         <button
           type="button"
           className="chat-markdown-chrome-action"
@@ -82,7 +94,11 @@ export function MermaidDiagram({ code, theme }: { code: string; theme: "light" |
           <img
             src={current.image}
             alt="Mermaid diagram"
-            style={{ display: "inline-block", maxWidth: "100%", height: "auto" }}
+            style={{
+              display: "inline-block",
+              maxWidth: actualSize ? "none" : "100%",
+              height: "auto",
+            }}
           />
         </div>
       ) : (
