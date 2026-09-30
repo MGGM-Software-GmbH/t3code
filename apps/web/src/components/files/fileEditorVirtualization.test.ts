@@ -133,12 +133,20 @@ class MeasuredFile extends VirtualizedFile {
   measure(
     rows: ReadonlyArray<readonly [lineIndex: number, height: number]>,
     contentWidth = 226.25,
+    annotations: ReadonlyArray<readonly [number, number]> = [],
   ) {
     const content = new MeasuredElement();
     content.width = contentWidth;
     content.children = rows.map(([lineIndex, height]) => {
       const row = new MeasuredElement(height);
       row.dataset.lineIndex = String(lineIndex);
+      const annotationHeight = annotations.find(
+        ([annotationLine]) => annotationLine === lineIndex,
+      )?.[1];
+      if (annotationHeight !== undefined) {
+        row.nextElementSibling = new MeasuredElement(annotationHeight);
+        row.nextElementSibling.dataset.lineAnnotation = "";
+      }
       return row;
     });
     const code = new MeasuredCodeElement();
@@ -180,6 +188,32 @@ class MeasuredFile extends VirtualizedFile {
 }
 
 const instances: MeasuredFile[] = [];
+
+describe("comment annotation layout", () => {
+  it("retains an existing comment height and removes only annotations when clearing", async () => {
+    const { instance } = await makeFixture();
+    instance.setLineAnnotations([{ lineNumber: 121 }]);
+    instance.measure([[120, 60]], 226.25, [[120, 100]]);
+    expect(instance.getLineHeight(120)).toBe(160);
+    const before = instance.getLinePosition(5000);
+    instance.setLineAnnotations([{ lineNumber: 121 }, { lineNumber: 5000 }]);
+    expect(instance.getLineHeight(120)).toBe(160);
+    expect(instance.getLinePosition(5000)?.top).toBe(before?.top);
+    instance.setLineAnnotations([]);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLinePosition(5000)?.top).toBe(before!.top - 100);
+  });
+  it("preserves measured wrapped rows when adding and removing comments", async () => {
+    const { instance } = await makeFixture();
+    const before = instance.getLinePosition(5000);
+    instance.setLineAnnotations([{ lineNumber: 5000 }]);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLinePosition(5000)?.top).toBe(before?.top);
+    instance.setLineAnnotations([]);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLinePosition(5000)?.top).toBe(before?.top);
+  });
+});
 const editors: Editor<undefined>[] = [];
 
 beforeAll(async () => {
@@ -377,12 +411,13 @@ describe("wrapped editor document changes", () => {
     expect(instance.getLinePosition(6001)).toEqual({ top: 144008, height: 24 });
   });
 
-  it("still discards all measured rows when annotations change", async () => {
+  it("preserves unrelated measured rows when annotations change after an edit", async () => {
     const { instance, file, append } = await makeFixture();
     append();
+    const before = instance.getLinePosition(6001);
     instance.setLineAnnotations([{ lineNumber: 10, metadata: undefined }]);
     instance.prepareCodeViewItem(file, 0);
-    expect(instance.getLinePosition(6001)).toEqual({ top: 120008, height: 20 });
+    expect(instance.getLinePosition(6001)).toEqual(before);
   });
 });
 
