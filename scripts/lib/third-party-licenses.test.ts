@@ -303,6 +303,29 @@ describe("third-party license generation", () => {
     );
   });
 
+  it("uses a license override without replacing the package's published notice", async () => {
+    const fixture = await createFixture();
+    await writeJson(NodePath.join(fixture.dependencyRoot, "package.json"), {
+      name: "demo-dependency",
+      version: "1.2.3",
+      main: "index.js",
+    });
+    const input = {
+      configFile: fixture.configFile,
+      packageManifests: [{ bundle: "web", path: fixture.appManifest }],
+    };
+    await expect(generateThirdPartyLicenseManifest(input)).rejects.toThrow(
+      "does not declare a distributable license",
+    );
+    await writeJson(fixture.configFile, {
+      customNotices: [],
+      packageOverrides: [{ name: "demo-dependency", version: "1.2.3", license: "MIT" }],
+    });
+    const manifest = await generateThirdPartyLicenseManifest(input);
+    expect(manifest.entries[0]?.license).toBe("MIT");
+    expect(manifest.entries[0]?.noticeText).toBe("Demo MIT license text");
+  });
+
   it("uses package overrides for notices published outside the npm archive", async () => {
     const fixture = await createFixture();
     await NodeFSP.rm(NodePath.join(fixture.dependencyRoot, "LICENSE"));
