@@ -252,7 +252,40 @@ index 101e31d39..cbf7d1f25 100644
 diff --git a/dist/components/Virtualizer.js b/dist/components/Virtualizer.js
 --- a/dist/components/Virtualizer.js
 +++ b/dist/components/Virtualizer.js
-@@ -295,6 +295,8 @@ var Virtualizer = class {
+@@ -25,6 +25,7 @@
+ 	type = "simple";
+ 	intersectionObserver;
+ 	scrollTop = 0;
++	scrollFixVersion = 0;
+ 	height = 0;
+ 	scrollHeight = 0;
+ 	windowSpecs = {
+@@ -243,13 +244,15 @@
+ 		this.visibleInstancesDirty = false;
+ 		this.renderedObservers = this.observers.size;
+ 		const anchor = this.getScrollAnchor(this.height);
++		const scrollFixVersion = this.scrollFixVersion;
+ 		const updatedInstances = /* @__PURE__ */ new Set();
+ 		for (const instance of wrapperDirty ? this.observers.values() : this.visibleInstances.values()) if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		for (const instance of this.instancesChanged) {
+ 			if (updatedInstances.has(instance)) continue;
+ 			if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		}
+-		this.scrollFix(anchor);
++		// A mapped file refresh may already have corrected scroll during onRender.
++		if (this.scrollFixVersion === scrollFixVersion) this.scrollFix(anchor);
+ 		for (const instance of updatedInstances) {
+ 			this.reconcileQueue.delete(instance);
+ 			instance.reconcileHeights();
+@@ -286,6 +289,7 @@
+ 		}
+ 	}
+ 	applyScrollFix(scrollOffset) {
++		this.scrollFixVersion++;
+ 		if (this.root == null || this.root instanceof Document) window.scrollTo({
+ 			top: window.scrollY + scrollOffset,
+ 			behavior: "instant"
+@@ -295,6 +299,8 @@
  			behavior: "instant"
  		});
  		this.markDOMDirty();
