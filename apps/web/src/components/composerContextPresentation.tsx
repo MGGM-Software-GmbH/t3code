@@ -272,6 +272,13 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
         <div className="text-secondary-label text-2xs">
           {comment.sectionTitle} · {comment.rangeLabel}
         </div>
+        {comment.sourceStatus === "removed" || comment.sourceStatus === "unresolved" ? (
+          <p className="text-xs text-muted-foreground">
+            {comment.sourceStatus === "removed"
+              ? "Source removed. This comment retains the last known snapshot."
+              : "Source changed. This comment cannot be assigned to the current lines."}
+          </p>
+        ) : null}
       </div>
       {comment.text.trim() ? <ChatMarkdown text={comment.text.trim()} cwd={undefined} /> : null}
       {comment.diff.trim() ? (
