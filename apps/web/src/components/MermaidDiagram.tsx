@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Button } from "./ui/button";
 import { mermaidMarkdown, renderMermaid } from "../lib/mermaidRendering";
 
 /** Render completed fences locally while retaining source and explicit error details. */
@@ -57,25 +58,25 @@ export function MermaidDiagram({ code, theme }: { code: string; theme: "light" |
     >
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
         {!showSource && current?.image && (
-          <button
+          <Button
             type="button"
-            className="chat-markdown-chrome-action"
+            variant="ghost-muted"
+            size="xs"
             aria-pressed={actualSize}
             onClick={() => setActualSize((value) => !value)}
-            style={{ fontSize: 12, padding: "4px 8px", borderRadius: 4 }}
           >
             {actualSize ? "Fit" : "Actual size"}
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="button"
-          className="chat-markdown-chrome-action"
+          variant="ghost-muted"
+          size="xs"
           aria-pressed={showSource}
           onClick={() => setShowSource((value) => !value)}
-          style={{ fontSize: 12, padding: "4px 8px", borderRadius: 4 }}
         >
           {showSource ? "Diagram" : "Source"}
-        </button>
+        </Button>
       </div>
       {current?.error && (
         <div
