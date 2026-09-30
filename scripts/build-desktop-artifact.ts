@@ -1327,9 +1327,8 @@ export function resolveFffNativeDependencies(
   }
 
   return Object.fromEntries(
-    architectures.flatMap((architecture) =>
-      ["gnu", "musl"].map((libc) => [`@ff-labs/fff-bin-linux-${architecture}-${libc}`, version]),
-    ),
+    // The bundled Linux Node runtime and staged install both target glibc.
+    architectures.map((architecture) => [`@ff-labs/fff-bin-linux-${architecture}-gnu`, version]),
   );
 }
 

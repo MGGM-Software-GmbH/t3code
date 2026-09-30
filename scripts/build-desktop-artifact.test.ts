@@ -775,7 +775,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "node-pty": "1.1.0",
         "@crowecawcaw/xa11y": "0.13.0",
         "@ff-labs/fff-bin-linux-x64-gnu": "0.9.4",
-        "@ff-labs/fff-bin-linux-x64-musl": "0.9.4",
       },
     );
   });
@@ -2086,11 +2085,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
     assert.deepStrictEqual(resolveFffNativeDependencies("linux", "x64", "0.9.4"), {
       "@ff-labs/fff-bin-linux-x64-gnu": "0.9.4",
-      "@ff-labs/fff-bin-linux-x64-musl": "0.9.4",
     });
     assert.deepStrictEqual(resolveFffNativeDependencies("linux", "arm64", "0.9.4"), {
       "@ff-labs/fff-bin-linux-arm64-gnu": "0.9.4",
-      "@ff-labs/fff-bin-linux-arm64-musl": "0.9.4",
     });
   });
 
