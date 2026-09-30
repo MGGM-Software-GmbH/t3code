@@ -1,4 +1,4 @@
-import { MessageCircle, Trash2 } from "lucide-react";
+import { MessageCircle, Pencil, Trash2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -21,6 +21,9 @@ interface DiffCommentAnnotationProps {
   onCancel: () => void;
   onComment: (text: string) => void;
   onDelete?: () => void;
+  onEdit?: (text: string) => void;
+  editDraft?: string | null | undefined;
+  onEditDraftChange?: (text: string | null) => void;
   placeholder?: string;
   submitLabel?: string;
   pending?: boolean;
@@ -28,7 +31,7 @@ interface DiffCommentAnnotationProps {
   focusOnMount?: boolean;
 }
 
-/** The shared inline comment treatment for file previews, thread diffs, and pull-request diffs. */
+/** Shared comment field for files, thread diffs, and pull-request diffs, with a separate editing draft. */
 export function DiffCommentAnnotation({
   kind,
   rangeLabel,
@@ -37,6 +40,9 @@ export function DiffCommentAnnotation({
   onCancel,
   onComment,
   onDelete,
+  onEdit,
+  editDraft,
+  onEditDraftChange,
   placeholder = "Add a comment…",
   submitLabel = "Comment",
   pending = false,
@@ -44,19 +50,35 @@ export function DiffCommentAnnotation({
   focusOnMount = true,
 }: DiffCommentAnnotationProps) {
   const [localDraftText, setLocalDraftText] = useState(text);
-  const displayedText = kind === "draft" && !onTextChange ? localDraftText : text;
+  const [localEditing, setLocalEditing] = useState(false);
+  const editing = onEditDraftChange ? editDraft != null : localEditing;
+  const finishEdit = () => (onEditDraftChange ? onEditDraftChange(null) : setLocalEditing(false));
+  const isForm = kind === "draft" || editing;
+  const displayedText = editing
+    ? (editDraft ?? localDraftText)
+    : kind === "draft" && !onTextChange
+      ? localDraftText
+      : text;
   const trimmedText = displayedText.trim();
-  const isForm = kind === "draft";
-  const formRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const cancel = () => (editing ? finishEdit() : onCancel());
+  const submit = () => {
+    if (editing) {
+      onEdit?.(trimmedText);
+      finishEdit();
+    } else {
+      onComment(trimmedText);
+    }
+  };
 
   useLayoutEffect(() => {
-    if (kind !== "draft" || !focusOnMount) return;
+    if (!isForm || !focusOnMount) return;
     const frame = window.requestAnimationFrame(() => {
       textareaRef.current?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [focusOnMount, kind]);
+  }, [focusOnMount, isForm]);
 
   useLayoutEffect(() => {
     const form = formRef.current;
@@ -96,7 +118,7 @@ export function DiffCommentAnnotation({
     };
   }, [isForm]);
 
-  if (kind === "comment") {
+  if (!isForm) {
     return (
       <div
         data-diff-comment-annotation
@@ -107,6 +129,22 @@ export function DiffCommentAnnotation({
       >
         <MessageCircle className="mt-0.5 size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
         <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm leading-5">{displayedText}</p>
+        {onEdit ? (
+          <span className="-my-1 flex shrink-0 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-sm:opacity-100">
+          <Button
+            variant="ghost-muted"
+            size="icon-xs"
+            aria-label="Edit comment"
+            onClick={() => {
+              setLocalDraftText(text);
+              if (onEditDraftChange) onEditDraftChange(text);
+              else setLocalEditing(true);
+            }}
+          >
+            <Pencil className="size-3" />
+          </Button>
+          </span>
+        ) : null}
         {onDelete ? (
           <span className="-my-1 -mr-1 flex shrink-0 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-sm:opacity-100">
             <Button
@@ -130,8 +168,8 @@ export function DiffCommentAnnotation({
       className="px-3 py-2 font-sans text-foreground"
       contentEditable={false}
       style={{ userSelect: "text", WebkitUserSelect: "text" }}
-      onKeyDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
     >
       <Textarea
         ref={textareaRef}
@@ -147,24 +185,28 @@ export function DiffCommentAnnotation({
         value={displayedText}
         placeholder={placeholder}
         aria-label={`Comment on lines ${rangeLabel}`}
-        onChange={(event) => (onTextChange ?? setLocalDraftText)(event.target.value)}
+        onChange={(event) =>
+          (editing
+            ? (onEditDraftChange ?? setLocalDraftText)
+            : (onTextChange ?? setLocalDraftText))(event.target.value)
+        }
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
-            onCancel();
+            cancel();
           }
           if (isCommentSubmitShortcut(event, trimmedText, pending)) {
             event.preventDefault();
-            onComment(trimmedText);
+            submit();
           }
         }}
       />
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         <span className="mr-auto text-3xs text-muted-foreground/70">⌘/Ctrl Enter to send</span>
-        <Button variant="ghost-muted" size="xs" onClick={onCancel}>
+        <Button variant="ghost-muted" size="xs" onClick={cancel}>
           Cancel
         </Button>
-        {secondaryAction ? (
+        {!editing && secondaryAction ? (
           <Button
             size="xs"
             variant="outline"
@@ -175,8 +217,8 @@ export function DiffCommentAnnotation({
             {secondaryAction.label}
           </Button>
         ) : null}
-        <Button size="xs" disabled={pending || !trimmedText} onClick={() => onComment(trimmedText)}>
-          {submitLabel}
+        <Button size="xs" disabled={pending || !trimmedText} onClick={submit}>
+          {editing ? "Save comment" : submitLabel}
         </Button>
       </div>
     </div>

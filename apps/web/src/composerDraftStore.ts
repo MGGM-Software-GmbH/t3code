@@ -674,6 +674,11 @@ interface ComposerDraftStoreState {
     threadRef: ComposerThreadTarget,
     handler: ComposerContextInsertionHandler | null,
   ) => (() => void) | undefined;
+  setReviewCommentEditDraft: (
+    threadRef: ComposerThreadTarget,
+    commentId: string,
+    text: string | null,
+  ) => void;
   setReviewComments: (
     threadRef: ComposerThreadTarget,
     comments: ReadonlyArray<ReviewCommentContext>,
@@ -3877,6 +3882,18 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               contextInsertionHandlers.delete(threadKey);
             }
           };
+        },
+        setReviewCommentEditDraft: (threadRef, commentId, text) => {
+          const comments = get().getComposerDraft(threadRef)?.reviewComments;
+          if (!comments?.some((comment) => comment.id === commentId)) return;
+          get().setReviewComments(
+            threadRef,
+            comments.map((comment) => {
+              if (comment.id !== commentId) return comment;
+              const { editDraft: _editDraft, ...saved } = comment;
+              return text === null ? saved : { ...saved, editDraft: text };
+            }),
+          );
         },
         setReviewComments: (threadRef, comments) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
