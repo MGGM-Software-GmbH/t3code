@@ -1048,6 +1048,12 @@ describe("openCodexThread", () => {
       });
       const error = yield* openCodexThread({
         client: {
+          raw: {
+            request: (method) => {
+              methods.push(method);
+              return Effect.fail(conflict);
+            },
+          },
           request: (method) => {
             methods.push(method);
             return Effect.fail(conflict);
