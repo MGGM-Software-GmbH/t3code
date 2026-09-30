@@ -167,7 +167,9 @@ export async function sendQueuedMessage(
     const reviewComments = await refreshFileReviewComments(message.reviewComments, (filePath) => {
       const workspaceRoot =
         shell?.worktreePath ??
-        (shell ? readProject({ environmentId, projectId: shell.projectId })?.workspaceRoot : undefined);
+        (shell
+          ? readProject({ environmentId, projectId: shell.projectId })?.workspaceRoot
+          : undefined);
       if (!workspaceRoot) throw new Error("Cannot refresh review comments without a workspace.");
       return readProjectFileForReview(environmentId, workspaceRoot, filePath);
     });

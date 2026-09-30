@@ -1,4 +1,4 @@
-import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
+import { parsePatchFiles } from "@pierre/diffs";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";

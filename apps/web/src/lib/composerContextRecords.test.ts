@@ -194,10 +194,13 @@ describe("composerContextRecords", () => {
         sourceAnchor: { before: "header", after: "footer" },
         sourceStatus,
       };
-      const context = decodeMessageContext({ version: 1, records: [reviewCommentContextRecord(comment)] });
+      const context = decodeMessageContext({
+        version: 1,
+        records: [reviewCommentContextRecord(comment)],
+      });
       const record = asKnownContextRecord(context.records[0]!);
-      expect(record?.type).toBe("review-comment");
-      if (record?.type !== "review-comment") throw new Error("Review context was lost");
+      expect(record?.kind).toBe("review-comment");
+      if (record?.kind !== "review-comment") throw new Error("Review context was lost");
       expect(reviewCommentFromRecord(record)).toEqual(comment);
     },
   );
