@@ -198,6 +198,55 @@ class MeasuredFile extends VirtualizedFile {
 const instances: MeasuredFile[] = [];
 
 describe("external file refresh layout", () => {
+  it("keeps a mapped refresh correction made during the outer virtualizer render", () => {
+    class ScrollElement {
+      scrollTop = 100;
+      scrollHeight = 50000;
+      clientHeight = 400;
+      getBoundingClientRect() {
+        return { top: 0, height: this.clientHeight };
+      }
+      scrollTo({ top }: { top: number }) {
+        this.scrollTop = top;
+      }
+    }
+    vi.stubGlobal("HTMLElement", ScrollElement);
+    vi.stubGlobal("Document", vi.fn());
+    const root = new ScrollElement();
+    const container = {
+      getBoundingClientRect: () => ({ top: -root.scrollTop, height: 50000 }),
+    };
+    const virtualizer = new Virtualizer();
+    const engine = virtualizer as unknown as {
+      applyScrollFix(offset: number): void;
+      computeRenderRangeAndEmit(): void;
+    };
+    // Delayed highlighting restores the mapped line inside onRender, after
+    // the outer pass has captured an interim file-only anchor.
+    const instance = {
+      onRender: () => {
+        engine.applyScrollFix(20000);
+        return true;
+      },
+      reconcileHeights: () => false,
+    };
+    Object.assign(virtualizer, {
+      root,
+      height: 400,
+      heightDirty: false,
+      scrollHeightDirty: false,
+      observers: new Map([[container, instance]]),
+      visibleInstances: new Map([[container, instance]]),
+      getScrollAnchor: () => ({
+        fileElement: container,
+        fileOffset: -100,
+        fileTypeOffset: "top",
+      }),
+    });
+    engine.computeRenderRangeAndEmit();
+    expect(root.scrollTop).toBe(20100);
+  });
+
   it.each([1, 1000])(
     "renders the mapped anchor before restoring scroll after inserting %i lines",
     (insertedCount) => {
