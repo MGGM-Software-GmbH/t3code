@@ -1670,13 +1670,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       openFile: setPreviewFileId,
       editReviewComment: (commentId: string, text: string) => {
         const store = useComposerDraftStore.getState();
-        const comment = store.getComposerDraft(composerDraftTarget)?.reviewComments.find(
-          (candidate) => candidate.id === commentId,
-        );
+        const comment = store
+          .getComposerDraft(composerDraftTarget)
+          ?.reviewComments.find((candidate) => candidate.id === commentId);
         if (comment) store.addReviewComment(composerDraftTarget, { ...comment, text });
       },
       setReviewCommentEditDraft: (commentId: string, text: string | null) =>
-        useComposerDraftStore.getState().setReviewCommentEditDraft(composerDraftTarget, commentId, text),
+        useComposerDraftStore
+          .getState()
+          .setReviewCommentEditDraft(composerDraftTarget, commentId, text),
       openMention: (path: string) => useRightPanelStore.getState().openFile(routeThreadRef, path),
       expandVideo: (fileId: string) => {
         const file = composerFiles.find((candidate) => candidate.id === fileId);
@@ -1702,7 +1704,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         openPrLink(event, url);
       },
     }),
-    [composerDraftTarget, composerFiles, composerImages, environmentId, onExpandImage, openPrLink, routeThreadRef],
+    [
+      composerDraftTarget,
+      composerFiles,
+      composerImages,
+      environmentId,
+      onExpandImage,
+      openPrLink,
+      routeThreadRef,
+    ],
   );
   const composerContextRecords = useMemo(
     () =>

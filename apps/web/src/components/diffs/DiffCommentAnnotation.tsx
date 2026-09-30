@@ -131,18 +131,18 @@ export function DiffCommentAnnotation({
         <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm leading-5">{displayedText}</p>
         {onEdit ? (
           <span className="-my-1 flex shrink-0 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-sm:opacity-100">
-          <Button
-            variant="ghost-muted"
-            size="icon-xs"
-            aria-label="Edit comment"
-            onClick={() => {
-              setLocalDraftText(text);
-              if (onEditDraftChange) onEditDraftChange(text);
-              else setLocalEditing(true);
-            }}
-          >
-            <Pencil className="size-3" />
-          </Button>
+            <Button
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label="Edit comment"
+              onClick={() => {
+                setLocalDraftText(text);
+                if (onEditDraftChange) onEditDraftChange(text);
+                else setLocalEditing(true);
+              }}
+            >
+              <Pencil className="size-3" />
+            </Button>
           </span>
         ) : null}
         {onDelete ? (

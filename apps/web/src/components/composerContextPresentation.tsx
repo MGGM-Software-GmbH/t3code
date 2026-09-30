@@ -294,10 +294,15 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
           onComment={() => {}}
           onEdit={(text) => actions.editReviewComment?.(comment.id, text)}
           {...(actions.setReviewCommentEditDraft
-            ? { onEditDraftChange: (text: string | null) => actions.setReviewCommentEditDraft?.(comment.id, text) }
+            ? {
+                onEditDraftChange: (text: string | null) =>
+                  actions.setReviewCommentEditDraft?.(comment.id, text),
+              }
             : {})}
         />
-      ) : comment.text.trim() ? <ChatMarkdown text={comment.text.trim()} cwd={undefined} /> : null}
+      ) : comment.text.trim() ? (
+        <ChatMarkdown text={comment.text.trim()} cwd={undefined} />
+      ) : null}
       {comment.diff.trim() ? (
         <div className="flex h-64 min-h-0 flex-col overflow-hidden rounded-md border border-border">
           <ReadOnlySourcePreview name="review.diff" text={comment.diff} />
