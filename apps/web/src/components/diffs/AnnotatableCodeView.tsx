@@ -264,14 +264,14 @@ export function AnnotatableCodeView({
         key={codeViewKey}
         {...(viewerRef ? { viewerRef } : {})}
         {...(className ? { className } : {})}
-      {...(unsafeCSSExtra ? { unsafeCSSExtra } : {})}
-      {...(renderHeaderMetadata
-        ? {
-            renderHeaderMetadata: (item: CodeViewItem<DiffCommentAnnotationGroup>) =>
-              item.type === "diff" ? renderHeaderMetadata(item.fileDiff) : null,
-          }
-        : {})}
-      {...(renderCodeViewFooter ? { renderCodeViewFooter } : {})}
+        {...(unsafeCSSExtra ? { unsafeCSSExtra } : {})}
+        {...(renderHeaderMetadata
+          ? {
+              renderHeaderMetadata: (item: CodeViewItem<DiffCommentAnnotationGroup>) =>
+                item.type === "diff" ? renderHeaderMetadata(item.fileDiff) : null,
+            }
+          : {})}
+        {...(renderCodeViewFooter ? { renderCodeViewFooter } : {})}
         items={items}
         selectedLines={selectedLines}
         onSelectedLinesChange={setSelectedLines}

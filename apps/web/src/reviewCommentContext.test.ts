@@ -1,5 +1,7 @@
-import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
+import { parsePatchFiles } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
+import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
+import { reviewCommentContextRecord } from "./lib/composerContextRecords";
 
 import {
   buildDiffReviewComment,
@@ -36,7 +38,12 @@ describe("file comment snapshot anchors", () => {
     expect(paths).toEqual(["example.ts"]);
     expect(updated.slice(0, 2).map((entry) => entry.rangeLabel)).toEqual(["L4", "L4"]);
     expect(updated[2]).toBe(diffComment);
-    expect(appendReviewCommentsToPrompt("Review", updated)).toContain('rangeLabel="L4"');
+    expect(
+      serializeLegacyContextMessage({
+        text: "Review",
+        records: updated.map(reviewCommentContextRecord),
+      }),
+    ).toContain('rangeLabel="L4"');
   });
 
   it("does not format stale current references when the authoritative read fails", async () => {
@@ -75,7 +82,7 @@ describe("file comment snapshot anchors", () => {
     });
     expect(comment.diff).toBe("target");
     expect(comment.rangeLabel).toBe("L3");
-    expect(formatReviewCommentContext(comment)).toContain('lineReference="current"');
+    expect(reviewCommentContextRecord(comment).sourceStatus).toBe("current");
   });
 
   it("does not attach a snapshot to replaced, deleted or ambiguous code", () => {
@@ -166,7 +173,7 @@ describe("file comment snapshot anchors", () => {
       diff: "target",
       text: "Keep this",
     });
-    expect(formatReviewCommentContext(moved!)).toContain('lineReference="current"');
+    expect(reviewCommentContextRecord(moved!).sourceStatus).toBe("current");
     const [restored] = remapFileReviewComments(next, contents, [moved!]);
     expect(restored).toMatchObject({ rangeLabel: "L3", diff: "target" });
   });
