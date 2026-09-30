@@ -19,7 +19,9 @@ import {
 import { newMessageId } from "../../lib/utils";
 import { latestCompletedToolActivityId, useQueuedMessageStore } from "../../queuedMessageStore";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
-import { readThread, readThreadShell } from "../../state/entities";
+import { readProject, readThread, readThreadShell } from "../../state/entities";
+import { refreshFileReviewComments } from "../../reviewCommentContext";
+import { readProjectFileForReview } from "../files/projectFilesQueryState";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import {
@@ -162,11 +164,18 @@ export async function sendQueuedMessage(
 
     // Stop hands a preparing message back to the composer. Past this point
     // the send can no longer be taken back.
+    const reviewComments = await refreshFileReviewComments(message.reviewComments, (filePath) => {
+      const workspaceRoot =
+        shell?.worktreePath ??
+        (shell ? readProject({ environmentId, projectId: shell.projectId })?.workspaceRoot : undefined);
+      if (!workspaceRoot) throw new Error("Cannot refresh review comments without a workspace.");
+      return readProjectFileForReview(environmentId, workspaceRoot, filePath);
+    });
     const thread = readThread(threadRef) ?? undefined;
     if (!queue.markDispatching(threadKey, message.id, createLocalDispatchSnapshot(thread))) return;
     const context = buildMessageContext({
       terminalContexts: sendableTerminalContexts,
-      reviewComments: message.reviewComments,
+      reviewComments,
       previewAnnotations: message.previewAnnotations,
       attachments: attachments.map((attachment, index) => ({
         attachment,

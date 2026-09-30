@@ -262,6 +262,9 @@ function reviewRecord(
     text: rawBody.slice(0, fence?.index ?? rawBody.length).trim(),
     diff: fence?.[3] ?? "",
     fenceLanguage: fence?.[2]?.trim() || "diff",
+    ...(["current", "removed", "unresolved"].includes(attributes.sourceStatus ?? "")
+      ? { sourceStatus: attributes.sourceStatus as "current" | "removed" | "unresolved" }
+      : {}),
   };
 }
 

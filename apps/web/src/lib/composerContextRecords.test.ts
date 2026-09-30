@@ -178,6 +178,30 @@ describe("composerContextRecords", () => {
     expect(reviewCommentContextRecord(reviewCommentFromRecord(record))).toEqual(record);
   });
 
+  it.each(["current", "removed", "unresolved"] as const)(
+    "preserves review anchors and %s status through the wire schema and import",
+    (sourceStatus) => {
+      const comment = {
+        id: "review-comment_snapshot",
+        sectionId: "file:a.ts",
+        sectionTitle: "File",
+        filePath: "a.ts",
+        startIndex: 1,
+        endIndex: 1,
+        rangeLabel: "L2",
+        text: "Keep this context",
+        diff: "const value = 1;",
+        sourceAnchor: { before: "header", after: "footer" },
+        sourceStatus,
+      };
+      const context = decodeMessageContext({ version: 1, records: [reviewCommentContextRecord(comment)] });
+      const record = asKnownContextRecord(context.records[0]!);
+      expect(record?.type).toBe("review-comment");
+      if (record?.type !== "review-comment") throw new Error("Review context was lost");
+      expect(reviewCommentFromRecord(record)).toEqual(comment);
+    },
+  );
+
   it.each(["x", "preview-annotation_x"])(
     "preserves canonical annotation IDs across imports: %s",
     (id) => {

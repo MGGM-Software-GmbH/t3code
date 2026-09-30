@@ -147,6 +147,7 @@ function renderReviewComment(record: ComposerContextRecord): string {
     `rangeLabel="${escapeAttribute(record.rangeLabel)}"`,
     `startIndex="${record.startIndex}"`,
     `endIndex="${record.endIndex}"`,
+    ...(record.sourceStatus ? [`sourceStatus="${record.sourceStatus}"`] : []),
   ].join(" ");
   // The fence must be longer than any run of backticks inside the diff so the body stays intact.
   const longestRun = Math.max(
