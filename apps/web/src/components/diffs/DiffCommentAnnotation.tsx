@@ -43,9 +43,11 @@ export function DiffCommentAnnotation({
   secondaryAction,
   focusOnMount = true,
 }: DiffCommentAnnotationProps) {
-  const [localDraftText, setLocalDraftText] = useState("");
+  const [localDraftText, setLocalDraftText] = useState(text);
   const displayedText = kind === "draft" && !onTextChange ? localDraftText : text;
   const trimmedText = displayedText.trim();
+  const isForm = kind === "draft";
+  const formRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useLayoutEffect(() => {
@@ -56,12 +58,51 @@ export function DiffCommentAnnotation({
     return () => window.cancelAnimationFrame(frame);
   }, [focusOnMount, kind]);
 
+  useLayoutEffect(() => {
+    const form = formRef.current;
+    const textarea = textareaRef.current;
+    if (!isForm || !form || !textarea) return;
+    let viewport = form.parentElement;
+    while (viewport && !/(auto|scroll)/.test(getComputedStyle(viewport).overflowY)) {
+      viewport = viewport.parentElement;
+    }
+    if (!viewport) return;
+    const scrollContainer = viewport;
+    let frame: number | undefined;
+    const keepFormVisible = () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        const availableHeight = scrollContainer.clientHeight;
+        const controlsHeight = form.offsetHeight - textarea.offsetHeight;
+        textarea.style.maxHeight = `${Math.max(48, Math.min(240, availableHeight - controlsHeight - 16))}px`;
+        // Keep only the active form in view; do not scroll while another comment is being read.
+        if (!form.contains(document.activeElement)) return;
+        const bounds = form.getBoundingClientRect();
+        const viewportBounds = scrollContainer.getBoundingClientRect();
+        const bottom = viewportBounds.top + scrollContainer.clientTop + availableHeight;
+        if (bounds.bottom > bottom) scrollContainer.scrollTop += bounds.bottom - bottom;
+        else if (bounds.top < viewportBounds.top)
+          scrollContainer.scrollTop += bounds.top - viewportBounds.top;
+      });
+    };
+    const observer = new ResizeObserver(keepFormVisible);
+    observer.observe(form);
+    observer.observe(scrollContainer);
+    keepFormVisible();
+    return () => {
+      observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+    };
+  }, [isForm]);
+
   if (kind === "comment") {
     return (
       <div
         data-diff-comment-annotation
         className="group/comment flex min-w-0 items-start gap-2.5 border-s-2 border-primary/55 bg-primary/[0.045] px-3 py-2.5 font-sans text-foreground"
         contentEditable={false}
+        style={{ userSelect: "text", WebkitUserSelect: "text" }}
         onPointerDown={(event) => event.stopPropagation()}
       >
         <MessageCircle className="mt-0.5 size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
@@ -84,23 +125,29 @@ export function DiffCommentAnnotation({
 
   return (
     <div
+      ref={formRef}
       data-diff-comment-annotation
       className="px-3 py-2 font-sans text-foreground"
       contentEditable={false}
+      style={{ userSelect: "text", WebkitUserSelect: "text" }}
+      onKeyDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <Textarea
         ref={textareaRef}
-        autoFocus={focusOnMount}
+        style={{
+          caretColor: "auto",
+          userSelect: "text",
+          WebkitUserSelect: "text",
+          maxHeight: 240,
+          overflowY: "auto",
+          resize: "none",
+        }}
         size="sm"
         value={displayedText}
         placeholder={placeholder}
         aria-label={`Comment on lines ${rangeLabel}`}
         onChange={(event) => (onTextChange ?? setLocalDraftText)(event.target.value)}
-        onFocus={(event) => {
-          const end = event.currentTarget.value.length;
-          event.currentTarget.setSelectionRange(end, end);
-        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -112,7 +159,7 @@ export function DiffCommentAnnotation({
           }
         }}
       />
-      <div className="mt-1.5 flex items-center gap-1">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
         <span className="mr-auto text-3xs text-muted-foreground/70">⌘/Ctrl Enter to send</span>
         <Button variant="ghost-muted" size="xs" onClick={onCancel}>
           Cancel
