@@ -1,5 +1,6 @@
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { useAtomValue } from "@effect/atom-react";
+import { MermaidDiagram } from "./MermaidDiagram";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextClipboardHtml,
@@ -3289,27 +3290,31 @@ const CHAT_MARKDOWN_COMPONENTS = {
         }
         isStreaming={isStreaming}
       >
-        <RenderErrorBoundary
-          resetKeys={[codeBlock.code, language, diffThemeName, isStreaming]}
-          fallback={<pre {...props}>{children}</pre>}
-        >
-          {/* Reserve the block's height but stay hidden until Shiki has colored
-              it, so plain text never flashes before the highlighted version. */}
-          <Suspense
-            fallback={
-              <pre {...props} className="invisible" aria-hidden>
-                {children}
-              </pre>
-            }
+        {language === "mermaid" && !isStreaming ? (
+          <MermaidDiagram code={codeBlock.code} theme={resolvedTheme} />
+        ) : (
+          <RenderErrorBoundary
+            resetKeys={[codeBlock.code, language, diffThemeName, isStreaming]}
+            fallback={<pre {...props}>{children}</pre>}
           >
-            <SuspenseShikiCodeBlock
-              className={codeBlock.className}
-              code={codeBlock.code}
-              themeName={diffThemeName}
-              isStreaming={isStreaming}
-            />
-          </Suspense>
-        </RenderErrorBoundary>
+            {/* Reserve the block's height but stay hidden until Shiki has colored
+              it, so plain text never flashes before the highlighted version. */}
+            <Suspense
+              fallback={
+                <pre {...props} className="invisible" aria-hidden>
+                  {children}
+                </pre>
+              }
+            >
+              <SuspenseShikiCodeBlock
+                className={codeBlock.className}
+                code={codeBlock.code}
+                themeName={diffThemeName}
+                isStreaming={isStreaming}
+              />
+            </Suspense>
+          </RenderErrorBoundary>
+        )}
       </MarkdownCodeBlock>
     );
   },

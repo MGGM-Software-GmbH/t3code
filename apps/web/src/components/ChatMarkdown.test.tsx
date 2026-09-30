@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { GitHubIcon } from "./Icons";
 import { Button } from "./ui/button";
+import { MermaidDiagram } from "./MermaidDiagram";
 import { setMarkdownTaskChecked } from "./files/filePreviewMode";
 
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
@@ -136,6 +137,45 @@ describe("ChatMarkdown context references", () => {
       await act(async () => {
         renderer?.unmount();
       });
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("ChatMarkdown Mermaid fences", () => {
+  it("renders completed diagrams, retains copy, and leaves streaming or ordinary code as source", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let renderer: ReactTestRenderer | undefined;
+    const text = "```mermaid\ngraph TD;A-->B\n```";
+    try {
+      await act(async () => {
+        renderer = create(<ChatMarkdown cwd="/tmp/project" text={text} isStreaming />);
+      });
+      expect(renderer!.root.findAllByType(MermaidDiagram)).toHaveLength(0);
+      await act(async () => {
+        renderer!.update(<ChatMarkdown cwd="/tmp/project" text={text} />);
+      });
+      expect(renderer!.root.findAllByType(MermaidDiagram)).toHaveLength(1);
+      expect(codeButton(renderer!, "Copy code")).toBeDefined();
+      const sourceButton = renderer!.root
+        .findAllByType("button")
+        .find((button) => button.children.includes("Source"));
+      await act(async () => {
+        sourceButton!.props.onClick();
+      });
+      expect(
+        renderer!.root
+          .findAllByType("code")
+          .some((code) => code.children.join("").includes("graph TD;A-->B")),
+      ).toBe(true);
+      await act(async () => {
+        renderer!.update(
+          <ChatMarkdown cwd="/tmp/project" text={"```text\nordinary code\n```"} isStreaming />,
+        );
+      });
+      expect(renderer!.root.findAllByType(MermaidDiagram)).toHaveLength(0);
+    } finally {
+      await act(async () => renderer?.unmount());
       vi.unstubAllGlobals();
     }
   });
