@@ -197,7 +197,7 @@ describe("CodexSessionRuntime collab integration", () => {
         const first = yield* runtime.sendTurn({ input: "keep working" });
         const followUp = runtime.sendTurn({
           input: "change direction",
-          attachments: [{ type: "image", url: "data:image/png;base64,c3RlZXI=" }],
+          attachments: [{ type: "localImage", path: "/tmp/steer.png" }],
         });
         if (outcome === "accepted") {
           const steered = yield* followUp;
@@ -221,7 +221,7 @@ describe("CodexSessionRuntime collab integration", () => {
           expectedTurnId: first.turnId,
           input: [
             { type: "text", text: "change direction" },
-            { type: "image", url: "data:image/png;base64,c3RlZXI=" },
+            { type: "localImage", path: "/tmp/steer.png" },
           ],
         });
         assert.equal((yield* runtime.getSession).activeTurnId, first.turnId);
