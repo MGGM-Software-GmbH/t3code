@@ -56,7 +56,9 @@ export function MermaidDiagram({ code, theme }: { code: string; theme: "light" |
       data-markdown-copy={mermaidMarkdown(code)}
       style={{ padding: "8px 12px 12px" }}
     >
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+      <div
+        style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", marginBottom: 8 }}
+      >
         {!showSource && current?.image && (
           <Button
             type="button"
