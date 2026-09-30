@@ -1059,6 +1059,203 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+const switchSource = makeFakeCodexAdapter();
+const switchTarget = makeFakeCodexAdapter();
+const switchTargetId = ProviderInstanceId.make("codex-switch-target");
+const switchRegistry = makeStaticInstanceRegistry([
+  [codexInstanceId, switchSource.adapter],
+  [switchTargetId, switchTarget.adapter],
+]);
+const switchRouting = makeProviderServiceLayer({
+  registry: {
+    ...switchRegistry,
+    getInstanceInfo: (instanceId) =>
+      switchRegistry.getInstanceInfo(instanceId).pipe(
+        Effect.map((info) => ({
+          ...info,
+          continuationIdentity: { ...info.continuationIdentity, continuationKey: "codex:shared" },
+        })),
+      ),
+  },
+});
+
+switchRouting.layer("ProviderServiceLive compatible instance switching", (it) => {
+  it.effect("keeps the old writer when the destination workspace is missing", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-writer-missing-workspace");
+      yield* provider.startSession(threadId, {
+        threadId,
+        providerInstanceId: codexInstanceId,
+        runtimeMode: "full-access",
+      });
+      const failure = yield* provider
+        .startSession(threadId, {
+          threadId,
+          providerInstanceId: switchTargetId,
+          runtimeMode: "full-access",
+          cwd: NodePath.join(fixtureCwd("writer-workspace"), "missing"),
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(failure, ProviderWorkspaceMissingError);
+      assert.equal(yield* switchSource.adapter.hasSession(threadId), true);
+      assert.equal(yield* switchTarget.adapter.hasSession(threadId), false);
+    }),
+  );
+
+  it.effect(
+    "releases the previous writer before resuming and preserves identity on switch back",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("thread-writer-switch");
+        const sourceSession = yield* provider.startSession(threadId, {
+          threadId,
+          providerInstanceId: codexInstanceId,
+          runtimeMode: "full-access",
+          resumeCursor: { threadId: "native-writer-switch" },
+        });
+        const stopStarted = yield* Deferred.make<void>();
+        const releaseStop = yield* Deferred.make<void>();
+        const originalStop = switchSource.stopSession.getMockImplementation()!;
+        switchSource.stopSession.mockImplementationOnce((stoppedThreadId) =>
+          Deferred.succeed(stopStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseStop)),
+            Effect.andThen(originalStop(stoppedThreadId)),
+          ),
+        );
+        const originalStart = switchTarget.startSession.getMockImplementation()!;
+        switchTarget.startSession.mockImplementationOnce((input) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(stopStarted, undefined);
+            assert.equal(yield* switchSource.adapter.hasSession(threadId), false);
+            return yield* originalStart(input);
+          }),
+        );
+        const switching = yield* provider
+          .startSession(threadId, {
+            threadId,
+            providerInstanceId: switchTargetId,
+            runtimeMode: "full-access",
+            resumeCursor: sourceSession.resumeCursor,
+          })
+          .pipe(Effect.forkChild);
+        // The old writer remains owned until shutdown has actually completed.
+        yield* Deferred.await(stopStarted);
+        assert.equal(yield* switchTarget.adapter.hasSession(threadId), false);
+        yield* Deferred.succeed(releaseStop, undefined);
+        const targetSession = yield* Fiber.join(switching);
+        assert.deepEqual(targetSession.resumeCursor, sourceSession.resumeCursor);
+        const restored = yield* provider.startSession(threadId, {
+          threadId,
+          providerInstanceId: codexInstanceId,
+          runtimeMode: "full-access",
+        });
+        assert.deepEqual(restored.resumeCursor, sourceSession.resumeCursor);
+        assert.equal(yield* switchTarget.adapter.hasSession(threadId), false);
+      }),
+  );
+
+  it.effect("keeps the source binding and does not start a replacement when shutdown fails", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const threadId = asThreadId("thread-writer-stop-failed");
+      const source = yield* provider.startSession(threadId, {
+        threadId,
+        providerInstanceId: codexInstanceId,
+        runtimeMode: "full-access",
+      });
+      const failure = new ProviderAdapterRequestError({
+        provider: CODEX_DRIVER,
+        method: "stopSession",
+        detail: "Writer shutdown failed",
+      });
+      switchSource.stopSession.mockImplementationOnce(() => Effect.fail(failure));
+      const result = yield* provider
+        .startSession(threadId, {
+          threadId,
+          providerInstanceId: switchTargetId,
+          runtimeMode: "full-access",
+          resumeCursor: source.resumeCursor,
+        })
+        .pipe(Effect.exit);
+      assert.equal(Exit.isFailure(result), true);
+      assert.equal(yield* switchSource.adapter.hasSession(threadId), true);
+      assert.equal(yield* switchTarget.adapter.hasSession(threadId), false);
+      const binding = Option.getOrThrow(yield* directory.getBinding(threadId));
+      assert.equal(binding.providerInstanceId, codexInstanceId);
+      assert.deepEqual(binding.resumeCursor, source.resumeCursor);
+    }),
+  );
+
+  it.effect("resumes the saved conversation when retrying a failed replacement", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const threadId = asThreadId("thread-writer-start-failed");
+      const source = yield* provider.startSession(threadId, {
+        threadId,
+        providerInstanceId: codexInstanceId,
+        runtimeMode: "full-access",
+        resumeCursor: { threadId: "native-retry" },
+      });
+      switchTarget.startSession.mockImplementationOnce(() => Effect.die("Replacement failed"));
+      const result = yield* provider
+        .startSession(threadId, {
+          threadId,
+          providerInstanceId: switchTargetId,
+          runtimeMode: "full-access",
+          resumeCursor: source.resumeCursor,
+        })
+        .pipe(Effect.exit);
+      assert.equal(Exit.isFailure(result), true);
+      assert.equal(yield* switchSource.adapter.hasSession(threadId), false);
+      assert.equal(
+        Option.getOrThrow(yield* directory.getBinding(threadId)).providerInstanceId,
+        codexInstanceId,
+      );
+      const resumed = yield* provider.startSession(threadId, {
+        threadId,
+        providerInstanceId: switchTargetId,
+        runtimeMode: "full-access",
+      });
+      assert.deepEqual(resumed.resumeCursor, source.resumeCursor);
+    }),
+  );
+});
+
+const incompatibleSource = makeFakeCodexAdapter();
+const incompatibleTarget = makeFakeCodexAdapter();
+makeProviderServiceLayer({
+  registry: makeStaticInstanceRegistry([
+    [codexInstanceId, incompatibleSource.adapter],
+    [switchTargetId, incompatibleTarget.adapter],
+  ]),
+}).layer("ProviderServiceLive incompatible instance switching", (it) => {
+  it.effect("rejects incompatible resume stores before releasing the old writer", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-writer-incompatible");
+      yield* provider.startSession(threadId, {
+        threadId,
+        providerInstanceId: codexInstanceId,
+        runtimeMode: "full-access",
+      });
+      const failure = yield* provider
+        .startSession(threadId, {
+          threadId,
+          providerInstanceId: switchTargetId,
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.equal(yield* incompatibleSource.adapter.hasSession(threadId), true);
+      assert.equal(yield* incompatibleTarget.adapter.hasSession(threadId), false);
+    }),
+  );
+});
+
 const routing = makeProviderServiceLayer();
 
 const customCompactionDriver = ProviderDriverKind.make("custom-compaction-provider");

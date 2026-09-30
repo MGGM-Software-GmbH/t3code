@@ -2759,11 +2759,26 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     if (session.stopped) {
       return;
     }
-    session.stopped = true;
-    sessions.delete(session.threadId);
-    yield* session.runtime.close.pipe(Effect.ignore);
-    yield* Effect.ignore(Scope.close(session.scope, Exit.void));
-    yield* Fiber.interrupt(session.eventFiber).pipe(Effect.ignore);
+    // Keep the session reachable until its writer is released, including on failure.
+    yield* Effect.gen(function* () {
+      yield* session.runtime.close;
+      yield* Scope.close(session.scope, Exit.void);
+      yield* Fiber.interrupt(session.eventFiber);
+      session.stopped = true;
+      sessions.delete(session.threadId);
+    }).pipe(
+      Effect.uninterruptible,
+      Effect.catchCause((cause) =>
+        Effect.fail(
+          new ProviderAdapterProcessError({
+            provider: PROVIDER,
+            threadId: session.threadId,
+            detail: "Failed to stop the Codex session and release its writer.",
+            cause,
+          }),
+        ),
+      ),
+    );
   });
 
   const stopSession: CodexAdapterShape["stopSession"] = (threadId) =>

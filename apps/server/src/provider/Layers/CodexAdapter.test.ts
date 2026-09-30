@@ -2653,6 +2653,23 @@ const scopedLifecycleLayer = it.layer(
 );
 
 scopedLifecycleLayer("CodexAdapterLive scoped lifecycle", (it) => {
+  it.effect("retains the session when shutdown fails so a retry can release the writer", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("thread-stop-retry");
+      yield* adapter.startSession({ threadId, runtimeMode: "full-access" });
+      const runtime = scopedLifecycleRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      runtime.closeImpl.mockRejectedValueOnce(new Error("Writer shutdown failed"));
+      const result = yield* adapter.stopSession(threadId).pipe(Effect.exit);
+      NodeAssert.equal(Exit.isFailure(result), true);
+      NodeAssert.equal(yield* adapter.hasSession(threadId), true);
+      yield* adapter.stopSession(threadId);
+      NodeAssert.equal(runtime.closeImpl.mock.calls.length, 2);
+      NodeAssert.equal(yield* adapter.hasSession(threadId), false);
+    }),
+  );
+
   it.effect("closes the externally owned session scope on stopSession", () =>
     Effect.gen(function* () {
       scopedLifecycleRuntimeFactory.releasedThreadIds.length = 0;
