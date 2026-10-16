@@ -6,6 +6,7 @@
  * with a default instance also runs at `defaultInstanceIdForDriver(kind)`
  * when that slot has no entry, using the driver's default config, so a fresh
  * install shows its built-in providers without writing settings first.
+ * Shipped ACP presets fill their own instance slots before driver defaults.
  *
  * Hot-reload
  * ----------
@@ -24,6 +25,7 @@
  * @module provider/ProviderInstanceRegistryHydration
  */
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   defaultInstanceIdForDriver,
   providerInstanceConfigEnabledFlag,
   resolveProviderInstanceEnabled,
@@ -60,14 +62,17 @@ type ProviderInstanceRegistryHydrationEnv =
   | ServerConfig.ServerConfig;
 
 /**
- * Explicit `providerInstances` entries plus an implicit default instance for
- * each built-in driver whose default slot is empty. Pure so the hydration
+ * Explicit `providerInstances` entries plus shipped presets and an implicit
+ * default instance for each built-in driver whose default slot is empty. Pure so the hydration
  * rule can be tested without layers.
  */
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
 ): ProviderInstanceConfigMap => {
-  const merged: Record<string, ProviderInstanceConfig> = { ...settings.providerInstances };
+  const merged: Record<string, ProviderInstanceConfig> = {
+    ...DEFAULT_PROVIDER_INSTANCE_CONFIGS,
+    ...settings.providerInstances,
+  };
 
   for (const driver of BUILT_IN_DRIVERS) {
     if (driver.metadata.hasDefaultInstance === false) continue;

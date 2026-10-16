@@ -17,6 +17,51 @@ function settingsWith(overrides: Partial<ServerSettings>): ServerSettings {
 }
 
 describe("deriveProviderInstanceConfigMap", () => {
+  const copilotId = ProviderInstanceId.make("githubCopilot");
+
+  it("ships GitHub Copilot without requiring a configured ACP instance", () => {
+    const merged = deriveProviderInstanceConfigMap(settingsWith({ providerInstances: {} }));
+
+    expect(merged[copilotId]).toEqual({
+      driver: "acpRegistry",
+      displayName: "GitHub Copilot",
+      enabled: true,
+      config: { source: "registry", agentId: "github-copilot-cli" },
+    });
+    expect(merged[ProviderInstanceId.make("acpRegistry")]).toBeUndefined();
+  });
+
+  it("preserves a disabled or customized shipped instance", () => {
+    const settings = settingsWith({
+      providerInstances: {
+        [copilotId]: {
+          driver: ProviderDriverKind.make("acpRegistry"),
+          enabled: false,
+          displayName: "Work Copilot",
+          config: { source: "local", commandPath: "/opt/copilot", commandArgs: ["--acp"] },
+        },
+      },
+    });
+
+    expect(deriveProviderInstanceConfigMap(settings)[copilotId]).toBe(
+      settings.providerInstances[copilotId],
+    );
+  });
+
+  it("probes a disabled shipped instance when a project enables it", () => {
+    const settings = settingsWith({
+      providerInstances: {
+        [copilotId]: { driver: ProviderDriverKind.make("acpRegistry"), enabled: false },
+      },
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [copilotId]: { enabled: true } } },
+      },
+    });
+
+    expect(deriveProviderInstanceConfigMap(settings)[copilotId]?.enabled).toBe(true);
+    expect(settings.providerInstances[copilotId]?.enabled).toBe(false);
+  });
+
   it("turns a machine-disabled instance on when a project enables it", () => {
     const settings = settingsWith({
       providerInstances: {

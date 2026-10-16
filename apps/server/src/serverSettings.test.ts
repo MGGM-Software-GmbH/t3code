@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
   ProjectId,
@@ -1057,6 +1058,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const settings = yield* serverSettings.getSettings;
 
       assert.deepEqual(settings.providerInstances, {
+        ...DEFAULT_PROVIDER_INSTANCE_CONFIGS,
         [ProviderInstanceId.make("codex")]: {
           driver: ProviderDriverKind.make("codex"),
           config: { binaryPath: "/opt/guard/bin/codex" },
@@ -1171,7 +1173,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       const settings = yield* serverSettings.getSettings;
 
-      assert.deepEqual(settings.providerInstances, {});
+      assert.deepEqual(settings.providerInstances, DEFAULT_PROVIDER_INSTANCE_CONFIGS);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
@@ -1234,6 +1236,79 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const persisted = JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath));
       assert.isUndefined(persisted.providers);
       assert.isUndefined(persisted.providerInstances.grok.enabled);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("loads the shipped Copilot provider in fresh server settings", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const settings = yield* service.getSettings;
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("githubCopilot")], {
+        driver: ProviderDriverKind.make("acpRegistry"),
+        displayName: "GitHub Copilot",
+        enabled: true,
+        config: { source: "registry", agentId: "github-copilot-cli" },
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("keeps an explicit Copilot disable and executable configuration on load", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const instance = {
+        driver: ProviderDriverKind.make("acpRegistry"),
+        enabled: false,
+        displayName: "Work Copilot",
+        config: { source: "local", commandPath: "/opt/copilot", commandArgs: ["--acp"] },
+      };
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        JSON.stringify({ providerInstances: { githubCopilot: instance } }),
+      );
+
+      const settings = yield* service.getSettings;
+      assert.deepEqual(
+        settings.providerInstances[ProviderInstanceId.make("githubCopilot")],
+        instance,
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("resets only the shipped Copilot instance when its overrides are removed", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const copilotId = ProviderInstanceId.make("githubCopilot");
+      const customId = ProviderInstanceId.make("custom_agent");
+      const custom = { driver: ProviderDriverKind.make("acpRegistry"), enabled: false };
+      yield* service.updateSettings({
+        providerInstances: {
+          [copilotId]: { driver: ProviderDriverKind.make("acpRegistry"), enabled: false },
+          [customId]: custom,
+        },
+      });
+      const disabled = yield* service.getSettings;
+      assert.isFalse(disabled.providerInstances[copilotId]?.enabled);
+      const persisted = JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath));
+      assert.deepEqual(persisted.providerInstances.githubCopilot, {
+        driver: "acpRegistry",
+        enabled: false,
+      });
+
+      const reset = yield* service.updateProviderInstance({
+        operation: "remove",
+        instanceId: copilotId,
+      });
+      assert.deepEqual(
+        reset.providerInstances[copilotId],
+        DEFAULT_PROVIDER_INSTANCE_CONFIGS[copilotId],
+      );
+      assert.deepEqual(reset.providerInstances[customId], custom);
+      const resetFile = JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath));
+      assert.isUndefined(resetFile.providerInstances.githubCopilot);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 

@@ -1098,6 +1098,37 @@ describe("resolveProjectProviderInstanceEnabled", () => {
   const projectId = "project-a" as ProjectId;
   const instanceId = ProviderInstanceId.make("codex_work");
 
+  it("enables the shipped Copilot instance unless settings explicitly disable it", () => {
+    const copilotId = ProviderInstanceId.make("githubCopilot");
+    expect(resolveProjectProviderInstanceEnabled(DEFAULT_SERVER_SETTINGS, null, copilotId)).toBe(
+      true,
+    );
+    expect(
+      resolveProjectProviderInstanceEnabled(
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [copilotId]: { driver: ProviderDriverKind.make("acpRegistry"), enabled: false },
+          },
+        },
+        null,
+        copilotId,
+      ),
+    ).toBe(false);
+    expect(
+      resolveProjectProviderInstanceEnabled(
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          projectSettingsOverrides: {
+            [projectId]: { providerInstances: { [copilotId]: { enabled: false } } },
+          },
+        },
+        projectId,
+        copilotId,
+      ),
+    ).toBe(false);
+  });
+
   it("inherits the machine value when the project has no override", () => {
     const settings: ServerSettings = {
       ...DEFAULT_SERVER_SETTINGS,

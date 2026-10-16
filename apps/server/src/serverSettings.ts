@@ -11,6 +11,7 @@
  * @module ServerSettings
  */
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
   ProjectId,
@@ -85,12 +86,18 @@ const textDecoder = new TextDecoder();
  * explicit provider instances carry exactly one enabled flag. Old settings
  * files can hold both flags with conflicting values; an explicit false on
  * either side wins so a user's disable is never silently undone. Runs on
- * every load and update — the file converges on the next write.
+ * every load and update — the file converges on the next write. Shipped
+ * provider presets fill empty slots without replacing explicit user settings.
  */
 const foldProviderInstanceEnabledFlags = (settings: ServerSettings): ServerSettings => {
-  let changed = false;
+  let changed = Object.keys(DEFAULT_PROVIDER_INSTANCE_CONFIGS).some(
+    (instanceId) => !Object.hasOwn(settings.providerInstances, instanceId),
+  );
   const providerInstances: Record<string, ProviderInstanceConfig> = {};
-  for (const [instanceId, instance] of Object.entries(settings.providerInstances)) {
+  for (const [instanceId, instance] of Object.entries({
+    ...DEFAULT_PROVIDER_INSTANCE_CONFIGS,
+    ...settings.providerInstances,
+  })) {
     const config = instance.config;
     // Only fold boolean flags: a malformed `enabled` (e.g. `"false"`) must
     // stay in the blob so driver schema validation flags it instead of the
@@ -662,8 +669,20 @@ const make = Effect.gen(function* () {
 
   const writeSettingsAtomically = Effect.fnUntraced(
     function* (settings: ServerSettings) {
+      // Drop unchanged presets as whole entries. Stripping individual fields
+      // would leave an explicit override without its required driver/config.
+      const providerInstances = Object.fromEntries(
+        Object.entries(settings.providerInstances).filter(
+          ([instanceId, instance]) =>
+            !Equal.equals(
+              instance,
+              DEFAULT_PROVIDER_INSTANCE_CONFIGS[instanceId as ProviderInstanceId],
+            ),
+        ),
+      );
       const sparseSettingsJson = yield* encodeServerSettingsJson(
-        stripDefaultServerSettings(settings, DEFAULT_SERVER_SETTINGS) ?? {},
+        stripDefaultServerSettings({ ...settings, providerInstances }, DEFAULT_SERVER_SETTINGS) ??
+          {},
       );
 
       return yield* writeFileStringAtomically({

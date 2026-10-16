@@ -14,6 +14,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   defaultInstanceIdForDriver,
   type EnvironmentId,
   type AcpRegistryUrlAuthAction,
@@ -49,6 +50,7 @@ import {
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
+import { isDefaultProviderInstance } from "../../providerInstances";
 import {
   useEnvironments,
   usePrimaryEnvironmentId,
@@ -805,7 +807,14 @@ export function EnvironmentProviderSettings({
     }
     for (const [id, instance] of instancesByDriver.get(providerSettings.provider) ?? []) {
       if (id === defaultInstanceId) continue;
-      rows.push({ instanceId: id, instance, driver: instance.driver, isDefault: false });
+      const isDefault = isDefaultProviderInstance(id, instance.driver);
+      rows.push({
+        instanceId: id,
+        instance,
+        driver: instance.driver,
+        isDefault,
+        isDirty: isDefault && !Equal.equals(instance, DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]),
+      });
     }
   }
   for (const [driver, list] of instancesByDriver) {
@@ -815,7 +824,12 @@ export function EnvironmentProviderSettings({
         instanceId: id,
         instance,
         driver: instance.driver,
-        isDefault: defaultSlotIdsBySource.has(String(id)),
+        isDefault:
+          defaultSlotIdsBySource.has(String(id)) ||
+          DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]?.driver === instance.driver,
+        isDirty:
+          DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]?.driver === instance.driver &&
+          !Equal.equals(instance, DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]),
       });
     }
   }
@@ -894,10 +908,10 @@ export function EnvironmentProviderSettings({
     }
   };
 
-  const resetDefaultInstance = async (driverKind: ProviderDriverKind) => {
+  const resetDefaultInstance = async (instanceId: ProviderInstanceId) => {
     const result = await persistProviderInstance({
       operation: "remove",
-      instanceId: defaultInstanceIdForDriver(driverKind),
+      instanceId,
     });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
@@ -1070,7 +1084,7 @@ export function EnvironmentProviderSettings({
           mode === "editor" && row.isDefault && row.isDirty ? (
             <SettingResetButton
               label={`${resetLabel} provider settings`}
-              onClick={() => resetDefaultInstance(row.driver)}
+              onClick={() => resetDefaultInstance(row.instanceId)}
             />
           ) : null
         }

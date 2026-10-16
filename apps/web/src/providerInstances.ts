@@ -13,6 +13,7 @@
  * @module providerInstances
  */
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   resolveProjectProviderInstanceEnabled,
@@ -63,8 +64,8 @@ export interface ProviderInstanceEntry {
   readonly installed: boolean;
   readonly status: ServerProviderState;
   /**
-   * True when this entry is the default instance for its driver kind —
-   * i.e. its instance id equals `defaultInstanceIdForDriver(driverKind)`.
+   * True for a shipped preset or the default instance for its driver kind,
+   * whose instance id equals `defaultInstanceIdForDriver(driverKind)`.
    * The settings panel and picker sort defaults before customs.
    */
   readonly isDefault: boolean;
@@ -75,6 +76,17 @@ export interface ProviderInstanceEntry {
 }
 
 export type ProviderCatalogAvailability = "loading" | "ready" | "unavailable" | "unconfigured";
+
+/** Shipped presets share the default instances' ordering and reset behavior. */
+export function isDefaultProviderInstance(
+  instanceId: ProviderInstanceId,
+  driverKind: ProviderDriverKind,
+): boolean {
+  return (
+    instanceId === defaultInstanceIdForDriver(driverKind) ||
+    DEFAULT_PROVIDER_INSTANCE_CONFIGS[instanceId]?.driver === driverKind
+  );
+}
 
 /**
  * Keep a provider catalogue that has not arrived yet distinct from a loaded
@@ -110,8 +122,8 @@ export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): b
 /**
  * Project the wire `ServerProvider[]` into instance entries, one per
  * configured instance. Preserves the server's ordering (which sources
- * from `deriveProviderInstanceConfigMap` — explicit `providerInstances.*`
- * first, synthesized defaults after) so callers that want "default first"
+ * from `deriveProviderInstanceConfigMap`, including shipped presets and
+ * explicit `providerInstances.*`) so callers that want "default first"
  * should sort with `sortProviderInstanceEntries` below.
  */
 export function deriveProviderInstanceEntries(
@@ -120,8 +132,7 @@ export function deriveProviderInstanceEntries(
   return providers.map((snapshot) => {
     const instanceId = snapshot.instanceId;
     const driverKind = snapshot.driver;
-    const defaultId = defaultInstanceIdForDriver(driverKind);
-    const isDefault = instanceId === defaultId;
+    const isDefault = isDefaultProviderInstance(instanceId, driverKind);
     return {
       instanceId,
       driverKind,
