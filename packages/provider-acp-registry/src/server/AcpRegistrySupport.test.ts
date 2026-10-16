@@ -495,6 +495,38 @@ describe("AcpRegistrySupport", () => {
     );
   });
 
+  it.effect("initializes a fresh npm 12 prefix before installing an agent", () => {
+    const agent = makeAgent({ npx: { package: "@example/acp@1.2.3" } });
+    return Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cacheDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-acp-registry-npm12-",
+      });
+      const toolchain = yield* makeFakeNpmToolchain(cacheDir);
+      const environment = { ...toolchain.environment, FAKE_NPM_REQUIRE_LIB: "1" };
+      const resolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
+        cacheDir,
+        toolsDir: `${cacheDir}/tools`,
+        registryUrl,
+      }).pipe(Effect.provideService(HostProcess.Environment, environment));
+
+      const resolved = yield* resolver.resolve(settings(), "/workspace", environment);
+
+      expect(resolved.spawn.command).toBe(toolchain.executablePath);
+      expect(resolved.distribution).toBe("npx");
+      expect(yield* fileSystem.readFileString(toolchain.logPath)).toContain(
+        "install --global @example/acp@1.2.3",
+      );
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        layerResolver((request) =>
+          Effect.succeed(HttpClientResponse.fromWeb(request, new Response(makeRegistry(agent)))),
+        ),
+      ),
+    );
+  });
+
   it.effect("uses its managed prefix despite a system-owned npm prefix", () => {
     const agent = makeAgent({ npx: { package: "@example/acp@1.2.3" } });
     return Effect.gen(function* () {

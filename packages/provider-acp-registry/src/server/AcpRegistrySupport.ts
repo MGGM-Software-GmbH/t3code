@@ -1216,7 +1216,11 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     if (Option.isSome(receipt) && distribution === "npx") return receipt.value;
 
     const packageRoot = packageInstallRoot(agent, distribution);
-    yield* fileSystem.makeDirectory(packageRoot, { recursive: true }).pipe(
+    // npm 12 requires the POSIX global prefix's lib directory to exist before
+    // installing the first package into a T3-managed prefix.
+    const initialDirectory =
+      distribution === "npx" && platform !== "win32" ? path.join(packageRoot, "lib") : packageRoot;
+    yield* fileSystem.makeDirectory(initialDirectory, { recursive: true }).pipe(
       Effect.mapError(
         (cause) =>
           new AcpRegistryError({
