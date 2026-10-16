@@ -184,8 +184,8 @@ class MeasuredFile extends VirtualizedFile {
   }
 
   refreshLayout(file: FileContents, anchorLine?: number) {
-    const nextAnchorLine = this.updateFileLayoutCache(file, anchorLine);
-    this.prepareCodeViewItem(file, 0);
+    const nextAnchorLine = this.updateFileLayoutCache(this.getRenderedFile(), file, anchorLine);
+    this.updateCodeViewLayout(file, 0);
     return nextAnchorLine;
   }
 
@@ -262,9 +262,13 @@ describe("external file refresh layout", () => {
     expect(root.scrollTop).toBe(20100);
   });
 
-  it.each([1, 1000])(
-    "renders the mapped anchor before restoring scroll after inserting %i lines",
-    (insertedCount) => {
+  it.each([
+    [1, 0],
+    [1000, 0],
+    [1000, 48],
+  ])(
+    "restores the mapped anchor after inserting %i lines and replacing %i pixels of annotation geometry",
+    (insertedCount, removedAnnotationHeight) => {
       class GeometryElement {
         scrollTop = 0;
         scrollHeight = 100000;
@@ -284,6 +288,7 @@ describe("external file refresh layout", () => {
       root.scrollTop = 10008;
       const virtualizer = new Virtualizer();
       const container = new GeometryElement(() => -root.scrollTop);
+      let replacedEditSession = false;
       Object.assign(virtualizer, {
         root,
         height: 400,
@@ -292,7 +297,7 @@ describe("external file refresh layout", () => {
         getScrollAnchor: () => ({
           fileElement: container,
           lineIndex: "500",
-          lineOffset: 0,
+          lineOffset: replacedEditSession ? -removedAnnotationHeight : 0,
           fileOffset: -10008,
           fileTypeOffset: "top",
         }),
@@ -304,7 +309,7 @@ describe("external file refresh layout", () => {
       };
       class RefreshFile extends VirtualizedFile {
         refresh(next: FileContents) {
-          return this.renderPreparedFile({
+          return this.render({
             file: next,
             fileContainer: container as unknown as HTMLElement,
           });
@@ -314,6 +319,17 @@ describe("external file refresh layout", () => {
         { disableFileHeader: true, overflow: "scroll" },
         virtualizer,
       );
+      const externalFile = instance as unknown as {
+        updateExternalFile(file: FileContents): boolean;
+      };
+      const updateExternalFile = externalFile.updateExternalFile.bind(instance);
+      const replaceSession = vi
+        .spyOn(externalFile, "updateExternalFile")
+        .mockImplementation((next) => {
+          // The editor can remove old annotation DOM while adopting the new session.
+          replacedEditSession = true;
+          return updateExternalFile(next);
+        });
       Object.assign(instance, {
         file,
         top: 0,
@@ -322,27 +338,32 @@ describe("external file refresh layout", () => {
         fileContainer: container,
         getOrCreateFileContainerNode: () => container,
       });
+      let renderedFile: FileContents = file;
+      vi.spyOn(instance, "getRenderedFile").mockImplementation(() => renderedFile);
       // Control only the DOM renderer; range selection and scroll restoration use production code.
       const prototype = File.prototype as unknown as {
-        renderPreparedFile(props: FileRenderProps<undefined>): boolean;
+        render(props: FileRenderProps<undefined>): boolean;
       };
-      const render = vi
-        .spyOn(prototype, "renderPreparedFile")
-        .mockImplementation(({ renderRange }) => {
-          container.shadowRoot = {
-            querySelector: (selector) => {
-              const index = Number(selector.match(/data-line-index="(\d+)"/)?.[1]);
-              if (
-                !renderRange ||
-                index < renderRange.startingLine ||
-                index >= renderRange.startingLine + renderRange.totalLines
-              )
-                return null;
-              return new GeometryElement(() => index * 20 + 8 - root.scrollTop);
-            },
-          };
-          return true;
-        });
+      const render = vi.spyOn(prototype, "render").mockImplementation(function (
+        this: RefreshFile,
+        { file: nextFile, renderRange },
+      ) {
+        container.shadowRoot = {
+          querySelector: (selector) => {
+            const index = Number(selector.match(/data-line-index="(\d+)"/)?.[1]);
+            if (
+              !renderRange ||
+              index < renderRange.startingLine ||
+              index >= renderRange.startingLine + renderRange.totalLines
+            )
+              return null;
+            return new GeometryElement(() => index * 20 + 8 - root.scrollTop);
+          },
+        };
+        renderedFile = nextFile;
+        (this as unknown as { finalizeRender(): void }).finalizeRender();
+        return true;
+      });
       try {
         const inserted = Array.from(
           { length: insertedCount },
@@ -358,6 +379,7 @@ describe("external file refresh layout", () => {
           ),
         ).not.toBeNull();
       } finally {
+        replaceSession.mockRestore();
         render.mockRestore();
       }
     },
@@ -862,12 +884,7 @@ class EditorElement extends MeasuredElement {
   }
 }
 
-async function makeEditorFixture(
-  lineCount: number,
-  stateStorage?: NonNullable<
-    ConstructorParameters<typeof Editor<undefined>>[0]
-  >["persistStateStorage"],
-) {
+async function makeEditorFixture(lineCount: number) {
   const { instance, file } = await makeFixture("wrap", lineCount);
   vi.stubGlobal("SVGSVGElement", EditorElement);
   vi.stubGlobal("Document", EditorElement);
@@ -942,30 +959,8 @@ async function makeEditorFixture(
       },
     ]);
   };
-  const sync = (next: FileContents) =>
-    editor.__syncRenderView(highlighter, measuredElement(host), next, undefined, {
-      startingLine: 0,
-      totalLines: 1,
-      bufferBefore: 0,
-      bufferAfter: 0,
-    });
-  return { instance, editor, file, sync, append, remove };
+  return { instance, editor, file, append, remove };
 }
-
-it("restores persisted view state on file changes, but not over a live same-file refresh", async () => {
-  const storage = { get: vi.fn(), set: vi.fn() };
-  const { editor, file, sync } = await makeEditorFixture(2, storage);
-  expect(storage.get).toHaveBeenCalledOnce();
-  const state = { selections: [], view: { scrollTop: 1500, scrollLeft: 0 } };
-  storage.get.mockReturnValue(state);
-  const restore = vi.spyOn(editor, "setState");
-  sync({ ...file, contents: `inserted\n${file.contents}`, cacheKey: "refresh" });
-  expect(storage.get).toHaveBeenCalledOnce();
-  expect(restore).not.toHaveBeenCalled();
-  sync({ ...file, name: "other.txt", cacheKey: "other" });
-  expect(storage.get).toHaveBeenCalledTimes(2);
-  expect(restore).toHaveBeenCalledWith(state);
-});
 
 describe("editor gutter-width changes", () => {
   it.each([

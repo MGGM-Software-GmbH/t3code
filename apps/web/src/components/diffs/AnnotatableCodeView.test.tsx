@@ -45,6 +45,7 @@ describe("diff comment snapshots", () => {
           },
         ]}
         options={{}}
+        onRevealSearchMatch={() => {}}
         renderHeaderFilenameSuffix={() => null}
         renderHeaderPrefix={() => null}
       />

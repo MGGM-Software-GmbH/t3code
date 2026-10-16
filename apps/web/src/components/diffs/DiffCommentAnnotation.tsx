@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
+import { observeResize } from "~/lib/observeResize";
 
 import { isCommentSubmitShortcut } from "./commentSubmitShortcut";
 
@@ -108,12 +109,10 @@ export function DiffCommentAnnotation({
           scrollContainer.scrollTop += bounds.top - viewportBounds.top;
       });
     };
-    const observer = new ResizeObserver(keepFormVisible);
-    observer.observe(form);
-    observer.observe(scrollContainer);
+    const stopObserving = observeResize([form, scrollContainer], keepFormVisible);
     keepFormVisible();
     return () => {
-      observer.disconnect();
+      stopObserving();
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
   }, [isForm]);

@@ -799,16 +799,14 @@ function EditableFileSurface({
 
   // Mirrors the editor draft to the save queue and optimistic file query.
   const handleEditChange = useCallback(
-    ({
-      file,
-    }: EditorChangeEvent<"file", FileCommentAnnotationGroup, undefined>) => {
+    ({ file }: EditorChangeEvent<"file", FileCommentAnnotationGroup, undefined>) => {
       // Adopting an external change reports it as an edit; it is already on disk.
       if (file.contents === getProjectFileContents(environmentId, cwd, relativePath)) return;
       setEditedContents(file.contents);
       setProjectFileQueryData(environmentId, cwd, relativePath, file.contents);
       saveCoordinator.change(file.contents);
     },
-    [addReviewComment, composerDraftTarget, cwd, environmentId, relativePath, saveCoordinator],
+    [cwd, environmentId, relativePath, saveCoordinator],
   );
 
   const removeAnnotationEntry = useCallback(

@@ -1,6 +1,6 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
@@ -19,6 +19,7 @@ vi.mock("~/state/projects", () => ({
 }));
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({ executeAtomQuery: mocks.execute }));
 vi.mock("~/state/queries", () => ({ useProjectPathSearch: vi.fn() }));
+vi.mock("~/state/filesystem", () => ({ useFilesystemReadAccess: vi.fn() }));
 
 import { readProjectFileForReview } from "./projectFilesQueryState";
 

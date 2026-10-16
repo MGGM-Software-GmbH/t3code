@@ -16,6 +16,8 @@ import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { ComposerContextId, type ReviewCommentContextRecord } from "@t3tools/contracts";
+import { buildFileReviewComment } from "@t3tools/shared/fileReviewComments";
 
 const layerProject = WorkspaceFileSystem.layer.pipe(
   Layer.provide(WorkspacePaths.layer),
@@ -57,6 +59,102 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
 });
 
 it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (it) => {
+  describe("refreshReviewComments", () => {
+    const reviewComment = (contents: string): ReviewCommentContextRecord => {
+      const { id, ...snapshot } = buildFileReviewComment({
+        id: "review-queued",
+        filePath: "source.txt",
+        startLine: 5,
+        endLine: 5,
+        text: "Check this value",
+        contents,
+      });
+      return {
+        ...snapshot,
+        version: 1,
+        label: "source.txt:L5",
+        contextId: ComposerContextId.make(id),
+        kind: "review-comment",
+      };
+    };
+
+    it.effect("uses the dispatch workspace and remaps a queued comment after an insertion", () =>
+      Effect.gen(function* () {
+        const service = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        const contents = "a\nb\nc\nd\ntarget\nf\ng\nh\ni";
+        const comment = reviewComment(contents);
+        yield* writeTextFile(cwd, "source.txt", contents);
+        yield* writeTextFile(cwd, "source.txt", `inserted\n${contents}`);
+        const records = yield* service.refreshReviewComments({ cwd, records: [comment] });
+        expect(records).toEqual([
+          expect.objectContaining({
+            contextId: comment.contextId,
+            startIndex: 5,
+            endIndex: 5,
+            rangeLabel: "L6",
+            diff: "target",
+            text: comment.text,
+            sourceStatus: "current",
+          }),
+        ]);
+      }),
+    );
+
+    it.effect("keeps an ambiguous snapshot explicit and leaves diff comments unchanged", () =>
+      Effect.gen(function* () {
+        const service = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        const comment = reviewComment("a\nb\nc\nd\ntarget\nf\ng\nh\ni");
+        const diffComment = {
+          ...comment,
+          contextId: ComposerContextId.make("diff"),
+          sectionId: "diff",
+        };
+        yield* writeTextFile(cwd, "source.txt", "different contents");
+        const records = yield* service.refreshReviewComments({
+          cwd,
+          records: [comment, diffComment],
+        });
+        expect(records).toEqual([
+          {
+            ...comment,
+            sourceStatus: "unresolved",
+            sectionTitle: "Source location unresolved (last known lines)",
+          },
+          diffComment,
+        ]);
+      }),
+    );
+
+    it.effect("fails dispatch rather than using a missing or truncated file", () =>
+      Effect.gen(function* () {
+        const service = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        const records = [reviewComment("a\nb\nc\nd\ntarget\nf\ng\nh\ni")];
+        const missing = yield* service.refreshReviewComments({ cwd, records }).pipe(Effect.flip);
+        expect(missing._tag).toBe("WorkspaceFileSystemOperationError");
+        yield* writeTextFile(cwd, "source.txt", "x".repeat(1024 * 1024 + 1));
+        const truncated = yield* service.refreshReviewComments({ cwd, records }).pipe(Effect.flip);
+        expect(truncated._tag).toBe("WorkspaceReviewCommentTruncatedError");
+      }),
+    );
+
+    it.effect("requires a workspace only when a file comment needs refreshing", () =>
+      Effect.gen(function* () {
+        const service = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        expect(yield* service.refreshReviewComments({ cwd: null, records: [] })).toEqual([]);
+        const error = yield* service
+          .refreshReviewComments({
+            cwd: null,
+            records: [reviewComment("a\nb\nc\nd\ntarget\nf\ng\nh\ni")],
+          })
+          .pipe(Effect.flip);
+        expect(error._tag).toBe("WorkspaceReviewCommentWorkspaceMissingError");
+      }),
+    );
+  });
+
   describe("getMetadata", () => {
     it.effect("expands home-relative paths on the server", () =>
       Effect.gen(function* () {

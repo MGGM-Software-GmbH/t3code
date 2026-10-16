@@ -717,7 +717,7 @@ index 5e68e35..70e4079 100644
 \ No newline at end of file
 +//# sourceMappingURL=VirtualizedFile.d.ts.map
 diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFile.js
-index d1f57cd..e7c74a0 100644
+index d1f57cd..32fd750 100644
 --- a/dist/components/VirtualizedFile.js
 +++ b/dist/components/VirtualizedFile.js
 @@ -5,6 +5,7 @@ import { areFileTargetsEqual } from "../utils/areFileTargetsEqual.js";
@@ -739,11 +739,12 @@ index d1f57cd..e7c74a0 100644
  		ghostTextRows: NO_GHOST_TEXT_ROWS
  	};
  	pendingRender;
-@@ -30,11 +33,14 @@ var VirtualizedFile = class extends File {
+@@ -30,11 +33,15 @@ var VirtualizedFile = class extends File {
  	isSetup = false;
  	layoutDirty = true;
  	forceRenderOverride;
 +	pendingRefreshAnchor;
++	layoutCacheFile;
  	currentCollapsed;
  	constructor(options, virtualizer, metrics = DEFAULT_VIRTUAL_FILE_METRICS, workerManager, isContainerManaged = false) {
  		super(options, workerManager, isContainerManaged);
@@ -754,7 +755,7 @@ index d1f57cd..e7c74a0 100644
  	}
  	setMetrics(metrics, force = false) {
  		const nextMetrics = computeVirtualFileMetrics(metrics);
-@@ -48,6 +54,20 @@ var VirtualizedFile = class extends File {
+@@ -48,6 +55,20 @@ var VirtualizedFile = class extends File {
  	syncLineAnnotations(lineAnnotations) {
  		if (lineAnnotations == null || !this.isNewAnnotations(lineAnnotations)) return false;
  		if (lineAnnotations.length === 0 && this.getLatestAnnotations().length === 0) return false;
@@ -775,7 +776,7 @@ index d1f57cd..e7c74a0 100644
  		super.setLineAnnotations(lineAnnotations);
  		return true;
  	}
-@@ -86,10 +106,14 @@ var VirtualizedFile = class extends File {
+@@ -86,10 +107,14 @@ var VirtualizedFile = class extends File {
  		if (this.isAdvancedMode()) throw new Error("VirtualizedFile.setThemeType cannot be used inside CodeView. Update CodeView options instead.");
  		super.setThemeType(themeType);
  	}
@@ -793,7 +794,7 @@ index d1f57cd..e7c74a0 100644
  		if (this.cache.checkpoints.length > 0) this.cache.checkpoints.length = 0;
  		this.cache.ghostTextRows = NO_GHOST_TEXT_ROWS;
  		if (this.renderRange != null && resetRenderRange) this.renderRange = void 0;
-@@ -135,6 +159,13 @@ var VirtualizedFile = class extends File {
+@@ -135,6 +160,13 @@ var VirtualizedFile = class extends File {
  		if (this.code == null) return hasHeightChange;
  		const content = this.code.children[1];
  		if (!(content instanceof HTMLElement)) return hasHeightChange;
@@ -807,7 +808,7 @@ index d1f57cd..e7c74a0 100644
  		if (this.renderRange != null && shouldRenderFileAnnotations(this.renderRange)) {
  			const nextFileAnnotationHeight = measureFileAnnotationHeight(content) ?? 0;
  			if (nextFileAnnotationHeight !== this.cache.fileAnnotationHeight) {
-@@ -152,9 +183,12 @@ var VirtualizedFile = class extends File {
+@@ -152,9 +184,12 @@ var VirtualizedFile = class extends File {
  			if (!measureAllRows && (cachedHeight == null || cachedHeight === lineHeight + ghostHeight)) continue;
  			let measuredHeight = line.getBoundingClientRect().height + ghostHeight;
  			let hasMetadata = false;
@@ -821,7 +822,21 @@ index d1f57cd..e7c74a0 100644
  			}
  			const expectedHeight = this.getLineHeight(lineIndex, hasMetadata);
  			if (measuredHeight === expectedHeight) continue;
-@@ -358,12 +392,12 @@ var VirtualizedFile = class extends File {
+@@ -171,10 +206,12 @@ var VirtualizedFile = class extends File {
+ 		return this.render({ file: this.file });
+ 	};
+ 	updateCodeViewLayout(file, top, reset, lineAnnotations) {
++		const previousLayoutFile = this.getLayoutFile();
+ 		const targetChanged = !areFileTargetsEqual(this.file, file);
+ 		if (targetChanged) this.updateExternalFile(file, lineAnnotations);
+ 		const { pendingRenderFile, layoutFileChanged, renderedFileChanged, annotationsChanged } = this.updatePendingRender(file, lineAnnotations);
+-		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true || layoutFileChanged;
++		if (layoutFileChanged) this.updateFileLayoutCache(previousLayoutFile, pendingRenderFile);
++		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true;
+ 		if (reset?.metrics != null) {
+ 			this.metrics = reset.metrics;
+ 			shouldResetLayoutCache = true;
+@@ -358,12 +395,13 @@ var VirtualizedFile = class extends File {
  			codeView.instanceChanged(this, true);
  		} else this.getSimpleVirtualizer()?.requestHeightReconcile(this);
  	}
@@ -830,18 +845,21 @@ index d1f57cd..e7c74a0 100644
  		const { renderRange: previousRenderRange } = this;
  		this.getAdvancedVirtualizer()?.capturePendingLayoutAnchor();
  		super.applyDocumentChange(textDocument, newLineAnnotations);
++		this.layoutCacheFile = this.getLatestFile(this.file);
  		this.getSimpleVirtualizer()?.markDOMDirty();
 -		this.resetLayoutCache(this.isSimpleMode(), false);
 +		this.resetLayoutCache(this.isSimpleMode(), false, startLine);
  		const file = this.getRenderedFile();
  		if (!this.isSimpleMode()) this.computeApproximateSize(true);
  		else if (shouldUpdateBuffer && previousRenderRange != null && file != null) {
-@@ -374,7 +408,40 @@ var VirtualizedFile = class extends File {
+@@ -374,8 +412,46 @@ var VirtualizedFile = class extends File {
  		this.forceRenderOverride = true;
  		this.virtualizer.instanceChanged(this, true);
  	}
 +	// Measurements of unchanged code rows remain valid across external updates.
 +	updateFileLayoutCache(previous, file, anchorLine) {
++		previous = this.layoutCacheFile ?? previous;
++		this.layoutCacheFile = file;
 +		if (previous == null || previous.name !== file.name || previous.lang !== file.lang) {
 +			this.resetLayoutCache();
 +			return;
@@ -875,24 +893,26 @@ index d1f57cd..e7c74a0 100644
  	render({ fileContainer, file, forceRender = false, lineAnnotations, ...props }) {
 +		const previousLayoutFile = this.pendingRender?.file ?? this.getRenderedFile();
  		const didFileChange = !areFileTargetsEqual(this.file, file);
++		// Replacing an editor session can remove annotation geometry before the next render.
++		const simpleVirtualizer = this.getSimpleVirtualizer();
++		const refreshAnchor = this.isSetup && simpleVirtualizer != null && (didFileChange || !areFileTargetsEqual(previousLayoutFile, this.getLatestFile(file) ?? file)) ? simpleVirtualizer.getScrollAnchor(simpleVirtualizer.getHeight()) : void 0;
  		if (didFileChange) {
  			this.updateExternalFile(file, lineAnnotations);
-@@ -391,7 +458,13 @@ var VirtualizedFile = class extends File {
+ 			this.cachedHeaderHTML = void 0;
+@@ -391,7 +467,11 @@ var VirtualizedFile = class extends File {
  		})();
  		const { forceRenderOverride, isSetup } = this;
  		this.forceRenderOverride = void 0;
 -		if (layoutFileChanged) this.resetLayoutCache();
 +		if (layoutFileChanged && this.isSimpleMode()) {
-+			const virtualizer = this.getSimpleVirtualizer();
-+			const anchor = isSetup ? virtualizer.getScrollAnchor(virtualizer.getHeight()) : void 0;
-+			const ownAnchor = anchor?.fileElement === this.fileContainer && anchor.lineIndex != null ? anchor : void 0;
++			const ownAnchor = refreshAnchor?.fileElement === this.fileContainer && refreshAnchor.lineIndex != null ? refreshAnchor : void 0;
 +			const nextLine = this.updateFileLayoutCache(previousLayoutFile, pendingRenderFile, ownAnchor == null ? void 0 : Number(ownAnchor.lineIndex));
 +			this.pendingRefreshAnchor = ownAnchor != null && nextLine !== void 0 ? { ...ownAnchor, lineIndex: String(nextLine) } : void 0;
 +		} else if (layoutFileChanged) this.resetLayoutCache();
  		fileContainer = this.getOrCreateFileContainerNode(fileContainer);
  		if (!isSetup) {
  			this.computeApproximateSize(false, pendingRenderFile);
-@@ -412,7 +485,16 @@ var VirtualizedFile = class extends File {
+@@ -412,7 +492,16 @@ var VirtualizedFile = class extends File {
  			}
  		}
  		if (!this.isVisible && this.isSimpleMode() && (!didFileChange || !isSetup)) return this.renderPlaceholder(this.height);
@@ -910,7 +930,7 @@ index d1f57cd..e7c74a0 100644
  		const fileTop = this.top ?? 0;
  		const renderRange = this.computeRenderRangeFromWindow(pendingRenderFile, fileTop, windowSpecs);
  		return super.render({
-@@ -427,6 +509,10 @@ var VirtualizedFile = class extends File {
+@@ -427,6 +516,10 @@ var VirtualizedFile = class extends File {
  	finalizeRender() {
  		if (this.getRenderedFile() !== this.pendingRender?.file) throw new Error("VirtualizedFile.render: rendered a different file than its prepared layout");
  		this.pendingRender = void 0;
@@ -921,7 +941,7 @@ index d1f57cd..e7c74a0 100644
  		if (this.isSimpleMode()) this.getSimpleVirtualizer()?.requestHeightReconcile(this);
  	}
  	updatePendingRender(nextFile, lineAnnotations) {
-@@ -635,4 +721,4 @@ function measureFileAnnotationHeight(content) {
+@@ -635,4 +728,4 @@ function measureFileAnnotationHeight(content) {
  //#endregion
  export { VirtualizedFile };
  
@@ -929,7 +949,7 @@ index d1f57cd..e7c74a0 100644
 \ No newline at end of file
 +//# sourceMappingURL=VirtualizedFile.js.map
 diff --git a/dist/components/Virtualizer.js b/dist/components/Virtualizer.js
-index 4063b99..3e04a9d 100644
+index 4063b99..e68249c 100644
 --- a/dist/components/Virtualizer.js
 +++ b/dist/components/Virtualizer.js
 @@ -25,6 +25,7 @@ var Virtualizer = class Virtualizer {
@@ -963,7 +983,7 @@ index 4063b99..3e04a9d 100644
  	applyScrollFix(scrollOffset) {
 +		this.scrollFixVersion++;
 +		// A synchronous follow-up render must use the corrected viewport.
-+		this.windowSpecs = void 0;
++		this.windowSpecs = { top: 0, bottom: 0 };
  		if (this.root == null || this.root instanceof Document) window.scrollTo({
  			top: window.scrollY + scrollOffset,
  			behavior: "instant"
