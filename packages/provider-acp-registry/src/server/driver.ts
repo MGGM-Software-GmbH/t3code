@@ -381,7 +381,9 @@ export const checkAcpRegistryProviderStatus = Effect.fn("AcpRegistryDriver.check
       return yield* buildInitialAcpRegistrySnapshot(input);
     }
     const catalog = yield* AcpRegistrySupport.AcpRegistryCatalog;
-    const inspected = yield* Effect.result(catalog.inspect(input.settings, input.environment));
+    const inspected = yield* Effect.result(
+      catalog.inspect(input.settings, input.environment, { allowRegistryFetch: true }),
+    );
     if (Result.isFailure(inspected)) {
       return buildCheckedAcpRegistrySnapshot({
         ...input,
@@ -634,7 +636,9 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         initialSnapshot: () => checkProvider,
         checkProvider,
         enrichSnapshot: ({ snapshot, getSnapshot, publishSnapshot }) => {
-          if (!snapshot.installed) return Effect.void;
+          // Configured registry agents can initialize their catalog before
+          // local readiness knows their distribution or executable.
+          if (!snapshot.installed && effectiveConfig.source === "local") return Effect.void;
           const publishEnrichment = (
             Option.isSome(runtimeCoordinator)
               ? runtimeCoordinator.value.runBackgroundProbe(

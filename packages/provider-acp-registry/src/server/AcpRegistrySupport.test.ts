@@ -1389,6 +1389,43 @@ describe("AcpRegistrySupport", () => {
     );
   });
 
+  it.effect("loads a missing registry for an active inspection and reuses it", () => {
+    const agent = makeAgent({ npx: { package: "@example/acp@1.2.3" } });
+    let requests = 0;
+    return Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cacheDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-acp-registry-active-inspect-",
+      });
+      const resolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
+        cacheDir,
+        toolsDir: `${cacheDir}/tools`,
+        registryUrl,
+      });
+
+      const inspection = yield* resolver.inspect(settings(), undefined, {
+        allowRegistryFetch: true,
+      });
+      expect(inspection).toMatchObject({ status: "ready", agentId: agent.id });
+      expect(yield* fileSystem.exists(`${cacheDir}/acp-registry/registry.json`)).toBe(true);
+      expect(yield* resolver.inspect(settings(), undefined, { allowRegistryFetch: true })).toEqual(
+        inspection,
+      );
+      expect(requests).toBe(1);
+      expect(yield* fileSystem.exists(`${cacheDir}/tools`)).toBe(false);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        layerResolver((request) => {
+          requests += 1;
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(request, new Response(makeRegistry(agent))),
+          );
+        }),
+      ),
+    );
+  });
+
   it.effect("fails a cold inspection immediately when no local registry is available", () => {
     let requests = 0;
     return Effect.gen(function* () {

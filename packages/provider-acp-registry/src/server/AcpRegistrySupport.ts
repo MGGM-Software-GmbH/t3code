@@ -513,6 +513,7 @@ export class AcpRegistryCatalog extends Context.Service<
     readonly inspect: (
       settings: AcpRegistrySettings,
       environment?: NodeJS.ProcessEnv,
+      options?: { readonly allowRegistryFetch?: boolean },
     ) => Effect.Effect<AcpRegistryInspection, AcpRegistryError>;
     readonly resolve: (
       settings: AcpRegistrySettings,
@@ -1690,7 +1691,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
         )
       : Effect.void;
 
-  const inspect: AcpRegistryCatalog["Service"]["inspect"] = (settings, environment) =>
+  const inspect: AcpRegistryCatalog["Service"]["inspect"] = (settings, environment, options) =>
     Effect.gen(function* () {
       if (settings.source === "local") {
         const command = settings.commandPath.trim();
@@ -1707,7 +1708,9 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
       }
       const agentId = settings.agentId.trim();
       if (agentId.length === 0) return { status: "unconfigured" } as const;
-      const registry = yield* loadCachedRegistry();
+      // Passive readiness stays local. Active probes may initialize a fresh
+      // environment's registry cache before its first configured agent runs.
+      const registry = yield* options?.allowRegistryFetch ? loadRegistry() : loadCachedRegistry();
       const agent = registry.agents.find((candidate) => candidate.id === agentId);
       if (agent === undefined) return { status: "not_found", agentId } as const;
       const documentationUrl = agent.website ?? agent.repository;
