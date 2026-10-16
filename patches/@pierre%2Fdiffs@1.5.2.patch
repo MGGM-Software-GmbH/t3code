@@ -328,7 +328,7 @@ index 140f94f..96fc774 100644
  function prepareItemInstance(item) {
  	item.instance.cleanUp(true);
  	if (item.type === "diff") return item.instance.updateCodeViewLayout(item.item.fileDiff, item.top, void 0, item.item.annotations ?? []);
-diff --git a/dist/components/CodeViewSearch.js b/dist/components/CodeViewSearch.js
+diff --git a/pierre-1.5.2/package/dist/components/CodeViewSearch.js b/dist/components/CodeViewSearch.js
 new file mode 100644
 index 0000000..29370ad
 --- /dev/null
@@ -808,10 +808,18 @@ index 6e7b486..5b7290f 100644
  		connectedCallback() {
  			const shadowRoot = this.shadowRoot ?? this.attachShadow({ mode: "open" });
 diff --git a/dist/editor/editor.js b/dist/editor/editor.js
-index 8f04a6f..c203023 100644
+index 8f04a6f..8a7508b 100644
 --- a/dist/editor/editor.js
 +++ b/dist/editor/editor.js
-@@ -1899,7 +1899,11 @@ var Editor = class {
+@@ -1054,6 +1054,7 @@ var Editor = class {
+ 				onBlur?.();
+ 			}, { passive: true }),
+ 			addEventListener(contentEl, "pointerdown", (e) => {
++				if (!targetIsContentElement(e)) return;
+ 				this.#canMountSelectionAction = true;
+ 				this.#suppressNativeSelectionSync = false;
+ 				if (e.pointerType !== "mouse") return;
+@@ -1899,7 +1900,11 @@ var Editor = class {
  			changedDocumentLines: this.#isDiff && !didLineCountChange ? getChangedDocumentLines(textDocument, change) : void 0,
  			documentLineCount: textDocument.lineCount
  		});
@@ -824,6 +832,13 @@ index 8f04a6f..c203023 100644
  		if (didLineCountChange || this.#isDiff && this.#diffSyle === "unified") this.#resetCache();
  		if (newLineAnnotations != null) {
  			this.#lineAnnotations = newLineAnnotations;
+@@ -3693,4 +3698,4 @@ function splitsSurrogatePair(text, offset) {
+ //#endregion
+ export { Editor };
+ 
+-//# sourceMappingURL=editor.js.map
+\ No newline at end of file
++//# sourceMappingURL=editor.js.map
 diff --git a/dist/editor/searchPanel.d.ts b/dist/editor/searchPanel.d.ts
 index 9542849..1c1a51f 100644
 --- a/dist/editor/searchPanel.d.ts
