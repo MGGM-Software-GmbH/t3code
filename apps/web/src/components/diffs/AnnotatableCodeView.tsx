@@ -121,6 +121,9 @@ export function AnnotatableCodeView({
 }: AnnotatableCodeViewProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
+  const setReviewCommentEditDraft = useComposerDraftStore(
+    (store) => store.setReviewCommentEditDraft,
+  );
   const reviewComments = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
   );
@@ -317,6 +320,17 @@ export function AnnotatableCodeView({
                   onCancel={() => removeEntry(entry.id)}
                   onComment={(text) => submitEntry(entry.id, text)}
                   onDelete={() => removeEntry(entry.id)}
+                  editDraft={reviewComments.find((comment) => comment.id === entry.id)?.editDraft}
+                  {...(entry.kind === "comment"
+                    ? {
+                        onEditDraftChange: (text: string | null) =>
+                          setReviewCommentEditDraft(composerDraftTarget, entry.id, text),
+                      }
+                    : {})}
+                  onEdit={(text) => {
+                    const comment = reviewComments.find((candidate) => candidate.id === entry.id);
+                    if (comment) addReviewComment(composerDraftTarget, { ...comment, text });
+                  }}
                 />
               ))}
             </div>
