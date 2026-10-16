@@ -1,7 +1,12 @@
 import { EnvironmentId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { createInboxReturnTracker, sortWorkingThreadsBySend } from "./threadInbox.ts";
+import {
+  createInboxReturnTracker,
+  isThreadWorking,
+  sortInboxThreadsByReturn,
+  sortWorkingThreadsBySend,
+} from "./threadInbox.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
 
@@ -30,6 +35,35 @@ function thread(id: string, working: boolean) {
 }
 
 describe("createInboxReturnTracker", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    { reason: "completion", changes: { runtime: null } },
+    { reason: "a question", changes: { hasPendingUserInput: true } },
+    { reason: "an approval", changes: { hasPendingApprovals: true } },
+  ])("puts a returning thread first for $reason without restamping it", ({ changes }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-02T00:00:00.000Z"));
+    const tracker = createInboxReturnTracker();
+    const busy = thread("old-working", true);
+    const ready = { ...thread("new-ready", false), createdAt: "2026-06-01T12:00:00.000Z" };
+    tracker.observe([busy, ready]);
+
+    const returned = { ...busy, ...changes };
+    tracker.observe([returned, ready]);
+    const inbox = [ready, returned].filter((entry) => !isThreadWorking(entry));
+    expect(sortInboxThreadsByReturn(inbox, tracker.returnedAt).map((entry) => entry.id)).toEqual([
+      "old-working",
+      "new-ready",
+    ]);
+    const returnedAt = tracker.returnedAt(returned);
+    expect(returnedAt).toBe(Date.now());
+
+    vi.advanceTimersByTime(60_000);
+    tracker.observe([returned, ready]);
+    expect(tracker.returnedAt(returned)).toBe(returnedAt);
+  });
+
   it("stamps a thread when it stops working, but never on the first observation", () => {
     const tracker = createInboxReturnTracker();
     tracker.observe([thread("a", true), thread("b", false)]);

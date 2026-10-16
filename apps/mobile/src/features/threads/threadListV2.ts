@@ -485,8 +485,8 @@ function resolveThreadListV2ItemTimeLabel(
 }
 
 /**
- * Builds the shared mobile order: active → pending → working shelf (beta) →
- * snoozed shelf → settled. Pending tasks are waiting rather than asking, and
+ * Builds the shared mobile order: pins → working shelf (beta) → inbox →
+ * pending → snoozed shelf → settled. Pending tasks are waiting rather than asking, and
  * busy or parked work remains reachable without competing with either the
  * inbox or settled history.
  */
@@ -573,7 +573,9 @@ export function buildThreadListV2ListItems(input: {
   const snoozedEnd = settledShelfHeaderIndex ?? threadItems.length;
   const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
   const activeEnd = workingShelfHeaderIndex ?? workingEnd;
-  const result: ThreadListV2ListItem[] = [...threadItems.slice(0, activeEnd), ...pendingItems];
+  let pinnedEnd = 0;
+  while (pinnedEnd < input.items.length && input.items[pinnedEnd]!.pinned) pinnedEnd += 1;
+  const result: ThreadListV2ListItem[] = threadItems.slice(0, pinnedEnd);
   const shelfDisabled = input.shelfPreferencesLoading === true;
   if (workingShelfHeaderIndex !== null && workingCount > 0) {
     result.push({
@@ -585,6 +587,7 @@ export function buildThreadListV2ListItems(input: {
     });
     result.push(...threadItems.slice(workingShelfHeaderIndex, workingEnd));
   }
+  result.push(...threadItems.slice(pinnedEnd, activeEnd), ...pendingItems);
   if (snoozedShelfHeaderIndex !== null && snoozedCount > 0) {
     result.push({
       type: "v2-snoozed-shelf",

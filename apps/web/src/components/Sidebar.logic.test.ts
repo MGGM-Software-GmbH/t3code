@@ -2234,15 +2234,15 @@ describe("Working shelf (beta)", () => {
       key,
       section,
     });
-    // Pinned p1 | Active a1 a2 | Working w1 | Settled s1
+    // Pinned p1 | Working w1 | Active a1 a2 | Settled s1
     const items: readonly SidebarListItem[] = [
       marker("pinned-header"),
       row("p1", "pinned"),
+      marker("working-header"),
+      row("w1", "working"),
       marker("pinned-divider"),
       row("a1", "active"),
       row("a2", "active"),
-      marker("working-header"),
-      row("w1", "working"),
       marker("settled-header"),
       row("s1", "settled"),
     ];
@@ -2255,6 +2255,14 @@ describe("Working shelf (beta)", () => {
         activeOrder: ["a1", "a2", "p1"],
       });
       expect(resolveSidebarDropVerb("active", "working")).toBeNull();
+    });
+
+    it("keeps working rows out of the pinned order when pinning an inbox thread", () => {
+      expect(resolveSidebarDropTarget(items, "a1", "p1")).toEqual({
+        section: "pinned",
+        pinnedOrder: ["a1", "p1"],
+        activeOrder: ["a2"],
+      });
     });
 
     it("arranges the rows it can write when another row's server cannot store an order", () => {

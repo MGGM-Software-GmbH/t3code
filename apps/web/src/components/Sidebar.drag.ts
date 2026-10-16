@@ -18,6 +18,8 @@ const isShelfHeader = (item: SidebarListItem | undefined) =>
   (item.marker === "working-header" ||
     item.marker === "snoozed-header" ||
     item.marker === "settled-header");
+const isBottomShelfHeader = (item: SidebarListItem | undefined) =>
+  item?.kind === "marker" && (item.marker === "snoozed-header" || item.marker === "settled-header");
 
 /** Keep the lifted card below the Pins label, including when Pins is empty.
  * The container rect follows scrolling; the offset is measured once at pickup. */
@@ -62,7 +64,7 @@ export function createSidebarCollisionDetection(
       if (pointer.x >= boundary.left && pointer.x <= boundary.right) {
         if (pointer.y < previousY && pointer.y <= boundary.bottom) boundarySection = "pinned";
         else if (pointer.y > previousY && pointer.y >= boundary.top) boundarySection = "active";
-        const nextHeader = (["working-header", "snoozed-header", "settled-header"] as const)
+        const nextHeader = (["snoozed-header", "settled-header"] as const)
           .map((marker) =>
             args.droppableContainers.find((container) => container.id === sidebarMarkerId(marker)),
           )
@@ -187,12 +189,12 @@ export function createSidebarSortingStrategy(input: {
     };
     marker("pinned-header");
     projected.push(...groups.pinned);
-    marker("pinned-divider");
-    section("active");
     if (items.some((item) => item.kind === "marker" && item.marker === "working-header")) {
       marker("working-header");
       projected.push(...groups.working);
     }
+    marker("pinned-divider");
+    section("active");
     if (
       groups.snoozed.length > 0 ||
       ((active.section !== "snoozed" || (input.snoozedThreadCount ?? 0) > 1) &&
@@ -221,12 +223,13 @@ export function createSidebarSortingStrategy(input: {
             ? fallback
             : (rect?.height ?? fallback);
     });
-    const firstShelf = items.findIndex(isShelfHeader);
+    const firstShelf = items.findIndex(isBottomShelfHeader);
     const shelfRect = rects[firstShelf];
     const beforeShelf = rects[firstShelf - 1];
     const lastRect = rects.at(-1);
     // Consume the shelf's auto margin as drag labels and resized rows need
-    // room, keeping the combined shelves at their measured bottom.
+    // room, keeping snoozed and settled shelves at their measured bottom.
+    // Working stays above the inbox and never consumes that bottom spacing.
     let shelfSpace =
       shelfRect && beforeShelf && lastRect && shelfRect.top > beforeShelf.bottom + 1
         ? Math.max(
@@ -237,7 +240,7 @@ export function createSidebarSortingStrategy(input: {
     const result = items.map(() => hidden);
     let top = rects[0].top;
     for (const [projectedIndex, item] of projected.entries()) {
-      if (isShelfHeader(item)) {
+      if (isBottomShelfHeader(item)) {
         top += shelfSpace;
         shelfSpace = 0;
       }

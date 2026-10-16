@@ -37,7 +37,9 @@ function layout(
   const rects = items.map((item) => {
     const height =
       item.kind === "thread"
-        ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
+        ? (item.section === "pinned" || item.section === "active" || item.section === "working"
+            ? cardHeight
+            : 36) * scale
         : item.marker === "pinned-header" || item.marker === "pinned-divider"
           ? 0
           : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
@@ -657,26 +659,61 @@ describe("sidebar drag projection", () => {
     expect(result.get(sidebarMarkerId("snoozed-header"))).toEqual({ ...stationary, y: -46 });
   });
 
-  it("previews a time-ordered inbox drop at its time slot, above the Working shelf", () => {
+  it("previews a time-ordered inbox drop below the Working shelf", () => {
     const items = [
       pinnedHeader,
       thread("p", "pinned"),
+      marker("working-header"),
+      thread("w", "working"),
       divider,
       thread("a1", "active"),
       thread("a2", "active"),
-      marker("working-header"),
-      thread("w", "working"),
       settledHeader,
       marker("settled-placeholder"),
     ];
     const input = { items, settledOrder: [], settledExpanded: false };
     // By pointer, the unpinned row lands between a1 and a2.
     expect(preview(input, "p", "a1").get("a2")?.y).toBe(0);
-    // By time, it lands below a2, and the shelf does not move.
+    // By time, it lands below a2. Working moves up into the vacated pin slot.
     const byTime = preview({ ...input, activeOrder: ["a1", "a2", "p"] }, "p", "a1");
     expect(byTime.get("a2")?.y).toBe(-83);
-    expect(byTime.get(sidebarMarkerId("working-header"))).toEqual(stationary);
-    expect(byTime.get("w")).toEqual(stationary);
+    expect(byTime.get(sidebarMarkerId("working-header"))).toEqual({ ...stationary, y: -83 });
+    expect(byTime.get("w")).toEqual({ ...stationary, y: -83 });
+  });
+
+  it("keeps Working above the inbox while lower shelves retain their bottom spacing", () => {
+    const items = [
+      pinnedHeader,
+      marker("working-header"),
+      thread("working", "working"),
+      divider,
+      thread("first", "active"),
+      thread("second", "active"),
+      marker("snoozed-header"),
+      thread("snoozed", "snoozed"),
+      settledHeader,
+      thread("settled", "settled"),
+    ];
+    const args = layout(items, "first", "second");
+    const lowerShelfIndex = items.findIndex(
+      (item) => sidebarListItemId(item) === sidebarMarkerId("snoozed-header"),
+    );
+    for (const rect of args.rects.slice(lowerShelfIndex)) {
+      rect.top += 400;
+      rect.bottom += 400;
+    }
+    const strategy = createSidebarSortingStrategy({
+      items,
+      activeOrder: ["first", "second"],
+      settledOrder: ["settled"],
+      settledExpanded: true,
+    });
+    for (const markerName of ["working-header", "snoozed-header", "settled-header"] as const) {
+      const index = items.findIndex(
+        (item) => sidebarListItemId(item) === sidebarMarkerId(markerName),
+      );
+      expect(strategy({ ...args, index })).toEqual(stationary);
+    }
   });
 
   it("derives missing card geometry from the measured root scale", () => {

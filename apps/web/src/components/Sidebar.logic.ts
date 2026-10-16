@@ -174,10 +174,9 @@ export function sidebarListItemId(item: SidebarListItem): string {
   return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
 }
 
-/** The section a slot belongs to, read off the markers around it: from
-    the top down, everything before the pinned divider is pinned, then the
-    inbox until the first shelf header, each shelf until the next header,
-    then settled. */
+/** The section a slot belongs to, read off the markers around it: pins,
+    optionally Working, then the inbox after the pinned divider, followed
+    by snoozed and settled shelves. */
 function sectionAtSidebarSlot(items: readonly SidebarListItem[], index: number): SidebarSection {
   let section: SidebarSection = "pinned";
   for (let i = 0; i < index && i < items.length; i += 1) {
@@ -217,14 +216,10 @@ export function resolveSidebarDropTarget(
   for (const item of moved) {
     if (item.kind === "marker") {
       if (item.marker === "pinned-divider") currentSection = "active";
-      else if (
-        item.marker === "working-header" ||
-        item.marker === "snoozed-header" ||
-        item.marker === "settled-header"
-      )
-        break;
+      else if (item.marker === "working-header") currentSection = "working";
+      else if (item.marker === "snoozed-header" || item.marker === "settled-header") break;
     } else if (currentSection === "pinned") pinnedOrder.push(item.key);
-    else activeOrder.push(item.key);
+    else if (currentSection === "active") activeOrder.push(item.key);
   }
   return { section, pinnedOrder, activeOrder };
 }
