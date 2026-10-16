@@ -929,19 +929,45 @@ index d1f57cd..e7c74a0 100644
 \ No newline at end of file
 +//# sourceMappingURL=VirtualizedFile.js.map
 diff --git a/dist/components/Virtualizer.js b/dist/components/Virtualizer.js
-index 4063b99..640c958 100644
+index 4063b99..3e04a9d 100644
 --- a/dist/components/Virtualizer.js
 +++ b/dist/components/Virtualizer.js
-@@ -288,6 +288,8 @@ var Virtualizer = class Virtualizer {
+@@ -25,6 +25,7 @@ var Virtualizer = class Virtualizer {
+ 	type = "simple";
+ 	intersectionObserver;
+ 	scrollTop = 0;
++	scrollFixVersion = 0;
+ 	height = 0;
+ 	scrollHeight = 0;
+ 	windowSpecs = {
+@@ -245,13 +246,15 @@ var Virtualizer = class Virtualizer {
+ 		this.visibleInstancesDirty = false;
+ 		this.renderedObservers = this.observers.size;
+ 		const anchor = this.getScrollAnchor(this.height);
++		const scrollFixVersion = this.scrollFixVersion;
+ 		const updatedInstances = /* @__PURE__ */ new Set();
+ 		for (const instance of wrapperDirty ? this.observers.values() : this.visibleInstances.values()) if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		for (const instance of this.instancesChanged) {
+ 			if (updatedInstances.has(instance)) continue;
+ 			if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		}
+-		this.scrollFix(anchor);
++		// A mapped file refresh may already have corrected scroll during onRender.
++		if (this.scrollFixVersion === scrollFixVersion) this.scrollFix(anchor);
+ 		for (const instance of updatedInstances) {
+ 			this.reconcileQueue.delete(instance);
+ 			instance.reconcileHeights();
+@@ -288,6 +291,9 @@ var Virtualizer = class Virtualizer {
  		}
  	}
  	applyScrollFix(scrollOffset) {
++		this.scrollFixVersion++;
 +		// A synchronous follow-up render must use the corrected viewport.
 +		this.windowSpecs = void 0;
  		if (this.root == null || this.root instanceof Document) window.scrollTo({
  			top: window.scrollY + scrollOffset,
  			behavior: "instant"
-@@ -430,4 +432,4 @@ function getRelativeBoundingTop(element, scrollContainer) {
+@@ -430,4 +436,4 @@ function getRelativeBoundingTop(element, scrollContainer) {
  //#endregion
  export { Virtualizer };
  
