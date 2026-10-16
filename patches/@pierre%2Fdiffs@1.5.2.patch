@@ -708,18 +708,21 @@ index 5e68e35..79dcd88 100644
    protected finalizeRender(): void;
    private updatePendingRender;
 diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFile.js
-index d1f57cd..5908ad7 100644
+index d1f57cd..af4531f 100644
 --- a/dist/components/VirtualizedFile.js
 +++ b/dist/components/VirtualizedFile.js
-@@ -23,6 +23,7 @@ var VirtualizedFile = class extends File {
+@@ -21,8 +21,10 @@ var VirtualizedFile = class extends File {
+ 	height = 0;
+ 	cache = {
  		heights: /* @__PURE__ */ new Map(),
++		annotationHeights: /* @__PURE__ */ new Map(),
  		checkpoints: [],
  		fileAnnotationHeight: 0,
 +		codeWidth: void 0,
  		ghostTextRows: NO_GHOST_TEXT_ROWS
  	};
  	pendingRender;
-@@ -35,6 +36,8 @@ var VirtualizedFile = class extends File {
+@@ -35,6 +37,8 @@ var VirtualizedFile = class extends File {
  		super(options, workerManager, isContainerManaged);
  		this.virtualizer = virtualizer;
  		this.metrics = metrics;
@@ -728,7 +731,28 @@ index d1f57cd..5908ad7 100644
  	}
  	setMetrics(metrics, force = false) {
  		const nextMetrics = computeVirtualFileMetrics(metrics);
-@@ -86,10 +89,12 @@ var VirtualizedFile = class extends File {
+@@ -48,6 +52,20 @@ var VirtualizedFile = class extends File {
+ 	syncLineAnnotations(lineAnnotations) {
+ 		if (lineAnnotations == null || !this.isNewAnnotations(lineAnnotations)) return false;
+ 		if (lineAnnotations.length === 0 && this.getLatestAnnotations().length === 0) return false;
++		// Subtract only annotation height on removal, preserving measured wrapped code rows.
++		const nextLines = new Set(lineAnnotations.map((annotation) => annotation.lineNumber));
++		for (const annotation of this.getLatestAnnotations()) {
++			if (nextLines.has(annotation.lineNumber)) continue;
++			if (annotation.lineNumber === 0) this.cache.fileAnnotationHeight = 0;
++			else {
++				const lineIndex = annotation.lineNumber - 1;
++				const annotationHeight = this.cache.annotationHeights.get(lineIndex) ?? 0;
++				const height = this.cache.heights.get(lineIndex);
++				if (height != null) this.cache.heights.set(lineIndex, height - annotationHeight);
++				this.cache.annotationHeights.delete(lineIndex);
++			}
++		}
++		this.cache.checkpoints.length = 0;
+ 		super.setLineAnnotations(lineAnnotations);
+ 		return true;
+ 	}
+@@ -86,10 +104,14 @@ var VirtualizedFile = class extends File {
  		if (this.isAdvancedMode()) throw new Error("VirtualizedFile.setThemeType cannot be used inside CodeView. Update CodeView options instead.");
  		super.setThemeType(themeType);
  	}
@@ -741,10 +765,12 @@ index d1f57cd..5908ad7 100644
 +		// Dropping unchanged wrapped rows moves the viewport before they can be remeasured.
 +		if (startLine === 0) this.cache.heights.clear();
 +		else for (const lineIndex of this.cache.heights.keys()) if (lineIndex >= startLine) this.cache.heights.delete(lineIndex);
++		if (startLine === 0) this.cache.annotationHeights.clear();
++		else for (const lineIndex of this.cache.annotationHeights.keys()) if (lineIndex >= startLine) this.cache.annotationHeights.delete(lineIndex);
  		if (this.cache.checkpoints.length > 0) this.cache.checkpoints.length = 0;
  		this.cache.ghostTextRows = NO_GHOST_TEXT_ROWS;
  		if (this.renderRange != null && resetRenderRange) this.renderRange = void 0;
-@@ -135,6 +140,13 @@ var VirtualizedFile = class extends File {
+@@ -135,6 +157,13 @@ var VirtualizedFile = class extends File {
  		if (this.code == null) return hasHeightChange;
  		const content = this.code.children[1];
  		if (!(content instanceof HTMLElement)) return hasHeightChange;
@@ -758,7 +784,21 @@ index d1f57cd..5908ad7 100644
  		if (this.renderRange != null && shouldRenderFileAnnotations(this.renderRange)) {
  			const nextFileAnnotationHeight = measureFileAnnotationHeight(content) ?? 0;
  			if (nextFileAnnotationHeight !== this.cache.fileAnnotationHeight) {
-@@ -358,12 +370,12 @@ var VirtualizedFile = class extends File {
+@@ -152,9 +181,12 @@ var VirtualizedFile = class extends File {
+ 			if (!measureAllRows && (cachedHeight == null || cachedHeight === lineHeight + ghostHeight)) continue;
+ 			let measuredHeight = line.getBoundingClientRect().height + ghostHeight;
+ 			let hasMetadata = false;
++			this.cache.annotationHeights.delete(lineIndex);
+ 			if (line.nextElementSibling instanceof HTMLElement && ("lineAnnotation" in line.nextElementSibling.dataset || "noNewline" in line.nextElementSibling.dataset)) {
+ 				if ("noNewline" in line.nextElementSibling.dataset) hasMetadata = true;
+-				measuredHeight += line.nextElementSibling.getBoundingClientRect().height;
++				const metadataHeight = line.nextElementSibling.getBoundingClientRect().height;
++				measuredHeight += metadataHeight;
++				if ("lineAnnotation" in line.nextElementSibling.dataset) this.cache.annotationHeights.set(lineIndex, metadataHeight);
+ 			}
+ 			const expectedHeight = this.getLineHeight(lineIndex, hasMetadata);
+ 			if (measuredHeight === expectedHeight) continue;
+@@ -358,12 +390,12 @@ var VirtualizedFile = class extends File {
  			codeView.instanceChanged(this, true);
  		} else this.getSimpleVirtualizer()?.requestHeightReconcile(this);
  	}
@@ -773,6 +813,13 @@ index d1f57cd..5908ad7 100644
  		const file = this.getRenderedFile();
  		if (!this.isSimpleMode()) this.computeApproximateSize(true);
  		else if (shouldUpdateBuffer && previousRenderRange != null && file != null) {
+@@ -635,4 +667,4 @@ function measureFileAnnotationHeight(content) {
+ //#endregion
+ export { VirtualizedFile };
+ 
+-//# sourceMappingURL=VirtualizedFile.js.map
+\ No newline at end of file
++//# sourceMappingURL=VirtualizedFile.js.map
 diff --git a/dist/components/web-components.js b/dist/components/web-components.js
 index 6e7b486..5b7290f 100644
 --- a/dist/components/web-components.js
