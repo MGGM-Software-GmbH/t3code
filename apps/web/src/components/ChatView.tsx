@@ -406,7 +406,8 @@ import {
   reviewCommentContextLabel,
   terminalContextReference,
 } from "../lib/composerContextRecords";
-import { type ReviewCommentContext } from "../reviewCommentContext";
+import { refreshFileReviewComments, type ReviewCommentContext } from "../reviewCommentContext";
+import { readProjectFileForReview } from "./files/projectFilesQueryState";
 import { environmentCatalog } from "../connection/catalog";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useEnvironmentDisconnectDelay } from "../hooks/useEnvironmentDisconnectDelay";
@@ -9113,7 +9114,28 @@ export default function ChatView(props: ChatViewProps) {
     const composerAttachmentsSnapshot = [...composerImagesSnapshot, ...composerFilesSnapshot];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
-    const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
+    const reviewRefreshPrompt = promptRef.current;
+    let composerReviewCommentsSnapshot: ReviewCommentContext[];
+    sendInFlightRef.current = true;
+    try {
+      composerReviewCommentsSnapshot = await refreshFileReviewComments(
+        composerReviewComments,
+        (filePath) => {
+          if (!activeWorkspaceRoot)
+            throw new Error("Cannot refresh review comments without a workspace.");
+          return readProjectFileForReview(environmentId, activeWorkspaceRoot, filePath);
+        },
+      );
+    } catch (error) {
+      setThreadError(
+        activeThread.id,
+        error instanceof Error ? error.message : "Could not refresh review comments.",
+      );
+      return;
+    } finally {
+      sendInFlightRef.current = false;
+    }
+    if (promptRef.current !== reviewRefreshPrompt) return;
     const composerThreadContextsSnapshot = [...composerThreadContexts];
     // Expired terminal excerpts are not sent; their chips leave the text with them.
     const messageTextForSend = composerTerminalContexts
@@ -9163,6 +9185,7 @@ export default function ChatView(props: ChatViewProps) {
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+      sendInFlightRef.current = false;
       return;
     }
 

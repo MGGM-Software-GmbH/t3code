@@ -99,6 +99,17 @@ describe("serializeLegacyContextMessage", () => {
     });
   });
 
+  it("preserves a detached review snapshot status through a legacy send", () => {
+    const detached = { ...review, sourceStatus: "removed" as const };
+    const legacy = serializeLegacyContextMessage({ text: "", records: [detached] });
+    const upgraded = upgradeLegacyContextMessage(legacy);
+    expect(upgraded.records[0]).toMatchObject({
+      sourceStatus: "removed",
+      diff: review.diff,
+      filePath: review.filePath,
+    });
+  });
+
   it.each([" ", "\n", "\n\n"])(
     "preserves the separator between a skill and a trailing PR through an older server: %j",
     (separator) => {
