@@ -1,5 +1,18 @@
 # T3 Code
 
+## MGGM fork: install and update (Linux CLI)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | sh
+```
+
+Installs the [latest published stable release from this fork](https://github.com/MGGM-Software-GmbH/t3code/releases/latest)
+and verifies its SHA-256 checksum. Rerun the same command to update, or set
+`T3CODE_VERSION` to pin a version. For devcontainers, run it from
+`postCreateCommand` so Docker's build cache does not skip the release check.
+See [fork installation](./docs/user/install.md#mggm-fork-linux-cli) for installation
+paths and version pinning.
+
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
@@ -21,17 +34,6 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 > - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
-
-### MGGM fork (Linux CLI)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | sh
-```
-
-Installs the latest published stable release from this fork and verifies its
-SHA-256 checksum. Rerun the installer to update, or set `T3CODE_VERSION` to pin a
-version. For devcontainers, run it from `postCreateCommand` so Docker's build
-cache does not skip the release check. See [fork installation](./docs/user/install.md#mggm-fork-linux-cli).
 
 ### Command line
 
