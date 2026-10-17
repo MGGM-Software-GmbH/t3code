@@ -13,6 +13,7 @@
 import {
   DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   DEFAULT_SERVER_SETTINGS,
+  ModelFavorites,
   ModelSelection,
   ProjectId,
   ProjectScript,
@@ -25,6 +26,8 @@ import {
   ProviderInstanceId,
   resolveProviderInstanceEnabled,
   ResponseStreamingMode,
+  PullRequestMergeMethod,
+  SidebarAutoSettleAfterDays,
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
@@ -74,7 +77,11 @@ export {
 } from "@t3tools/shared/serverSettings";
 
 const encodeServerSettings = Schema.encodeEffect(ServerSettings);
-const encodeServerSettingsJson = Schema.encodeUnknownEffect(fromJsonStringPretty(ServerSettings));
+const encodeServerSettingsJson = Schema.encodeUnknownEffect(
+  fromJsonStringPretty(
+    Schema.Struct({ ...ServerSettings.fields, defaultsProfile: Schema.Literal("mggm") }),
+  ),
+);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 
 const textEncoder = new TextEncoder();
@@ -309,22 +316,62 @@ const PersistedResponseStreamingMode = Schema.Union([
     }),
   ),
 );
+const PersistedServerSettings = Schema.Struct({
+  ...ServerSettings.fields,
+  defaultsProfile: Schema.Literal("mggm"),
+  responseStreamingMode: PersistedResponseStreamingMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
+  ),
+  projectSettingsOverrides: Schema.Record(
+    ProjectId,
+    Schema.Struct({
+      ...ProjectSettingsOverrides.fields,
+      responseStreamingMode: Schema.optionalKey(PersistedResponseStreamingMode),
+    }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+});
+
+// Settings are sparse on disk. Decode unmarked files with their original defaults,
+// then persist their effective values before subsequent writes can omit MGGM defaults.
+const LegacyPersistedServerSettings = Schema.Struct({
+  ...PersistedServerSettings.fields,
+  defaultsProfile: Schema.optionalKey(Schema.Never),
+  favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
+    Schema.withDecodingDefault(Effect.succeed(3)),
+  ),
+  autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  pullRequestMergeMethod: Schema.NullOr(PullRequestMergeMethod).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+});
 const ServerSettingsJson = fromLenientJson(
-  Schema.Struct({
-    ...ServerSettings.fields,
-    responseStreamingMode: PersistedResponseStreamingMode.pipe(
-      Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
-    ),
-    projectSettingsOverrides: Schema.Record(
-      ProjectId,
-      Schema.Struct({
-        ...ProjectSettingsOverrides.fields,
-        responseStreamingMode: Schema.optionalKey(PersistedResponseStreamingMode),
-      }),
-    ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  }),
+  Schema.Union([PersistedServerSettings, LegacyPersistedServerSettings]),
 );
 const decodeServerSettingsJsonExit = Schema.decodeUnknownExit(ServerSettingsJson);
+
+/** Preserve providers that were implicitly enabled before the MGGM defaults profile. */
+function preserveLegacyProviderDefaults(settings: ServerSettings): ServerSettings {
+  const providerInstances: Record<string, ProviderInstanceConfig> = {
+    claudeAgent: { driver: ProviderDriverKind.make("claudeAgent"), enabled: true, config: {} },
+    githubCopilot: {
+      ...DEFAULT_PROVIDER_INSTANCE_CONFIGS[ProviderInstanceId.make("githubCopilot")]!,
+      enabled: true,
+    },
+    ...settings.providerInstances,
+  };
+  for (const [instanceId, instance] of Object.entries(providerInstances)) {
+    if (instance.driver === "claudeAgent" && instance.enabled === undefined) {
+      providerInstances[instanceId] = { ...instance, enabled: true };
+    }
+  }
+  return { ...settings, providerInstances };
+}
 /**
  * The retired `providers.<kind>` map, read without its old schemas. Before
  * `providerInstances` existed each built-in driver had one blob there; it
@@ -449,7 +496,8 @@ function migrateLegacyProviderSettings(
     const enabled =
       explicitEnabled ??
       (HISTORY_RESTORED_DRIVERS.has(driver) && usedProviders.has(driver) ? true : undefined);
-    const driverDefault = resolveProviderInstanceEnabled({ driver, config: {} });
+    const driverDefault =
+      driver === "claudeAgent" ? true : resolveProviderInstanceEnabled({ driver, config: {} });
     if (Object.keys(config).length === 0 && (enabled === undefined || enabled === driverDefault)) {
       continue;
     }
@@ -498,6 +546,7 @@ function fallbackTextGenerationProvider(settings: ServerSettings): ServerSetting
 
 // Values under these keys are compared as a whole — never stripped field-by-field.
 const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
+  "defaultModelSelection",
   "backgroundActivity",
   "automaticGitFetchInterval",
   "providerHealthRefreshInterval",
@@ -681,8 +730,10 @@ const make = Effect.gen(function* () {
         ),
       );
       const sparseSettingsJson = yield* encodeServerSettingsJson(
-        stripDefaultServerSettings({ ...settings, providerInstances }, DEFAULT_SERVER_SETTINGS) ??
-          {},
+        Object.assign(
+          { defaultsProfile: "mggm" },
+          stripDefaultServerSettings({ ...settings, providerInstances }, DEFAULT_SERVER_SETTINGS),
+        ),
       );
 
       return yield* writeFileStringAtomically({
@@ -738,6 +789,7 @@ const make = Effect.gen(function* () {
 
   const loadSettingsFromDisk = Effect.gen(function* () {
     let settings = DEFAULT_SERVER_SETTINGS;
+    let needsDefaultsMigration = false;
     let legacyProviders: Readonly<Record<string, unknown>> | undefined;
     let legacySourceControl: Parameters<typeof migrateLegacySourceControlSettings>[1] = {};
     // A file that failed to decode must stay on disk for the user to repair;
@@ -759,7 +811,11 @@ const make = Effect.gen(function* () {
         const failure = decoded._tag === "Failure" ? decoded : legacySettings;
         settingsFileTrusted = false;
         // The file may hold an opt-out we can no longer read; never resume threads on a guess.
-        settings = { ...DEFAULT_SERVER_SETTINGS, continueThreadsAfterServerUpdate: false };
+        settings = {
+          ...DEFAULT_SERVER_SETTINGS,
+          continueThreadsAfterServerUpdate: false,
+          autoResumeLimitedThreads: false,
+        };
         if (failure._tag === "Failure") {
           yield* Effect.logWarning("failed to parse settings.json, using defaults", {
             path: settingsPath,
@@ -768,7 +824,9 @@ const make = Effect.gen(function* () {
           });
         }
       } else {
-        settings = decoded.value;
+        const { defaultsProfile, ...loadedSettings } = decoded.value;
+        needsDefaultsMigration = defaultsProfile === undefined;
+        settings = loadedSettings;
       }
     }
 
@@ -821,10 +879,14 @@ const make = Effect.gen(function* () {
             ),
           );
 
-    const loaded = foldProviderInstanceEnabledFlags(
+    const migratedProviders =
       legacyProviders === undefined
         ? settings
-        : migrateLegacyProviderSettings(settings, legacyProviders, providerHistory),
+        : migrateLegacyProviderSettings(settings, legacyProviders, providerHistory);
+    const loaded = foldProviderInstanceEnabledFlags(
+      needsDefaultsMigration
+        ? preserveLegacyProviderDefaults(migratedProviders)
+        : migratedProviders,
     );
     const folded = settingsFileTrusted
       ? foldLegacyProjectSettings(loaded, legacyProjectRows)
@@ -860,10 +922,18 @@ const make = Effect.gen(function* () {
     const migrated = settingsFileTrusted
       ? yield* moveInlineSettingsSecrets(sourceControlMigration.settings)
       : folded;
+    let hasUnmigratedInlineSecrets = false;
+    mapSettingsSecrets(migrated, (secret) => {
+      if (secret.sensitive && !secret.redacted && secret.value.length > 0) {
+        hasUnmigratedInlineSecrets = true;
+      }
+      return secret;
+    });
     // A file still carrying the retired `providers`, `bitbucket`, or `github` keys is rewritten
     // once so the migrated values persist and the old keys disappear.
     if (
       migrated !== loaded ||
+      (needsDefaultsMigration && legacySecretsCopied && !hasUnmigratedInlineSecrets) ||
       (settingsFileTrusted && legacyProviders !== undefined) ||
       hasLegacySourceControl
     ) {

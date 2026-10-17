@@ -3,6 +3,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  resolveProviderInstanceEnabled,
   type ServerSettings,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
@@ -19,24 +20,33 @@ function settingsWith(overrides: Partial<ServerSettings>): ServerSettings {
 describe("deriveProviderInstanceConfigMap", () => {
   const copilotId = ProviderInstanceId.make("githubCopilot");
 
-  it("ships GitHub Copilot without requiring a configured ACP instance", () => {
+  it("enables exactly one Codex instance in a new environment", () => {
+    const instances = deriveProviderInstanceConfigMap(DEFAULT_SERVER_SETTINGS);
+    expect(
+      Object.entries(instances)
+        .filter(([, instance]) => resolveProviderInstanceEnabled(instance))
+        .map(([id]) => id),
+    ).toEqual(["codex"]);
+  });
+
+  it("ships GitHub Copilot disabled with its executable resolved through PATH", () => {
     const merged = deriveProviderInstanceConfigMap(settingsWith({ providerInstances: {} }));
 
     expect(merged[copilotId]).toEqual({
       driver: "acpRegistry",
       displayName: "GitHub Copilot",
-      enabled: true,
-      config: { source: "registry", agentId: "github-copilot-cli" },
+      enabled: false,
+      config: { source: "registry", agentId: "github-copilot-cli", commandPath: "copilot" },
     });
     expect(merged[ProviderInstanceId.make("acpRegistry")]).toBeUndefined();
   });
 
-  it("preserves a disabled or customized shipped instance", () => {
+  it.each([true, false])("preserves a customized shipped instance with enabled=%s", (enabled) => {
     const settings = settingsWith({
       providerInstances: {
         [copilotId]: {
           driver: ProviderDriverKind.make("acpRegistry"),
-          enabled: false,
+          enabled,
           displayName: "Work Copilot",
           config: { source: "local", commandPath: "/opt/copilot", commandArgs: ["--acp"] },
         },

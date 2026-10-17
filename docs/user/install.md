@@ -26,9 +26,40 @@ To pin a version, pass `T3CODE_VERSION` to `sh`, for example:
 curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | T3CODE_VERSION=0.1.0-mggm.2 sh
 ```
 
-In a devcontainer, call the installer from `postCreateCommand` to check for a new
-release whenever the container is created, including rebuilds. Keep T3 data in a
-persistent volume. This installs the CLI without starting a server or service.
+In a devcontainer, install the CLI during the image build and check for a new
+release on rebuild. Keep the installed runtime outside the mounted T3 data
+directory so the mount does not hide the CLI. Persist T3 data separately. The
+installer does not start a server or service.
+
+### MGGM team defaults
+
+A new environment enables one Codex instance. Each employee authenticates their
+own Codex CLI with their own team account. Other providers, including the shipped
+Copilot entry, stay off until enabled in Settings. Executables are resolved from
+`PATH`; the fork does not create additional Codex homes or copy account credentials.
+
+New threads use GPT-6.1 Sol, High reasoning, Standard service, and Full Access.
+The model is a favorite; other available Codex models remain selectable. Confirm
+model access with the employee's account before the first team rollout. The
+default does not grant access to a model the account cannot use.
+
+New clients use the MGGM dark theme, interface/prompt/code sizes of 17/16/15,
+the Working shelf, and steering for messages sent during a running turn. Web and
+desktop glass opacity is 90%. Inactivity does not automatically settle threads.
+Limited threads resume at their reported reset time. Automatic pull is enabled
+for clean default-branch checkouts with an upstream and no local commits; pull
+requests default to rebase.
+
+These are adjustable defaults. Existing settings, including implicit values in
+older sparse settings files, are preserved. Provider update checks start off;
+maintain the Codex CLI version through the shared MGGM devcontainer setup.
+
+That setup also supplies the MGGM skills and project rules. Persist writable,
+employee-specific volumes for both the T3 home (`~/.t3`, or `T3CODE_HOME`) and
+Codex home (`~/.codex`, or `CODEX_HOME`) so rebuilds retain threads, settings, and
+the employee's login. Keep these volumes out of shared images and do not share
+one account directory between employees. The installer only installs T3 Code;
+it does not provision Codex, skills, or volume mounts.
 
 ## Command line
 

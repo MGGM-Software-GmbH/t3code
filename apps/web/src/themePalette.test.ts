@@ -522,6 +522,45 @@ describe("theme files", () => {
     }
   });
 
+  it("resolves the MGGM preset in dark mode without reserving a user's mggm theme id", () => {
+    const preset = getThemeDefinition("mggm-dark");
+    expect(preset?.label).toBe("MGGM");
+    expect(BUILT_IN_THEMES).toContain(preset);
+    expect(getThemeModes(preset!)).toEqual(["dark"]);
+    expect(singleAppearanceOf(preset!)).toBe("dark");
+    expect(resolveThemeAppearance("mggm-dark", true, false)).toBe("dark");
+    expect(resolveDesktopTheme("mggm-dark", false)).toBe("dark");
+    expectThemeColors(getThemeColorsForMode(preset!, "dark")!, {
+      canvas: "#0a0a0a",
+    });
+
+    const customTheme = parseThemeFile({
+      version: THEME_FILE_VERSION,
+      id: "mggm",
+      name: "Personal MGGM",
+      appearance: "light",
+      colors: { canvas: "#f8fbff" },
+    });
+    const setItem = vi.fn();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) =>
+          key === CUSTOM_THEMES_STORAGE_KEY ? JSON.stringify([customTheme]) : null,
+        setItem,
+      },
+    });
+    invalidateCustomThemes();
+    try {
+      expect(getThemeDefinition("mggm")?.label).toBe("Personal MGGM");
+      expect(resolveThemeAppearance("mggm", true, true)).toBe("light");
+      expect(getThemeDefinition("mggm-dark")).toBe(preset);
+      expect(setItem).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      invalidateCustomThemes();
+    }
+  });
+
   it("includes the dual-mode maintainer themes", () => {
     for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
       expect(getThemeDefinition(theme.id)).toBe(theme);

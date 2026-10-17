@@ -13,6 +13,11 @@ and verifies its SHA-256 checksum. Rerun the same command to update, or set
 See [fork installation](./docs/user/install.md#mggm-fork-linux-cli) for installation
 paths and version pinning.
 
+New builds of this fork start with one Codex provider, GPT-6.1 Sol with High reasoning
+and Standard service, the MGGM dark theme, and the Working shelf. Existing
+personal settings are preserved. See [MGGM team setup](./docs/user/install.md#mggm-team-defaults)
+for the defaults and persistent devcontainer data.
+
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.

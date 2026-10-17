@@ -80,6 +80,11 @@ function runBootScript(options: {
         if (options.storageThrows) throw new Error("storage blocked");
         return options.storage?.[key] ?? null;
       },
+      setItem: (key: string, value: string) => {
+        if (options.storageThrows) throw new Error("storage blocked");
+        options.storage ??= {};
+        options.storage[key] = value;
+      },
     },
     matchMedia: () => ({ matches: options.prefersDark }),
   };
@@ -149,6 +154,31 @@ const CHARCOAL_DARK_ONLY = {
 };
 
 describe("index.html boot script", () => {
+  it("starts a new browser in MGGM dark mode even on a light OS", () => {
+    const storage: Record<string, string> = {};
+    const result = runBootScript({ storage, prefersDark: false });
+    expect(result).toMatchObject({
+      isDark: true,
+      themeId: "mggm-dark",
+      backgroundColor: "oklch(0.144788 0 0)",
+    });
+    expect(storage).toEqual({
+      [THEME_STORAGE_KEY]: "mggm-dark",
+      [THEME_APPEARANCE_MODE_STORAGE_KEY]: "dark",
+    });
+    expect(runBootScript({ storage, prefersDark: false })).toEqual(result);
+  });
+
+  it.each([
+    { "t3code:client-settings:v1": "{}" },
+    { [THEME_STORAGE_KEY]: "system" },
+    { [THEME_APPEARANCE_MODE_STORAGE_KEY]: "system" },
+  ])("keeps existing implicit or explicit system appearance: %j", (saved) => {
+    const storage = { ...saved };
+    expect(runBootScript({ storage, prefersDark: false }).isDark).toBe(false);
+    expect(storage).toEqual(saved);
+  });
+
   const parityCases: ReadonlyArray<{
     name: string;
     storage: Record<string, string>;

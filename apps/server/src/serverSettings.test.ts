@@ -36,6 +36,7 @@ import * as ServerSettingsModule from "./serverSettings.ts";
 import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.ts";
 
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
+const decodeModelSelection = Schema.decodeEffect(ModelSelection);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 
@@ -100,10 +101,144 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
+  it.effect("preserves an unreadable defaults profile without automatically resuming threads", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const document = '{"defaultsProfile":"unsupported","autoResumeLimitedThreads":false}';
+      yield* fs.writeFileString(config.settingsPath, document);
+      const settings = yield* service.getSettings;
+      assert.isFalse(settings.autoResumeLimitedThreads);
+      assert.isFalse(settings.continueThreadsAfterServerUpdate);
+      assert.equal(yield* fs.readFileString(config.settingsPath), document);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect(
+    "uses MGGM defaults for a new environment and retains explicit opt-outs after reload",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const settings = yield* service.getSettings;
+        assert.deepEqual(
+          settings.defaultModelSelection,
+          DEFAULT_SERVER_SETTINGS.defaultModelSelection,
+        );
+        assert.isFalse(
+          settings.providerInstances[ProviderInstanceId.make("githubCopilot")]!.enabled,
+        );
+        assert.isNull(settings.sidebarAutoSettleAfterDays);
+        assert.isTrue(settings.autoResumeLimitedThreads);
+
+        yield* service.updateSettings({
+          favorites: [],
+          defaultModelSelection: null,
+          defaultAutoPull: false,
+          autoResumeLimitedThreads: false,
+          enableProviderUpdateChecks: true,
+          sidebarAutoSettleAfterDays: 7,
+          pullRequestMergeMethod: null,
+        });
+        const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
+          Effect.flatMap((reloadedService) => reloadedService.getSettings),
+          Effect.provide(ServerSettingsModule.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+        );
+        assert.deepInclude(reloaded, {
+          favorites: [],
+          defaultModelSelection: null,
+          defaultAutoPull: false,
+          autoResumeLimitedThreads: false,
+          enableProviderUpdateChecks: true,
+          sidebarAutoSettleAfterDays: 7,
+          pullRequestMergeMethod: null,
+        });
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect(
+    "preserves omitted upstream defaults and personal provider choices through migration",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.writeFileString(
+          config.settingsPath,
+          JSON.stringify({
+            providerInstances: {
+              claudeAgent: { driver: "claudeAgent", enabled: false, config: {} },
+              claude_work: { driver: "claudeAgent", config: {} },
+              githubCopilot: {
+                driver: "acpRegistry",
+                enabled: true,
+                config: { commandPath: "copilot" },
+              },
+              codex_work: { driver: "codex", enabled: true, config: { homePath: "/work/codex" } },
+            },
+          }),
+        );
+        const settings = yield* service.getSettings;
+        assert.deepInclude(settings, {
+          favorites: null,
+          defaultModelSelection: null,
+          defaultAutoPull: false,
+          autoResumeLimitedThreads: false,
+          enableProviderUpdateChecks: true,
+          sidebarAutoSettleAfterDays: 3,
+          pullRequestMergeMethod: null,
+        });
+        assert.isFalse(settings.providerInstances[ProviderInstanceId.make("claudeAgent")]!.enabled);
+        assert.isTrue(settings.providerInstances[ProviderInstanceId.make("claude_work")]!.enabled);
+        assert.isTrue(
+          settings.providerInstances[ProviderInstanceId.make("githubCopilot")]!.enabled,
+        );
+        assert.deepEqual(
+          settings.providerInstances[ProviderInstanceId.make("codex_work")]!.config,
+          {
+            homePath: "/work/codex",
+          },
+        );
+        const document = JSON.parse(yield* fs.readFileString(config.settingsPath));
+        assert.equal(document.defaultsProfile, "mggm");
+        const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
+          Effect.flatMap((reloadedService) => reloadedService.getSettings),
+          Effect.provide(ServerSettingsModule.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+        );
+        assert.deepEqual(reloaded, settings);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect(
+    "persists a different model as a complete selection and preserves the profile on reload",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const selection = yield* decodeModelSelection({
+          instanceId: "codex",
+          model: "gpt-6-luna",
+          options: [{ id: "reasoningEffort", value: "medium" }],
+        });
+        yield* service.updateSettings({ defaultModelSelection: selection });
+        const document = JSON.parse(yield* fs.readFileString(config.settingsPath));
+        assert.equal(document.defaultsProfile, "mggm");
+        assert.deepEqual(document.defaultModelSelection, selection);
+        const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
+          Effect.flatMap((reloadedService) => reloadedService.getSettings),
+          Effect.provide(ServerSettingsModule.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+        );
+        assert.deepEqual(reloaded.defaultModelSelection, selection);
+        assert.isTrue(reloaded.defaultAutoPull);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
       const provider = ProviderInstanceId.make("codex_work");
+      yield* service.updateSettings({ favorites: [] });
       yield* Effect.all(
         [
           service.updateSettings({
@@ -650,7 +785,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         assert.isFalse(next.sidebarAutoSettleOnMerge);
         assert.strictEqual(change?.sidebarAutoSettleAfterDays, null);
         assert.isFalse(change?.sidebarAutoSettleOnMerge);
-        assert.strictEqual(persisted.sidebarAutoSettleAfterDays, null);
+        assert.isUndefined(persisted.sidebarAutoSettleAfterDays);
         assert.isFalse(persisted.sidebarAutoSettleOnMerge);
       }),
     ).pipe(Effect.provide(layerServerSettings())),
@@ -828,6 +963,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             enabled: false,
             config: {},
           },
+          [ProviderInstanceId.make("claudeAgent")]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: true,
+            config: {},
+          },
         },
       });
 
@@ -849,6 +989,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
         [claude]: {
           driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
           config: { customModels: ["z-ai/glm-5.3-flash"] },
         },
       };
@@ -1059,6 +1200,10 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       assert.deepEqual(settings.providerInstances, {
         ...DEFAULT_PROVIDER_INSTANCE_CONFIGS,
+        [ProviderInstanceId.make("githubCopilot")]: {
+          ...DEFAULT_PROVIDER_INSTANCE_CONFIGS[ProviderInstanceId.make("githubCopilot")]!,
+          enabled: true,
+        },
         [ProviderInstanceId.make("codex")]: {
           driver: ProviderDriverKind.make("codex"),
           config: { binaryPath: "/opt/guard/bin/codex" },
@@ -1173,7 +1318,18 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       const settings = yield* serverSettings.getSettings;
 
-      assert.deepEqual(settings.providerInstances, DEFAULT_PROVIDER_INSTANCE_CONFIGS);
+      assert.deepEqual(settings.providerInstances, {
+        ...DEFAULT_PROVIDER_INSTANCE_CONFIGS,
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+          config: {},
+        },
+        [ProviderInstanceId.make("githubCopilot")]: {
+          ...DEFAULT_PROVIDER_INSTANCE_CONFIGS[ProviderInstanceId.make("githubCopilot")]!,
+          enabled: true,
+        },
+      });
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
@@ -1246,7 +1402,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("githubCopilot")], {
         driver: ProviderDriverKind.make("acpRegistry"),
         displayName: "GitHub Copilot",
-        enabled: true,
+        enabled: false,
         config: { source: "registry", agentId: "github-copilot-cli", commandPath: "copilot" },
       });
     }).pipe(Effect.provide(layerServerSettings())),
@@ -1432,6 +1588,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
       assert.deepEqual(JSON.parse(raw), {
+        defaultsProfile: "mggm",
         addProjectBaseDirectory: "~/Development",
         observability: {
           otlpTracesUrl: "http://localhost:4318/v1/traces",

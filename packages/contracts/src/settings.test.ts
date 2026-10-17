@@ -23,6 +23,42 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("MGGM defaults", () => {
+  it("starts with one Codex account and an adjustable Standard model selection", () => {
+    const settings = decodeServerSettings({});
+    expect(settings.defaultModelSelection).toEqual({
+      instanceId: "codex",
+      model: "gpt-6.1-sol",
+      options: [
+        { id: "reasoningEffort", value: "high" },
+        { id: "serviceTier", value: "default" },
+      ],
+    });
+    expect(settings.favorites).toEqual([{ provider: "codex", model: "gpt-6.1-sol" }]);
+    expect(settings.providerModelPreferences).toBeNull();
+    expect(decodeClaudeSettings({}).enabled).toBe(false);
+    expect(settings).toMatchObject({
+      defaultRuntimeMode: "full-access",
+      enableProviderUpdateChecks: false,
+      defaultAutoPull: true,
+      sidebarAutoSettleAfterDays: null,
+      autoResumeLimitedThreads: true,
+      pullRequestMergeMethod: "rebase",
+    });
+  });
+
+  it("starts the client with Working, steering, and the approved font sizes", () => {
+    expect(decodeClientSettings({})).toMatchObject({
+      sidebarWorkingShelfEnabled: true,
+      followUpBehavior: "steer",
+      fontSizeInterface: 17,
+      fontSizePrompt: 16,
+      fontSizeCode: 15,
+      glassOpacity: 90,
+    });
+  });
+});
+
 describe("ServerSettings response streaming", () => {
   it("defaults to paragraph buffering", () => {
     expect(decodeServerSettings({}).responseStreamingMode).toBe("paragraph");
@@ -581,7 +617,7 @@ describe("ClientSettings recording input overlays", () => {
 
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
-    expect(decodeClientSettings({}).glassOpacity).toBe(80);
+    expect(decodeClientSettings({}).glassOpacity).toBe(90);
   });
 
   it.each([39, 101, 72.5])("rejects an invalid glass opacity: %s", (value) => {
@@ -706,8 +742,8 @@ describe("ClientSettings send shortcut", () => {
 });
 
 describe("ClientSettings follow-up behavior", () => {
-  it("defaults to queue and accepts either behavior", () => {
-    expect(decodeClientSettings({}).followUpBehavior).toBe("queue");
+  it("defaults to steering and accepts either behavior", () => {
+    expect(decodeClientSettings({}).followUpBehavior).toBe("steer");
     for (const followUpBehavior of ["queue", "steer"]) {
       expect(decodeClientSettings({ followUpBehavior }).followUpBehavior).toBe(followUpBehavior);
       expect(decodeClientSettingsPatch({ followUpBehavior }).followUpBehavior).toBe(
@@ -734,9 +770,9 @@ describe("ClientSettings composer collapse", () => {
 });
 
 describe("ServerSettings thread settlement", () => {
-  it("defaults merge settlement on and inactivity settlement to three days", () => {
+  it("defaults merge settlement on and inactivity settlement off", () => {
     const settings = decodeServerSettings({});
-    expect(settings.sidebarAutoSettleAfterDays).toBe(3);
+    expect(settings.sidebarAutoSettleAfterDays).toBeNull();
     expect(settings.sidebarAutoSettleOnMerge).toBe(true);
   });
 
@@ -843,12 +879,19 @@ describe("provider enabled defaults", () => {
     ).toBe(false);
   });
 
-  it("enables only the stable bindings by default", () => {
+  it("enables only Codex by default", () => {
     const enabledByDefault = (driver: string) =>
       resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make(driver), config: {} });
     expect(enabledByDefault("codex")).toBe(true);
-    expect(enabledByDefault("claudeAgent")).toBe(true);
-    for (const driver of ["cursor", "grok", "muse", "pi", "opencode", "antigravity"]) {
+    for (const driver of [
+      "claudeAgent",
+      "cursor",
+      "grok",
+      "muse",
+      "pi",
+      "opencode",
+      "antigravity",
+    ]) {
       expect(enabledByDefault(driver)).toBe(false);
     }
   });
@@ -1098,23 +1141,23 @@ describe("resolveProjectProviderInstanceEnabled", () => {
   const projectId = "project-a" as ProjectId;
   const instanceId = ProviderInstanceId.make("codex_work");
 
-  it("enables the shipped Copilot instance unless settings explicitly disable it", () => {
+  it("keeps the shipped Copilot instance off until explicitly enabled", () => {
     const copilotId = ProviderInstanceId.make("githubCopilot");
     expect(resolveProjectProviderInstanceEnabled(DEFAULT_SERVER_SETTINGS, null, copilotId)).toBe(
-      true,
+      false,
     );
     expect(
       resolveProjectProviderInstanceEnabled(
         {
           ...DEFAULT_SERVER_SETTINGS,
           providerInstances: {
-            [copilotId]: { driver: ProviderDriverKind.make("acpRegistry"), enabled: false },
+            [copilotId]: { driver: ProviderDriverKind.make("acpRegistry"), enabled: true },
           },
         },
         null,
         copilotId,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       resolveProjectProviderInstanceEnabled(
         {
@@ -1224,7 +1267,7 @@ describe("server model preferences", () => {
     ).toThrow();
   });
   it("distinguishes unmigrated lists from deliberately cleared lists", () => {
-    expect(decodeServerSettings({})).toMatchObject({
+    expect(decodeServerSettings({ favorites: null })).toMatchObject({
       favorites: null,
       providerModelPreferences: null,
     });
