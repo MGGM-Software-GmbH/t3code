@@ -78,6 +78,10 @@ Browser and terminal sign-in leave credentials in the agent's own store. Agents 
 through environment variables still take those keys in the instance's environment settings.
 A configured environment or agent home applies to both sign-in and chat.
 
+Copilot CLI's **Log in with Copilot CLI** method opens its login command in the in-app terminal.
+On a remote environment, open the displayed GitHub device URL on your own device and enter the
+one-time code. T3 Code reconnects to Copilot after the command exits to verify the account.
+
 If the agent advertises logout, choose **Sign out**. Changing a shared agent login stops running
 threads for instances of that same agent on the environment. Thread history and workspace files
 are kept. ACP does not describe account isolation, so adding another instance does not guarantee
