@@ -15,13 +15,19 @@ work through the same generic integration.
 
 ## GitHub Copilot
 
-GitHub Copilot is included as a configured provider. Open **Settings → Providers → GitHub Copilot**
-and complete sign-in if requested, then select one of its models in the composer. The CLI installs
-on the connected environment automatically. Use **Executable override** to run an existing Copilot
-installation instead. You can disable the provider in its settings without removing your account.
+GitHub Copilot is included as a configured provider and uses `copilot` from the connected
+environment's PATH. Install the [Copilot CLI](https://github.com/github/copilot-cli) on each
+environment, then open **Settings → Providers → GitHub Copilot** and complete sign-in if requested.
+Select one of its models in the composer. Sign-in is separate for each environment. You can disable
+the provider without removing your account.
 
-Managed installations honor the environment's npm settings. If a minimum release age blocks the
-Registry's version, use an existing Copilot executable or retry when that version meets your policy.
+The shipped preset does not install or update the CLI automatically. If `copilot` is missing from
+the environment's PATH, install it or set **Executable override** to its absolute path. Existing
+provider configurations keep their executable selection; set this field to `copilot` to use PATH.
+
+To opt into a T3-managed Registry installation, clear **Executable override**. Managed installations
+honor the environment's npm settings. If a minimum release age blocks the Registry's version, use
+an existing Copilot executable or retry when that version meets your policy.
 
 ## Add an agent
 

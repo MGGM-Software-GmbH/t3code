@@ -1247,7 +1247,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         driver: ProviderDriverKind.make("acpRegistry"),
         displayName: "GitHub Copilot",
         enabled: true,
-        config: { source: "registry", agentId: "github-copilot-cli" },
+        config: { source: "registry", agentId: "github-copilot-cli", commandPath: "copilot" },
       });
     }).pipe(Effect.provide(layerServerSettings())),
   );
@@ -1262,6 +1262,29 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         enabled: false,
         displayName: "Work Copilot",
         config: { source: "local", commandPath: "/opt/copilot", commandArgs: ["--acp"] },
+      };
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        JSON.stringify({ providerInstances: { githubCopilot: instance } }),
+      );
+
+      const settings = yield* service.getSettings;
+      assert.deepEqual(
+        settings.providerInstances[ProviderInstanceId.make("githubCopilot")],
+        instance,
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("keeps an explicit managed Copilot installation on load", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const instance = {
+        driver: ProviderDriverKind.make("acpRegistry"),
+        enabled: true,
+        config: { source: "registry", agentId: "github-copilot-cli", commandPath: "" },
       };
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,

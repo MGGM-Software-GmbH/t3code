@@ -1375,7 +1375,8 @@ export const DEFAULT_PROVIDER_INSTANCE_CONFIGS: Readonly<
     driver: ProviderDriverKind.make("acpRegistry"),
     displayName: "GitHub Copilot",
     enabled: true,
-    config: { source: "registry", agentId: "github-copilot-cli" },
+    // Registry metadata supplies ACP arguments; the environment owns CLI installation and updates.
+    config: { source: "registry", agentId: "github-copilot-cli", commandPath: "copilot" },
   },
 };
 
