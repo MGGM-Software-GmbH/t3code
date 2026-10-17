@@ -8,7 +8,8 @@
  * - installs the Debian packages for any libraries the browser cannot load.
  *
  * Both need root. Without it, the command prints what it would change and the
- * `sudo` line to run. It is safe to run again; it skips what is already done.
+ * `sudo` line to run, then fails so installers can detect unfinished setup.
+ * Running as root reloads an existing profile too, including after a failed load.
  */
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Console from "effect/Console";
@@ -112,7 +113,10 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
       const isRoot = (yield* HostProcess.UserId) === 0;
       const setupCommand = yield* resolveRootCliCommand(PreviewBrowserHost.SETUP_SUBCOMMAND);
 
-      const needsProfile = yield* PreviewBrowserHost.sandboxBlocked;
+      // A profile on disk may not be loaded: an earlier parser run can fail.
+      const needsProfile = yield* isRoot
+        ? PreviewBrowserHost.sandboxRestricted
+        : PreviewBrowserHost.sandboxBlocked;
       const browser = yield* installedBrowser(yield* setupBaseDir(baseDir));
       const missing = Option.isSome(browser)
         ? yield* PreviewBrowserHost.missingLibraries(browser.value)
@@ -136,24 +140,33 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
         if (missing.length > 0) {
           yield* Console.log(`T3's browser is missing ${missing.join(", ")}; setup installs them.`);
         }
-        return yield* Console.log(`\nThis needs root. Run:\n\n  ${setupCommand}\n`);
+        yield* Console.log(`\nThis needs root. Run:\n\n  ${setupCommand}\n`);
+        return yield* needsProfile
+          ? new PreviewBrowserHost.PreviewBrowserSandboxError({ setupCommand })
+          : new PreviewBrowserHost.PreviewBrowserLibrariesError({
+              setupCommand,
+              libraries: missing,
+            });
       }
 
       if (needsProfile) {
-        yield* fs
-          .writeFileString(
-            PreviewBrowserHost.APPARMOR_PROFILE_PATH,
-            PreviewBrowserHost.APPARMOR_PROFILE,
-          )
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new BrowserSetupStepError({
-                  step: `write ${PreviewBrowserHost.APPARMOR_PROFILE_PATH}`,
-                  detail: cause.message,
-                }),
-            ),
-          );
+        // Preserve administrator policy and its local overrides when repairing a load.
+        if (!(yield* fs.exists(PreviewBrowserHost.APPARMOR_PROFILE_PATH))) {
+          yield* fs
+            .writeFileString(
+              PreviewBrowserHost.APPARMOR_PROFILE_PATH,
+              PreviewBrowserHost.APPARMOR_PROFILE,
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new BrowserSetupStepError({
+                    step: `write ${PreviewBrowserHost.APPARMOR_PROFILE_PATH}`,
+                    detail: cause.message,
+                  }),
+              ),
+            );
+        }
         yield* runStep("load the AppArmor profile", "apparmor_parser", [
           "-r",
           PreviewBrowserHost.APPARMOR_PROFILE_PATH,

@@ -141,18 +141,23 @@ export const missingLibraries = Effect.fn("PreviewBrowserHost.missingLibraries")
   return listed.length > 0 ? listed : [loaderError];
 });
 
+/** Whether this Linux host requires an AppArmor policy to allow Chrome's user namespace. */
+export const sandboxRestricted = Effect.gen(function* () {
+  if ((yield* HostProcess.Platform) !== "linux") return false;
+  const fs = yield* FileSystem.FileSystem;
+  return yield* fs.readFileString(USERNS_RESTRICTION).pipe(
+    Effect.map((value) => value.trim() === "1"),
+    Effect.orElseSucceed(() => false),
+  );
+}).pipe(Effect.withSpan("PreviewBrowserHost.sandboxRestricted"));
+
 /**
  * Whether Chrome's sandbox will be blocked here: the host restricts user
  * namespaces and T3's AppArmor profile is not installed. Readable without
  * root, so the server checks it at startup.
  */
 export const sandboxBlocked = Effect.gen(function* () {
-  if ((yield* HostProcess.Platform) !== "linux") return false;
+  if (!(yield* sandboxRestricted)) return false;
   const fs = yield* FileSystem.FileSystem;
-  const restricted = yield* fs.readFileString(USERNS_RESTRICTION).pipe(
-    Effect.map((value) => value.trim() === "1"),
-    Effect.orElseSucceed(() => false),
-  );
-  if (!restricted) return false;
   return !(yield* fs.exists(APPARMOR_PROFILE_PATH).pipe(Effect.orElseSucceed(() => false)));
 }).pipe(Effect.withSpan("PreviewBrowserHost.sandboxBlocked"));

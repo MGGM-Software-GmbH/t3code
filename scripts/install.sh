@@ -216,6 +216,18 @@ else
   trap - EXIT
 fi
 
+if [ "$platform" = linux ]; then
+  step "Setting up the browser host..."
+  if ! "${target_dir}/t3" browser setup --base-dir "$t3_home"; then
+    # Install only the host prerequisites. Never start T3 or change its user data as root.
+    if [ "$(id -u)" -eq 0 ] || ! command -v sudo >/dev/null 2>&1; then
+      fail "browser host setup failed; run the browser setup command printed above, then rerun this installer"
+    fi
+    sudo -n -- "${target_dir}/t3" browser setup --base-dir "$t3_home" ||
+      fail "browser host setup failed; run the browser setup command printed above, then rerun this installer"
+  fi
+fi
+
 step "Setting up the t3 command..."
 mkdir -p "$bin_dir"
 ln -sfn "${target_dir}/t3" "${bin_dir}/t3"

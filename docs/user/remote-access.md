@@ -225,8 +225,15 @@ The server shows the exact line for how you started it, such as
 `sudo npx t3 browser setup`, and keeps your `PATH` when Node is installed only
 for your user. Where `t3` is not on your `PATH`, such as with only the
 desktop app installed, it names the full path of the app's own `t3` instead. It allows Chrome's sandbox with an AppArmor profile and installs
-any missing libraries with apt. It is safe to run again. Without `sudo`, it
-only reports what it would change.
+any missing libraries with apt. It is safe to run again and reloads an existing
+AppArmor profile without replacing administrator changes. Without `sudo`, it
+reports what it would change and exits unsuccessfully when setup is required.
+
+The Linux shell installer runs browser setup before reporting a successful
+installation. If root is needed, it uses non-interactive sudo. If that is not
+available, run the printed setup command with root privileges and rerun the
+installer. Installing an extracted archive manually still needs the setup
+command above on affected hosts.
 
 The browser always runs in Chrome's sandbox. Where you cannot change the host,
 set `T3CODE_SERVER_BROWSER_SANDBOX=0` for the environment to run without it.
