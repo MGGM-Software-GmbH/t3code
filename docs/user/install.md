@@ -8,7 +8,31 @@ desktop, web, or mobile app. Set up the machine where the agents will work first
 You need an installed, authenticated provider before starting a thread. You can
 launch T3 Code and configure providers afterwards.
 
+## MGGM fork (Linux CLI)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | sh
+```
+
+This installs the latest published stable release from `MGGM-Software-GmbH/t3code`
+for Linux x64 or ARM64 and verifies the archive against that release's `SHA256SUMS`.
+It installs the complete runtime below `~/.t3/runtime/versions` and links
+`~/.local/bin/t3`. Add `~/.local/bin` to `PATH` if needed. Rerun the same command
+to update the fork; `t3 update` follows upstream releases.
+
+To pin a version, pass `T3CODE_VERSION` to `sh`, for example:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | T3CODE_VERSION=0.1.0-mggm.2 sh
+```
+
+In a devcontainer, call the installer from `postCreateCommand` to check for a new
+release whenever the container is created, including rebuilds. Keep T3 data in a
+persistent volume. This installs the CLI without starting a server or service.
+
 ## Command line
+
+The following commands install upstream releases.
 
 ```bash
 curl -fsSL https://t3.codes/install.sh | sh

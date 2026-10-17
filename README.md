@@ -22,7 +22,20 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 > - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
+### MGGM fork (Linux CLI)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | sh
+```
+
+Installs the latest published stable release from this fork and verifies its
+SHA-256 checksum. Rerun the installer to update, or set `T3CODE_VERSION` to pin a
+version. For devcontainers, run it from `postCreateCommand` so Docker's build
+cache does not skip the release check. See [fork installation](./docs/user/install.md#mggm-fork-linux-cli).
+
 ### Command line
+
+For upstream releases:
 
 ```bash
 curl -fsSL https://t3.codes/install.sh | sh
