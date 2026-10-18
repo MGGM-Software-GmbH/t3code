@@ -22,6 +22,13 @@ import {
   ChatGptHandoffState,
 } from "./providerSetup.ts";
 import * as Schema from "effect/Schema";
+import {
+  PdSecretsStatus,
+  PdSecretsLoginInput,
+  PdSecretsRespondInput,
+  PdSecretsLoginResult,
+  PdSecretsError,
+} from "./pdSecrets.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
@@ -405,6 +412,10 @@ export const WS_METHODS = {
   // Provider methods
   providerUploadFeedback: "provider.uploadFeedback",
   providerAuthStart: "provider.auth.start",
+  pdSecretsStatus: "pd-secrets.status",
+  pdSecretsLogin: "pd-secrets.login",
+  pdSecretsRespond: "pd-secrets.respond",
+  pdSecretsCancel: "pd-secrets.cancel",
   providerConsumeResetCredit: "provider.consumeResetCredit",
   providerAuthComplete: "provider.auth.complete",
   chatGptReconnectProfile: "provider.chatgpt.reconnect-profile",
@@ -649,6 +660,28 @@ const WsProviderAuthStartRpc = Rpc.make(WS_METHODS.providerAuthStart, {
   payload: ProviderAuthStartInput,
   success: ProviderAuthState,
   error: ProviderSetupRpcError,
+});
+
+const PdSecretsRpcError = Schema.Union([PdSecretsError, EnvironmentAuthorizationError]);
+const WsPdSecretsStatusRpc = Rpc.make(WS_METHODS.pdSecretsStatus, {
+  payload: Schema.Struct({}),
+  success: PdSecretsStatus,
+  error: PdSecretsRpcError,
+});
+const WsPdSecretsLoginRpc = Rpc.make(WS_METHODS.pdSecretsLogin, {
+  payload: PdSecretsLoginInput,
+  success: PdSecretsLoginResult,
+  error: PdSecretsRpcError,
+});
+const WsPdSecretsRespondRpc = Rpc.make(WS_METHODS.pdSecretsRespond, {
+  payload: PdSecretsRespondInput,
+  success: PdSecretsLoginResult,
+  error: PdSecretsRpcError,
+});
+const WsPdSecretsCancelRpc = Rpc.make(WS_METHODS.pdSecretsCancel, {
+  payload: Schema.Struct({}),
+  success: Schema.Void,
+  error: PdSecretsRpcError,
 });
 
 const WsProviderAuthRespondRpc = Rpc.make(WS_METHODS.providerAuthRespond, {
@@ -1882,6 +1915,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpdateProviderRpc,
   WsProviderConsumeResetCreditRpc,
   WsProviderAuthStartRpc,
+  WsPdSecretsStatusRpc,
+  WsPdSecretsLoginRpc,
+  WsPdSecretsRespondRpc,
+  WsPdSecretsCancelRpc,
   WsProviderAuthCompleteRpc,
   WsChatGptReconnectProfileRpc,
   WsChatGptImportProfileRpc,

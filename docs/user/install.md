@@ -61,6 +61,20 @@ the employee's login. Keep these volumes out of shared images and do not share
 one account directory between employees. The installer only installs T3 Code;
 it does not provision Codex, skills, or volume mounts.
 
+### Password Depot sign-in
+
+When `pd-secrets` is installed on a connected environment, the MGGM fork checks
+its cache on connection and once an hour. An expired cache opens a sign-in dialog.
+Enter your Password Depot password, then your TOTP code if requested. T3 passes
+these inputs to the environment's CLI without saving them. The CLI continues to
+own the encrypted cache and its Monday 05:00 expiry policy.
+
+Use the key control in the sidebar to check again or reopen sign-in after
+dismissing it. Each environment uses its own installation and cache. Configure
+`pd-secrets` and the `~/.claude/.env` mappings on that host in a terminal before
+using browser sign-in. A session needs permission to maintain the environment
+to sign in.
+
 ## Command line
 
 The following commands install upstream releases.
