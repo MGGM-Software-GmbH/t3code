@@ -154,6 +154,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server streams quota from configured usage-limit sources. Same
       version-skew contract as environmentThemes. */
   usageLimitSources: Schema.optionalKey(Schema.Boolean),
+  /** Server supports pd-secrets status and sign-in. Missing on older servers,
+      which must not receive the integration's RPCs. */
+  pdSecrets: Schema.optionalKey(Schema.Boolean),
   /** Server persists custom model rates and applies them to usage summaries. */
   usagePriceOverrides: Schema.optionalKey(Schema.Boolean),
   /** Server persists model mappings and folds mapped usage into the target model. */

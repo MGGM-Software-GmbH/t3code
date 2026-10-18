@@ -20,6 +20,8 @@ const actions = vi.hoisted(() => ({
   cancel: vi.fn(),
   toast: vi.fn(),
   statuses: new Map<string, string>(),
+  failures: new Set<string>(),
+  statusCalls: vi.fn(),
 }));
 vi.mock("../../state/presentation", async () => {
   const { Atom } = await import("effect/reactivity");
@@ -27,12 +29,16 @@ vi.mock("../../state/presentation", async () => {
 });
 vi.mock("../../state/server", async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
+  const Cause = await import("effect/Cause");
   const status = Atom.family((id: string) =>
-    Atom.make(() =>
-      AsyncResult.success({
+    Atom.make(() => {
+      actions.statusCalls(id);
+      if (actions.failures.has(id))
+        return AsyncResult.failure(Cause.fail(new Error("Unsupported pd-secrets RPC")));
+      return AsyncResult.success({
         state: (actions.statuses.get(id) ?? "not-installed") as PdSecretsStatus["state"],
-      }),
-    ),
+      });
+    }),
   );
   const allowed = Atom.family((_id: string) => Atom.make(true));
   return {
@@ -72,6 +78,8 @@ beforeEach(() => {
   actions.respond.mockReset();
   actions.toast.mockReset();
   actions.statuses.clear();
+  actions.failures.clear();
+  actions.statusCalls.mockClear();
   actions.cancel.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   registry = AtomRegistry.make();
   container = document.createElement("div");
@@ -80,10 +88,16 @@ beforeEach(() => {
   registry.set(
     environmentPresentations.presentationsAtom as Atom.Writable<unknown>,
     new Map([
-      [wsl, { connection: { phase: "connected" }, entry: { target: { label: "WSL test" } } }],
-      [dgx, { connection: { phase: "connected" }, entry: { target: { label: "DGX test" } } }],
+      [wsl, presentation("WSL test")],
+      [dgx, presentation("DGX test")],
     ]),
   );
+});
+
+const presentation = (label: string, supportsPdSecrets = true) => ({
+  connection: { phase: "connected" },
+  entry: { target: { label } },
+  serverConfig: { environment: { capabilities: supportsPdSecrets ? { pdSecrets: true } : {} } },
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -128,6 +142,36 @@ it("hides both control and dialog when no connected environment has pd-secrets",
   await render();
   expect(container.querySelector("button")).toBeNull();
   expect(document.querySelector("#pd-secrets-credential")).toBeNull();
+});
+
+it("checks the installed host without sending unsupported RPCs to an older connected host", async () => {
+  actions.statuses.set(wsl, "connected");
+  actions.failures.add(dgx);
+  registry.set(
+    environmentPresentations.presentationsAtom as Atom.Writable<unknown>,
+    new Map([
+      [wsl, presentation("WSL test")],
+      [dgx, presentation("DGX test", false)],
+    ]),
+  );
+  await render();
+  const control = container.querySelector<HTMLButtonElement>("button")!;
+  expect(control.getAttribute("aria-label")).toBe("pd-secrets: connected");
+  await act(async () => control.click());
+  expect(actions.toast).toHaveBeenCalledWith({ type: "success", title: "pd-secrets is connected" });
+  expect(actions.statusCalls).not.toHaveBeenCalledWith(dgx);
+});
+
+it("reports a real status error from a host that supports pd-secrets", async () => {
+  setStatus(wsl, "connected");
+  await render();
+  actions.failures.add(wsl);
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  expect(actions.toast).toHaveBeenCalledWith({
+    type: "error",
+    title: "Could not check pd-secrets",
+  });
+  expect(actions.toast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
 });
 
 it("prompts for the installed host even when the sidebar control is unmounted", async () => {

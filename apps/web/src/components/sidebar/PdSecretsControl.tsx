@@ -40,7 +40,11 @@ const isPdSecretsError = Schema.is(PdSecretsError);
 
 const snapshotsAtom = Atom.make((get) =>
   [...get(environmentPresentations.presentationsAtom)]
-    .filter(([, presentation]) => presentation.connection.phase === "connected")
+    .filter(
+      ([, presentation]) =>
+        presentation.connection.phase === "connected" &&
+        presentation.serverConfig?.environment.capabilities.pdSecrets === true,
+    )
     .map(([environmentId, presentation]) => {
       const result = get(serverEnvironment.pdSecretsStatus({ environmentId, input: {} }));
       return {
