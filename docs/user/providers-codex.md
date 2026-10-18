@@ -25,6 +25,21 @@ T3 Code can use your installed Codex and its existing login. Run `codex login`
 on the environment's machine to sign in. [Provider setup](./install.md#providers)
 covers installation and custom configuration.
 
+### Run a CLI startup wrapper
+
+Set **Settings → Providers → Codex → Binary path** to an executable wrapper to
+prepare your CLI environment before a session starts. Forward the arguments and
+stdin unchanged, keep setup output on stderr, and replace the wrapper process
+with the real Codex executable when preparation succeeds. A failed preparation
+must exit with a nonzero status.
+
+T3 Code supplies `T3_CODEX_START_KIND=session` for agent sessions and
+`T3_CODEX_START_KIND=probe` for status, skills, and account requests. Sessions also
+receive their project directory in `T3_CODEX_WORKSPACE`. Probes receive an empty
+workspace and should not run session setup. `CODEX_HOME` already points to the
+selected account, including its shadow home when configured. These variables
+are available on the environment's machine, regardless of which client connects.
+
 ## Use multiple accounts
 
 Add another ChatGPT account in **Settings → Providers**, then select the account
