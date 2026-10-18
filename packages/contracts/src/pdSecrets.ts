@@ -36,6 +36,8 @@ const FAILURE_MESSAGES = {
   check_failed: "Could not check pd-secrets on this environment.",
   busy: "Another pd-secrets sign-in is already in progress on this environment.",
   login_failed: "pd-secrets sign-in failed. Check your password, TOTP code, and server connection.",
+  post_login_failed:
+    "pd-secrets is connected, but the post-login script failed. Check the script in Settings → Integrations → pd-secrets on this environment.",
   configuration: "pd-secrets did not request a password. Configure pd-secrets in a terminal first.",
   expired: "This pd-secrets sign-in expired. Start sign-in again.",
   cancelled: "pd-secrets sign-in was cancelled.",

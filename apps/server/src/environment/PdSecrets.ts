@@ -20,6 +20,7 @@ import * as Scope from "effect/Scope";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as NodeUtil from "node:util";
+import * as ServerSettings from "../serverSettings.ts";
 
 export class PdSecrets extends Context.Service<
   PdSecrets,
@@ -40,8 +41,9 @@ export class PdSecrets extends Context.Service<
 interface LoginFlow {
   readonly id: string;
   readonly ownerSessionId: string;
-  phase: "password" | "running" | "totp";
+  phase: "password" | "running" | "totp" | "post-login";
   result: Deferred.Deferred<PdSecretsLoginResult, PdSecretsError>;
+  readonly failure: Deferred.Deferred<never, PdSecretsError>;
   process: PtyProcess | undefined;
   exited: boolean;
   dispose: Array<() => void>;
@@ -56,6 +58,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const scope = yield* Scope.Scope;
   const crypto = yield* Crypto.Crypto;
+  const settings = yield* ServerSettings.ServerSettingsService;
   let active: LoginFlow | undefined;
   const command = () =>
     resolveCommandPath("pd-secrets", { env }).pipe(
@@ -101,7 +104,9 @@ const make = Effect.gen(function* () {
     }
   };
   const fail = (flow: LoginFlow, reason: PdSecretsError["reason"]) => {
-    Deferred.doneUnsafe(flow.result, Effect.fail(new PdSecretsError({ reason })));
+    const failure = Effect.fail(new PdSecretsError({ reason }));
+    Deferred.doneUnsafe(flow.result, failure);
+    Deferred.doneUnsafe(flow.failure, failure);
     stop(flow);
   };
   const cancel = (ownerSessionId: string) =>
@@ -114,13 +119,53 @@ const make = Effect.gen(function* () {
     }),
   );
 
+  // Only the configured script knows the workplace-specific steps. Sign-in
+  // inputs are never passed to it, and its output stays off the wire.
+  const runPostLoginScript = Effect.gen(function* () {
+    const configured = (yield* settings.getSettings).pdSecretsPostLoginScript;
+    if (configured === "") return;
+    const script = configured.startsWith("~/") ? path.join(home, configured.slice(2)) : configured;
+    if (!path.isAbsolute(script) || (yield* fileSystem.stat(script)).type !== "File") {
+      return yield* new PdSecretsError({ reason: "post_login_failed" });
+    }
+    const bash = yield* resolveCommandPath("bash", { env }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+    if (bash === null) return yield* new PdSecretsError({ reason: "post_login_failed" });
+    const exitCode = yield* spawner
+      .spawn(
+        ChildProcess.make(bash, [script], {
+          cwd: home,
+          env,
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "ignore",
+        }),
+      )
+      .pipe(
+        Effect.flatMap((handle) => handle.exitCode),
+        Effect.scoped,
+      );
+    if (exitCode !== 0) return yield* new PdSecretsError({ reason: "post_login_failed" });
+  }).pipe(
+    Effect.timeout("10 minutes"),
+    Effect.mapError(() => new PdSecretsError({ reason: "post_login_failed" })),
+  );
+
   const awaitResult = (flow: LoginFlow) =>
     Effect.gen(function* () {
       const result = yield* Deferred.await(flow.result);
       if (result.phase === "connected") {
-        const snapshot = yield* status();
-        if (snapshot.state !== "connected")
-          return yield* new PdSecretsError({ reason: "login_failed" });
+        yield* Effect.gen(function* () {
+          const snapshot = yield* status();
+          if (snapshot.state !== "connected")
+            return yield* new PdSecretsError({ reason: "login_failed" });
+          yield* runPostLoginScript;
+        }).pipe(
+          Effect.raceFirst(Deferred.await(flow.failure)),
+          Effect.ensuring(Effect.sync(() => stop(flow))),
+        );
       }
       return result;
     }).pipe(Effect.onInterrupt(() => Effect.sync(() => fail(flow, "cancelled"))));
@@ -140,6 +185,7 @@ const make = Effect.gen(function* () {
         ownerSessionId,
         phase: "password",
         result: Deferred.makeUnsafe<PdSecretsLoginResult, PdSecretsError>(),
+        failure: Deferred.makeUnsafe<never, PdSecretsError>(),
         process: undefined,
         exited: false,
         dispose: [],
@@ -150,7 +196,7 @@ const make = Effect.gen(function* () {
     yield* Effect.sleep("5 minutes").pipe(
       Effect.andThen(
         Effect.sync(() => {
-          if (active === flow) fail(flow, "expired");
+          if (active === flow && flow.phase !== "post-login") fail(flow, "expired");
         }),
       ),
       Effect.forkIn(scope),
@@ -213,8 +259,8 @@ const make = Effect.gen(function* () {
       child.onExit(({ exitCode }) => {
         flow.exited = true;
         if (exitCode === 0 && flow.phase === "running") {
+          flow.phase = "post-login";
           Deferred.doneUnsafe(flow.result, Effect.succeed({ phase: "connected" }));
-          stop(flow);
         } else fail(flow, "login_failed");
       }),
     );

@@ -278,7 +278,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
               />
               {pending ? (
                 <p role="status" className="text-sm text-muted-foreground">
-                  Checking sign-in…
+                  Signing in and completing setup…
                 </p>
               ) : null}
               {error ? (

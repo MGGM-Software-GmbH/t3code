@@ -75,6 +75,14 @@ dismissing it. Each environment uses its own installation and cache. Configure
 using browser sign-in. A session needs permission to maintain the environment
 to sign in.
 
+To run your own setup after sign-in, set **Settings → Integrations → pd-secrets →
+Post-login script** for that environment. Enter the path to a Bash script on the
+server, either absolute or beginning with `~/`. Leave it empty to run no script.
+T3 runs it from the server user's home without sign-in inputs or interactive
+prompts, waits up to ten minutes, and reports failure without returning script
+output. Status checks and thread starts do not run it. Each environment stores
+its own path; project overrides do not apply.
+
 ## Command line
 
 The following commands install upstream releases.

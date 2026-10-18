@@ -1136,6 +1136,8 @@ const DEFAULT_THREAD_MODEL_SELECTION = Schema.decodeSync(ModelSelection)({
 });
 
 export const ServerSettings = Schema.Struct({
+  /** Optional Bash script run on this environment after pd-secrets signs in. */
+  pdSecretsPostLoginScript: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   // Null means no client has migrated this preference yet; an empty value is
   // authoritative so another device cannot resurrect cleared preferences.
   favorites: Schema.NullOr(ModelFavorites).pipe(
@@ -1547,6 +1549,7 @@ const ModelSelectionPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  pdSecretsPostLoginScript: Schema.optionalKey(TrimmedString),
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
   ),

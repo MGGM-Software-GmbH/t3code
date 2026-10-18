@@ -3,11 +3,13 @@ import { RegistryContext } from "@effect/atom-react";
 import {
   EnvironmentId,
   PdSecretsLoginInput,
+  PdSecretsError,
   PdSecretsRespondInput,
   type PdSecretsStatus,
 } from "@t3tools/contracts";
 import { Atom, AtomRegistry, AsyncResult } from "effect/reactivity";
 import * as Redacted from "effect/Redacted";
+import * as Cause from "effect/Cause";
 import { act, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -184,4 +186,28 @@ it("submits redacted password and TOTP to the selected environment, then closes 
     type: "success",
     title: "pd-secrets is connected on DGX test",
   });
+});
+
+it("keeps the dialog pending until setup ends and exposes a script failure without a success toast", async () => {
+  setStatus(dgx, "disconnected");
+  let finish!: (result: ReturnType<typeof AsyncResult.failure>) => void;
+  actions.login.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  await enter("synthetic-password");
+  await submit();
+  expect(document.body.textContent).toContain("Signing in and completing setup");
+  expect(credential().disabled).toBe(true);
+  await act(async () => {
+    finish(AsyncResult.failure(Cause.fail(new PdSecretsError({ reason: "post_login_failed" }))));
+  });
+  expect(document.body.textContent).toContain(
+    "pd-secrets is connected, but the post-login script failed",
+  );
+  expect(actions.toast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
+  expect(credential().value).toBe("");
 });

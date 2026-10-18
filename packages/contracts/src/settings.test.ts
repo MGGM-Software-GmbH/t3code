@@ -23,6 +23,27 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("pd-secrets post-login script", () => {
+  it("defaults to no script and preserves a host-local path through settings patches", () => {
+    expect(decodeServerSettings({}).pdSecretsPostLoginScript).toBe("");
+    const patch = decodeServerSettingsPatch({
+      pdSecretsPostLoginScript: "  ~/.claude/install/pd-secrets-post-login.sh  ",
+    });
+    expect(patch.pdSecretsPostLoginScript).toBe("~/.claude/install/pd-secrets-post-login.sh");
+    expect(
+      decodeServerSettings(
+        encodeServerSettings({
+          ...DEFAULT_SERVER_SETTINGS,
+          pdSecretsPostLoginScript: "~/.claude/install/pd-secrets-post-login.sh",
+        }),
+      ).pdSecretsPostLoginScript,
+    ).toBe(patch.pdSecretsPostLoginScript);
+    expect(
+      decodeServerSettingsPatch({ pdSecretsPostLoginScript: "" }).pdSecretsPostLoginScript,
+    ).toBe("");
+  });
+});
+
 describe("MGGM defaults", () => {
   it("starts with one Codex account and an adjustable Standard model selection", () => {
     const settings = decodeServerSettings({});

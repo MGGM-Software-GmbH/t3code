@@ -705,6 +705,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["ssh remote simulator emulator ios android mac mini identity key connection"],
   },
   {
+    id: "pd-secrets-post-login-script",
+    title: "Post-login script",
+    to: "/settings/integrations",
+    scope: "environment",
+    searchTerms: ["pd-secrets Password Depot sign in login bash script integration"],
+  },
+  {
     id: "agent-device-access",
     title: "Agent device access",
     to: "/settings/integrations",
