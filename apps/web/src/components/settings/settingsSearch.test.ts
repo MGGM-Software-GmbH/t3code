@@ -45,6 +45,12 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it("finds the slow request warning threshold by the warning text", () => {
+    expect(searchSettings("some requests are slow").map((item) => item.id)).toContain(
+      "slow-request-warning-threshold",
+    );
+  });
+
   it.each(["OTel", "OTLP", "telemetry export", "Grafana"])(
     "finds environment telemetry settings for %s",
     (query) => {

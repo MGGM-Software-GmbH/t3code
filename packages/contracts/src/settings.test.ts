@@ -23,6 +23,28 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("slow request warnings", () => {
+  it("defaults to 60 seconds and persists zero as disabled", () => {
+    expect(decodeClientSettings({}).slowRequestWarningThresholdSeconds).toBe(60);
+    const disabled = decodeClientSettings({ slowRequestWarningThresholdSeconds: 0 });
+    expect(
+      decodeClientSettings(encodeClientSettings(disabled)).slowRequestWarningThresholdSeconds,
+    ).toBe(0);
+    expect(
+      decodeClientSettingsPatch({ slowRequestWarningThresholdSeconds: 0 })
+        .slowRequestWarningThresholdSeconds,
+    ).toBe(0);
+  });
+
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_484, "60"])(
+    "rejects invalid thresholds: %s",
+    (slowRequestWarningThresholdSeconds) => {
+      expect(() => decodeClientSettings({ slowRequestWarningThresholdSeconds })).toThrow();
+      expect(() => decodeClientSettingsPatch({ slowRequestWarningThresholdSeconds })).toThrow();
+    },
+  );
+});
+
 describe("pd-secrets post-login script", () => {
   it("defaults to no script and preserves a host-local path through settings patches", () => {
     expect(decodeServerSettings({}).pdSecretsPostLoginScript).toBe("");

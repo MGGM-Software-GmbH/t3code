@@ -246,6 +246,13 @@ it("keeps the dialog pending until setup ends and exposes a script failure witho
   await submit();
   expect(document.body.textContent).toContain("Signing in and completing setup");
   expect(credential().disabled).toBe(true);
+  expect(document.querySelector('form[aria-busy="true"]')).not.toBeNull();
+  expect(document.querySelector('[role="status"] svg')).not.toBeNull();
+  expect(
+    [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')].every(
+      (button) => button.disabled,
+    ),
+  ).toBe(true);
   await act(async () => {
     finish(AsyncResult.failure(Cause.fail(new PdSecretsError({ reason: "post_login_failed" }))));
   });
@@ -254,4 +261,6 @@ it("keeps the dialog pending until setup ends and exposes a script failure witho
   );
   expect(actions.toast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
   expect(credential().value).toBe("");
+  expect(document.querySelector('form[aria-busy="true"]')).toBeNull();
+  expect(document.querySelector('[role="status"] svg')).toBeNull();
 });

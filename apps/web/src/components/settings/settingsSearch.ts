@@ -399,6 +399,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification toast popup completion input approval failure"],
   },
   {
+    id: "slow-request-warning-threshold",
+    title: "Slow request warning threshold",
+    to: "/settings/general",
+    searchTerms: ["some requests are slow warning timeout threshold seconds disable"],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",

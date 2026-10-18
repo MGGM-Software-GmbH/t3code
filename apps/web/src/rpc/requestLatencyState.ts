@@ -1,14 +1,15 @@
 import { useAtomValue } from "@effect/atom-react";
-import { WS_METHODS } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "./atomRegistry";
 
-export const SLOW_RPC_ACK_THRESHOLD_MS = 15_000;
+export const SLOW_RPC_ACK_THRESHOLD_MS =
+  DEFAULT_CLIENT_SETTINGS.slowRequestWarningThresholdSeconds * 1000;
 /**
- * Some requests are slow by design — they shell out to a package manager on the
- * server and only respond once the install finishes. Warning about those after
- * 15s is noise, so they get a much longer leash.
+ * Some requests are slow by design: they shell out to a package manager on the
+ * server and only respond once the install finishes. When warnings are enabled,
+ * those requests get at least two minutes before a warning.
  */
 export const LONG_RUNNING_RPC_ACK_THRESHOLD_MS = 120_000;
 export const MAX_TRACKED_RPC_ACK_REQUESTS = 256;
@@ -16,6 +17,7 @@ let slowRpcAckThresholdMs = SLOW_RPC_ACK_THRESHOLD_MS;
 
 export interface SlowRpcAckRequest {
   readonly requestId: string;
+  readonly method: string;
   readonly startedAt: string;
   readonly startedAtMs: number;
   readonly tag: string;
@@ -66,32 +68,62 @@ export function getSlowRpcAckRequests(): ReadonlyArray<SlowRpcAckRequest> {
   return getSlowRpcAckRequestsValue();
 }
 
+/** Apply settings to in-flight requests without restarting their elapsed time. */
+export function setSlowRpcAckThresholdSeconds(seconds: number): void {
+  const thresholdMs = seconds * 1000;
+  if (thresholdMs === slowRpcAckThresholdMs) return;
+  const requests = [
+    ...getSlowRpcAckRequestsValue(),
+    ...[...pendingRpcAckRequests.values()].map(({ request }) => request),
+  ];
+  slowRpcAckThresholdMs = thresholdMs;
+  clearAllTrackedRpcRequests();
+  if (thresholdMs === 0) return;
+  for (const request of requests) {
+    scheduleRpcRequest(request.requestId, request.method, request.tag, request.startedAtMs);
+  }
+}
+
 /**
  * Starts the slow-request timer for one in-flight unary RPC. `method` is the
  * bare WS method (used to decide whether and how long to wait); `tag` is the
  * human-readable label shown in the toast, which defaults to the method.
  */
 export function trackRpcRequestSent(requestId: string, method: string, tag = method): void {
-  if (!shouldTrackRpcAck(method)) {
+  if (slowRpcAckThresholdMs === 0 || !shouldTrackRpcAck(method)) {
     return;
   }
 
+  scheduleRpcRequest(requestId, method, tag, Date.now());
+}
+
+function scheduleRpcRequest(
+  requestId: string,
+  method: string,
+  tag: string,
+  startedAtMs: number,
+): void {
   clearTrackedRpcRequest(requestId);
   evictOldestPendingRpcRequestIfNeeded();
 
-  const startedAtMs = Date.now();
   const thresholdMs = rpcAckThresholdMs(method);
   const request: SlowRpcAckRequest = {
     requestId,
+    method,
     startedAt: new Date(startedAtMs).toISOString(),
     startedAtMs,
     tag,
     thresholdMs,
   };
+  const remainingMs = thresholdMs - (Date.now() - startedAtMs);
+  if (remainingMs <= 0) {
+    appendSlowRpcAckRequest(request);
+    return;
+  }
   const timeoutId = setTimeout(() => {
     pendingRpcAckRequests.delete(requestId);
     appendSlowRpcAckRequest(request);
-  }, thresholdMs);
+  }, remainingMs);
 
   pendingRpcAckRequests.set(requestId, {
     request,

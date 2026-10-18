@@ -32,6 +32,7 @@ import {
   DialogFooter,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
+import { Spinner } from "../ui/spinner";
 import { Label } from "../ui/label";
 import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
@@ -254,6 +255,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
       >
         <DialogPopup>
           <form
+            aria-busy={pending}
             onSubmit={(event) => {
               void submit(event);
             }}
@@ -281,9 +283,13 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
                 onChange={(event) => setValue(event.target.value)}
               />
               {pending ? (
-                <p role="status" className="text-sm text-muted-foreground">
-                  Signing in and completing setup…
-                </p>
+                <div
+                  role="status"
+                  className="flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <Spinner size="sm" aria-hidden="true" role="presentation" />
+                  <span>Signing in and completing setup…</span>
+                </div>
               ) : null}
               {error ? (
                 <p role="alert" className="text-sm text-destructive">

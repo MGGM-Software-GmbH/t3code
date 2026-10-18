@@ -229,6 +229,12 @@ export const NotificationMode = Schema.Literals([
 ]);
 export type NotificationMode = typeof NotificationMode.Type;
 
+// Keep seconds within the browser's signed 32-bit millisecond timer limit.
+export const MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS = 2_147_483;
+export const SlowRequestWarningThresholdSeconds = Schema.Int.check(
+  Schema.isBetween({ minimum: 0, maximum: MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS }),
+);
+
 export const QuitConfirmationMode = Schema.Literals(["direct", "hold", "double-click"]);
 export type QuitConfirmationMode = typeof QuitConfirmationMode.Type;
 const DEFAULT_QUIT_CONFIRMATION_MODE: QuitConfirmationMode = "hold";
@@ -322,6 +328,9 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
   inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  slowRequestWarningThresholdSeconds: SlowRequestWarningThresholdSeconds.pipe(
+    Schema.withDecodingDefault(Effect.succeed(60)),
+  ),
   diffColorScheme: DiffColorScheme.pipe(
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
   ),
@@ -1750,6 +1759,7 @@ export function requiredScopesForProjectMutation(
 export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
+  slowRequestWarningThresholdSeconds: Schema.optionalKey(SlowRequestWarningThresholdSeconds),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
   chatWidth: Schema.optionalKey(ChatWidth),
   loadBalancingEnabled: Schema.optionalKey(Schema.Boolean),

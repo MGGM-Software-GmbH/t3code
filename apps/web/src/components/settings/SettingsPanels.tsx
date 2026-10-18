@@ -35,6 +35,7 @@ import {
   MAX_PANEL_ANIMATION_DURATION_MS,
   MAX_PROMPT_FONT_SIZE,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS,
   MAX_TERMINAL_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
   MIN_APPEARANCE_CONTRAST,
@@ -564,6 +565,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
         ? ["In-app notifications"]
         : []),
+      ...(settings.slowRequestWarningThresholdSeconds !==
+      DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds
+        ? ["Slow request warning threshold"]
+        : []),
       ...(settings.sidebarThreadPreviewCount !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount
         ? ["Visible threads"]
         : []),
@@ -725,6 +730,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.timestampFormat,
       settings.notificationMode,
       settings.inAppNotificationsEnabled,
+      settings.slowRequestWarningThresholdSeconds,
       settings.wordWrap,
       followSystem,
       theme,
@@ -801,6 +807,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
+      slowRequestWarningThresholdSeconds:
+        DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
@@ -2518,6 +2526,47 @@ export function GeneralSettingsPanel() {
 
       <SettingsSection id="behavior" title="Behavior">
         <NotificationSettings />
+        <SettingsRow
+          {...searchableSetting("slow-request-warning-threshold")}
+          description="Seconds before showing a slow-request warning. Set to 0 to disable."
+          resetAction={
+            settings.slowRequestWarningThresholdSeconds !==
+            DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds ? (
+              <SettingResetButton
+                label="slow request warning threshold"
+                onClick={() =>
+                  updateSettings({
+                    slowRequestWarningThresholdSeconds:
+                      DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <DraftInput
+              size="sm"
+              type="number"
+              min={0}
+              max={MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS}
+              step={1}
+              className="w-full sm:w-24"
+              value={String(settings.slowRequestWarningThresholdSeconds)}
+              onCommit={(value) => {
+                const seconds = Number(value);
+                if (
+                  value.trim() !== "" &&
+                  Number.isInteger(seconds) &&
+                  seconds >= 0 &&
+                  seconds <= MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS
+                ) {
+                  updateSettings({ slowRequestWarningThresholdSeconds: seconds });
+                }
+              }}
+              aria-label="Slow request warning threshold (seconds)"
+            />
+          }
+        />
         <SettingsRow
           {...searchableSetting("in-app-notifications")}
           description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."

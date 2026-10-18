@@ -61,12 +61,21 @@ beforeEach(() => {
 });
 
 describe("restoring V2 settings", () => {
+  it("restores the slow request warning threshold after disabling warnings", async () => {
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, slowRequestWarningThresholdSeconds: 0 };
+    hooks.beginRender();
+    const restore = useSettingsRestore();
+    expect(restore.changedSettingLabels).toEqual(["Slow request warning threshold"]);
+    await restore.restoreDefaults();
+    expect(state.update.mock.calls[0]?.[0].slowRequestWarningThresholdSeconds).toBe(60);
+  });
+
   it.each([
     ["persistComposerContextStrip", "Composer context"],
     ["autoResumeLimitedThreads", "Auto-resume limited threads"],
     ["snoozeLimitedThreads", "Snooze limited threads"],
   ] as const)("restores %s when it is the only changed setting", async (key, label) => {
-    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, [key]: true };
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, [key]: !DEFAULT_UNIFIED_SETTINGS[key] };
     hooks.beginRender();
     const restore = useSettingsRestore();
 
@@ -79,7 +88,10 @@ describe("restoring V2 settings", () => {
   });
 
   it("does not reset settings after cancellation", async () => {
-    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, autoResumeLimitedThreads: true };
+    state.settings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      autoResumeLimitedThreads: !DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
+    };
     state.confirm.mockResolvedValue(false);
     hooks.beginRender();
 
