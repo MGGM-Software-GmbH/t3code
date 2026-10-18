@@ -397,21 +397,12 @@ const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(functio
  * plain CLI, misses tiers like Sol Ultrafast, and overwrites the shared
  * `models_cache.json`. Naming the originator at spawn closes that race.
  * A value the user already set wins.
- * Start context lets CLI wrappers prepare real sessions without running setup
- * during status, skills, or account probes. It is owned by T3, not provider env.
  */
 export const codexAppServerEnvironment = (
   environment: NodeJS.ProcessEnv | undefined,
-  context:
-    | { readonly kind: "session"; readonly cwd: string | undefined }
-    | { readonly kind: "probe" } = {
-    kind: "probe",
-  },
 ): NodeJS.ProcessEnv => ({
   CODEX_INTERNAL_ORIGINATOR_OVERRIDE: CODEX_CLIENT_NAME,
   ...environment,
-  T3_CODEX_START_KIND: context.kind,
-  T3_CODEX_WORKSPACE: context.kind === "session" ? (context.cwd ?? "") : "",
 });
 
 export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {

@@ -1543,10 +1543,7 @@ export const layerAppServerClientFactory: Layer.Layer<
         Effect.gen(function* () {
           const scope = yield* Scope.Scope;
           const environment = {
-            ...codexAppServerEnvironment(input.environment, {
-              kind: "session",
-              cwd: input.runtimePolicy?.cwd ?? undefined,
-            }),
+            ...codexAppServerEnvironment(input.environment),
             ...(input.settings.homePath ? { CODEX_HOME: input.settings.homePath } : {}),
           };
           const command = yield* makeCodexAppServerSpawnCommand({

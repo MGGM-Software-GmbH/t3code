@@ -1,23 +1,6 @@
 import { assert, it } from "@effect/vitest";
 
-import {
-  applyPreferredCodexDefaultModel,
-  codexAppServerEnvironment,
-  mapCodexModelCapabilities,
-} from "./CodexProvider.ts";
-
-it("marks probes without inheriting session context from provider configuration", () => {
-  const environment = codexAppServerEnvironment({
-    T3_CODEX_START_KIND: "session",
-    T3_CODEX_WORKSPACE: "/wrong-workspace",
-    CODEX_HOME: "/accounts/work",
-    CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "custom-originator",
-  });
-  assert.equal(environment.T3_CODEX_START_KIND, "probe");
-  assert.equal(environment.T3_CODEX_WORKSPACE, "");
-  assert.equal(environment.CODEX_HOME, "/accounts/work");
-  assert.equal(environment.CODEX_INTERNAL_ORIGINATOR_OVERRIDE, "custom-originator");
-});
+import { applyPreferredCodexDefaultModel, mapCodexModelCapabilities } from "./CodexProvider.ts";
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({

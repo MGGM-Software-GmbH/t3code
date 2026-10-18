@@ -741,12 +741,8 @@ describe("CodexAdapterV2 process spawning", () => {
   it.effect("launches the app-server with the configured launch arguments", () =>
     Effect.gen(function* () {
       const spawnedArgs: Array<ReadonlyArray<string>> = [];
-      const spawnedEnvironments: Array<NodeJS.ProcessEnv | undefined> = [];
       const spawner = ChildProcessSpawner.make((command) => {
-        if (ChildProcess.isStandardCommand(command)) {
-          spawnedArgs.push(command.args);
-          spawnedEnvironments.push(command.options.env);
-        }
+        if (ChildProcess.isStandardCommand(command)) spawnedArgs.push(command.args);
         return Effect.fail(
           PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn" }),
         );
@@ -772,31 +768,19 @@ describe("CodexAdapterV2 process spawning", () => {
             }),
             settings: {
               ...DEFAULT_CODEX_SETTINGS,
-              homePath: "/accounts/shadow",
               launchArgs: " --strict-config -c model_reasoning_summary=detailed ",
             },
             environment,
           })
           .pipe(Effect.scoped, Effect.exit);
 
-      yield* open({ T3_CODEX_START_KIND: "probe", T3_CODEX_WORKSPACE: "/wrong-workspace" });
+      yield* open({});
       yield* open({ T3CODE_CODEX_LAUNCH_ARGS: " --enable env-feature " });
 
       assert.deepEqual(spawnedArgs, [
         ["app-server", "--strict-config", "-c", "model_reasoning_summary=detailed"],
         ["app-server", "--enable", "env-feature"],
       ]);
-      assert.deepEqual(
-        spawnedEnvironments.map((environment) => ({
-          kind: environment?.T3_CODEX_START_KIND,
-          workspace: environment?.T3_CODEX_WORKSPACE,
-          home: environment?.CODEX_HOME,
-        })),
-        [
-          { kind: "session", workspace: "/workspace", home: "/accounts/shadow" },
-          { kind: "session", workspace: "/workspace", home: "/accounts/shadow" },
-        ],
-      );
     }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 
