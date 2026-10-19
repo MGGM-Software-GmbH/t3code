@@ -1409,6 +1409,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   preserveComposerFocusOnPointerDown?: boolean;
   isEditingQueuedMessage: boolean;
   onSubmitMessage: React.MouseEventHandler<HTMLButtonElement>;
+  onSubmitAlternateMessage: () => void;
   onResume: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
@@ -1453,6 +1454,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         isEditingQueuedMessage={props.isEditingQueuedMessage}
         onSubmitMessage={props.onSubmitMessage}
+        onSubmitAlternateMessage={props.onSubmitAlternateMessage}
         onResume={props.onResume}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
@@ -4270,6 +4272,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
   const handleSubmitMessageStable = useStableCallback(handleSubmitMessage);
+  const handleSubmitAlternateMessage = () => {
+    submitComposer(
+      undefined,
+      resolveComposerDispatchMode({
+        running: phase === "running",
+        alternateModifier: true,
+        activeTurnDefault: settings.followUpBehavior,
+      }),
+    );
+  };
+  const handleSubmitAlternateMessageStable = useStableCallback(handleSubmitAlternateMessage);
   const submitCitationAndSend = () => {
     submitComposer(
       undefined,
@@ -7653,6 +7666,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     preserveComposerFocusOnPointerDown={isMobileViewport || isComposerResting}
                     isEditingQueuedMessage={isEditingQueuedMessage}
                     onSubmitMessage={handleSubmitMessageStable}
+                    onSubmitAlternateMessage={handleSubmitAlternateMessageStable}
                     onResume={onResume}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryActionStable}
