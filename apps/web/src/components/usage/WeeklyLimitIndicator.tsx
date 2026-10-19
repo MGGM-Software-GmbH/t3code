@@ -64,7 +64,13 @@ function WeeklyLimitIndicator({
           aria-hidden="true"
           className="relative inline-flex size-7 shrink-0 items-center justify-center text-muted-foreground grayscale"
         >
-          <svg viewBox="0 0 32 32" className="absolute inset-0 size-7 -rotate-90" fill="none">
+          {/* Keep the ring aligned with its label instead of inheriting negative icon margins. */}
+          <svg
+            viewBox="0 0 32 32"
+            className="absolute inset-0 size-7 -rotate-90"
+            fill="none"
+            data-composer-control-icon
+          >
             <circle
               cx="16"
               cy="16"
