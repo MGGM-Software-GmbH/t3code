@@ -14,6 +14,7 @@ import {
 import { importPastedComposerText, readPastedComposerContext } from "../composerInlineTokenPaste";
 import { elementContextToPreviewAnnotation } from "../../lib/elementContext";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { ComposerWeeklyLimit } from "../usage/WeeklyLimitIndicator";
 import {
   questionAttachmentDraftId,
   countQuestionAttachments,
@@ -5546,6 +5547,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             onRuntimeModeChange={handleRuntimeModeChange}
           />
         </div>
+        <ComposerWeeklyLimit
+          environmentId={environmentId}
+          instanceId={selectedInstanceId}
+          size={composerControlsCollapsed ? "xs" : "sm"}
+        />
       </>
     </>
   );

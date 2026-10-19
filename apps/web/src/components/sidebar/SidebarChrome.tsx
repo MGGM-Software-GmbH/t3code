@@ -27,6 +27,7 @@ import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPr
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { PdSecretsControl } from "./PdSecretsControl";
+import { SidebarWeeklyLimit } from "../usage/WeeklyLimitIndicator";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -237,6 +238,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
         </>
       )}
       <PdSecretsControl />
+      <SidebarWeeklyLimit />
       <SidebarUpdatePill />
     </SidebarMenu>
   );

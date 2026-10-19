@@ -95,6 +95,15 @@ the bar show each account's quota, countdown, and credits. Tap a row to open its
 The same account signed in on more than one environment, or reported by a hub as well, counts once.
 Filter with the environment dropdown to see what a single machine has.
 
+The weekly indicators in the sidebar and next to the composer's access selector show the remaining
+seven-day allowance across accounts and for the selected account. The combined percentage weights
+each reporting account equally, regardless of plan size. Hover or focus an indicator for account
+details, the regular reset time in your local time zone, and when the balance was checked. Click to
+open Usage. A question mark means no account-wide weekly allowance was reported; other time windows
+and model-specific quotas are not substituted. These indicators reuse cached snapshots and provider
+updates without additional polling. A passed reset does not assume a fresh balance before the
+provider reports it.
+
 Opening Limits checks the selected connected environments automatically. Each client waits at
 least five minutes between automatic checks of an environment, including after a failed check.
 If a window still looks stale, refresh Limits to re-check every provider and hub.

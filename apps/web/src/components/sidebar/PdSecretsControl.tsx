@@ -430,7 +430,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
 export function PdSecretsControl() {
   const context = useContext(PdSecretsContext);
   if (!context) throw new Error("PdSecretsControl requires PdSecretsProvider");
-  const { installed, connected, pending, background, label, check } = context;
+  const { installed, pending, background, label, check } = context;
   if (installed.length === 0) return null;
   return (
     <SidebarMenuItem className="shrink-0">
@@ -445,10 +445,7 @@ export function PdSecretsControl() {
               }}
               size="icon"
             >
-              <span
-                className={connected ? "text-success-foreground" : "text-warning-foreground"}
-                aria-hidden="true"
-              >
+              <span className="text-icon-muted grayscale" aria-hidden="true">
                 {pending ? (
                   <Spinner size="md" motion="progress" aria-hidden="true" />
                 ) : (
