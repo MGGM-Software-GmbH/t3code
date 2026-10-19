@@ -356,7 +356,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
                 aria-busy="true"
                 className="flex items-center gap-3 px-6 pb-6 text-sm text-muted-foreground"
               >
-                <Spinner size="lg" aria-hidden="true" role="presentation" />
+                <Spinner size="lg" motion="progress" aria-hidden="true" role="presentation" />
                 <span>Signing in and completing setup…</span>
               </div>
               <DialogFooter>
@@ -450,7 +450,7 @@ export function PdSecretsControl() {
                 aria-hidden="true"
               >
                 {pending ? (
-                  <Spinner size="md" aria-hidden="true" />
+                  <Spinner size="md" motion="progress" aria-hidden="true" />
                 ) : (
                   <KeyRoundIcon className="size-4" />
                 )}
