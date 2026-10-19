@@ -575,12 +575,34 @@ export function weeklyLimitWindow(limits: ServerProviderUsageLimits) {
 /**
  * Equal account shares, like the Limits view. Callers deduplicate accounts with
  * collectLimitAccounts first. Missing weekly allowances stay visible as missing,
- * and a passed reset never fabricates a fresh balance.
+ * and a passed reset never fabricates a fresh balance. Elapsed periods are
+ * averaged separately from quota; banked credits are summed across accounts.
  */
-export function summarizeWeeklyLimits(accounts: readonly LimitAccount[]) {
+export function summarizeWeeklyLimits(accounts: readonly LimitAccount[], now?: number) {
   const members = accounts.flatMap((account) => {
     const window = weeklyLimitWindow(account.limits);
-    return window ? [{ account, window, remainingPercent: remainingPercent(window) }] : [];
+    if (!window) return [];
+    const elapsedDays =
+      now === undefined ? null : elapsedShare({ ...window, windowDurationMins: 10080 }, now);
+    return [
+      {
+        account,
+        window,
+        remainingPercent: remainingPercent(window),
+        elapsedDays: elapsedDays === null ? null : elapsedDays * 7,
+      },
+    ];
+  });
+  const periods = members.flatMap(({ elapsedDays }) => (elapsedDays === null ? [] : [elapsedDays]));
+  const credits = accounts.flatMap((account) =>
+    !account.limits.unavailable && account.limits.resetCredits ? [account.limits.resetCredits] : [],
+  );
+  const creditExpiries = credits.flatMap((credit) => {
+    const expires =
+      credit.availableCount > 0 && credit.nextExpiresAt
+        ? Date.parse(credit.nextExpiresAt)
+        : Number.NaN;
+    return Number.isFinite(expires) ? [expires] : [];
   });
   const resets = members.flatMap(({ window }) => {
     const at = resetMillis(window);
@@ -597,6 +619,16 @@ export function summarizeWeeklyLimits(accounts: readonly LimitAccount[]) {
     members,
     missing: accounts.filter((account) => !members.some((member) => member.account === account)),
     remainingPercent: members.length > 0 ? Math.round(100 - used / members.length) : null,
+    elapsedDays:
+      periods.length > 0 ? periods.reduce((sum, days) => sum + days, 0) / periods.length : null,
+    reportedPeriods: periods.length,
+    bankedResets:
+      credits.length > 0 ? credits.reduce((sum, credit) => sum + credit.availableCount, 0) : null,
+    unreportedResetCredits: accounts.length - credits.length,
+    nextCreditExpiresAt:
+      creditExpiries.length > 0
+        ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...creditExpiries)))
+        : null,
     nextResetAt:
       resets.length > 0 ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...resets))) : null,
     oldestCheckedAt:

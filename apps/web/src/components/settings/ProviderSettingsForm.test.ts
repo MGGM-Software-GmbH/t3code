@@ -17,7 +17,19 @@ describe("ProviderSettingsForm helpers", () => {
       "homePath",
       "shadowHomePath",
       "launchArgs",
+      "autoStartWeeklyWindow",
     ]);
+  });
+
+  it("exposes an enabled-by-default Codex weekly-window setting and preserves opting out", () => {
+    const codex = providerClients.get(ProviderDriverKind.make("codex"))!;
+    const field = deriveProviderSettingsFields(codex).find(
+      (field) => field.key === "autoStartWeeklyWindow",
+    )!;
+    expect(field).toMatchObject({ control: "switch", defaultBooleanValue: true });
+    expect(nextProviderConfigWithFieldValue({}, field, false)).toEqual({
+      autoStartWeeklyWindow: false,
+    });
   });
 
   it("sources labels and descriptions from schema annotations", () => {

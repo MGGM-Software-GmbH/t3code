@@ -188,6 +188,76 @@ describe("weekly toolbar limits", () => {
     expect(summary.members).toHaveLength(2);
   });
 
+  it("averages elapsed weekly periods and sums only reported credits without double-counting accounts", () => {
+    const first = account("one", 20);
+    const second = account("two", 80);
+    const summary = summarizeWeeklyLimits(
+      [
+        {
+          ...first,
+          limits: {
+            ...first.limits,
+            windows: [{ ...weekly, usedPercent: 20, resetsAt: "2026-09-07T12:00:00.000Z" }],
+            resetCredits: { availableCount: 2, nextExpiresAt: "2026-09-10T12:00:00.000Z" },
+          },
+        },
+        {
+          ...second,
+          limits: {
+            ...second.limits,
+            windows: [{ ...weekly, usedPercent: 80, resetsAt: "2026-09-05T12:00:00.000Z" }],
+          },
+        },
+      ],
+      now,
+    );
+    expect(summary.elapsedDays).toBe(4);
+    expect(summary.members.map((member) => member.elapsedDays)).toEqual([3, 5]);
+    expect(summary.bankedResets).toBe(2);
+    expect(summary.unreportedResetCredits).toBe(1);
+    expect(summary.nextCreditExpiresAt).toBe("2026-09-10T12:00:00.000Z");
+  });
+
+  it("keeps missing period times and missing credits distinct from reported zero", () => {
+    const original = account("one", 35);
+    const unknown = {
+      ...original,
+      limits: {
+        ...original.limits,
+        windows: [{ ...weekly, usedPercent: 35, resetsAt: undefined }],
+      },
+    };
+    expect(summarizeWeeklyLimits([unknown], now)).toMatchObject({
+      elapsedDays: null,
+      reportedPeriods: 0,
+      bankedResets: null,
+    });
+    expect(
+      summarizeWeeklyLimits(
+        [{ ...unknown, limits: { ...unknown.limits, resetCredits: { availableCount: 0 } } }],
+        now,
+      ),
+    ).toMatchObject({ bankedResets: 0, nextCreditExpiresAt: null });
+  });
+
+  it.each([
+    ["2026-09-01T12:00:00.000Z", 7],
+    ["2026-09-20T12:00:00.000Z", 0],
+  ])("clamps the elapsed period for reset %s without changing the balance", (resetsAt, days) => {
+    const original = account("one", 35);
+    expect(
+      summarizeWeeklyLimits(
+        [
+          {
+            ...original,
+            limits: { ...original.limits, windows: [{ ...weekly, resetsAt, usedPercent: 35 }] },
+          },
+        ],
+        now,
+      ),
+    ).toMatchObject({ elapsedDays: days, remainingPercent: 65 });
+  });
+
   it("reports the oldest included snapshot as the combined freshness", () => {
     const older = account("older", 20);
     const newer = account("newer", 80);

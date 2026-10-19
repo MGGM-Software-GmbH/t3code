@@ -11,9 +11,10 @@ import { act, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-const actions = vi.hoisted(() => ({ navigate: vi.fn() }));
+const actions = vi.hoisted(() => ({ navigate: vi.fn(), closeSidebar: vi.fn(), touch: false }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => actions.navigate }));
 vi.mock("../../hooks/useSettings", () => ({ usePrimarySettings: () => "24h" }));
+vi.mock("../../hooks/useMediaQuery", () => ({ useMediaQuery: () => actions.touch }));
 vi.mock("../../state/presentation", async () => {
   const { Atom } = await import("effect/reactivity");
   const { useAtomValue } = await import("@effect/atom-react");
@@ -26,6 +27,7 @@ vi.mock("../../state/presentation", async () => {
   };
 });
 vi.mock("../ui/sidebar", () => ({
+  useSidebar: () => ({ isMobile: actions.touch, setOpenMobile: actions.closeSidebar }),
   SidebarMenuItem: ({ children }: { children: ReactNode }) => <li>{children}</li>,
   SidebarMenuButton: ({
     size: _size,
@@ -108,7 +110,10 @@ const labels = () =>
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-19T08:00:00.000Z"));
   actions.navigate.mockReset();
+  actions.closeSidebar.mockReset();
+  actions.touch = false;
   vi.spyOn(globalThis, "fetch").mockRejectedValue(
     new Error("Provider requests are forbidden in indicator tests"),
   );
@@ -116,6 +121,30 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+});
+
+it("explains elapsed days and banked resets for the selected account and deduplicated pool", async () => {
+  actions.touch = true;
+  const local = provider(codex, 35, "team@example.test");
+  const withCredits = {
+    ...local,
+    usageLimits: {
+      ...local.usageLimits!,
+      resetCredits: { availableCount: 2, nextExpiresAt: "2026-10-31T08:00:00.000Z" },
+    },
+  };
+  setProviders([withCredits], [withCredits]);
+  await render();
+  expect(container.querySelectorAll("button")[0]?.textContent).toBe("65%+2");
+  expect(container.querySelectorAll("button")[1]?.textContent).toBe("65%+2");
+  await act(async () => {
+    container.querySelectorAll("button")[1]!.click();
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(document.body.textContent).toContain("Weekly period elapsed: 3.0 of 7 days");
+  expect(document.body.textContent).toContain("Banked resets: 2");
+  expect(document.body.textContent).toContain("Next credit expiry:");
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 afterEach(async () => {
@@ -246,3 +275,37 @@ it("opens the existing usage details page from the indicator", async () => {
   expect(actions.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/usage" });
   expect(readUsagePagePreferences()).toMatchObject({ metric: "limits", windowDays: 7 });
 });
+
+it.each([
+  [0, "Weekly limit, all accounts", "50% remaining"],
+  [1, "Weekly limit, Team", "75% remaining"],
+] as const)(
+  "opens readable touch details for indicator %i before navigating",
+  async (index, title, balance) => {
+    actions.touch = true;
+    setProviders([
+      provider(codex, 25, "team@example.test"),
+      provider(second, 75, "second@example.test"),
+    ]);
+    await render();
+    await act(async () => {
+      container.querySelectorAll("button")[index]!.click();
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    const popup = document.querySelector('[data-slot="popover-popup"]');
+    expect(popup?.textContent).toContain(title);
+    expect(popup?.textContent).toContain(balance);
+    expect(popup?.textContent).toContain("Next regular reset:");
+    expect(actions.navigate).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    const action = [...popup!.querySelectorAll("button")].find(
+      (button) => button.textContent === "Usage details",
+    );
+    expect(action).toBeDefined();
+    await act(async () => action!.click());
+    expect(actions.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/usage" });
+    if (index === 0) expect(actions.closeSidebar).toHaveBeenCalledExactlyOnceWith(false);
+    else expect(actions.closeSidebar).not.toHaveBeenCalled();
+    expect(readUsagePagePreferences().metric).toBe("limits");
+  },
+);

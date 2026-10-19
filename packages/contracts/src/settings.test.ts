@@ -7,6 +7,7 @@ import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClaudeSettings,
+  CodexSettings,
   DEFAULT_SERVER_SETTINGS,
   requiredScopesForProjectMutation,
   resolveProjectProviderInstanceEnabled,
@@ -22,6 +23,17 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
+
+describe("Codex weekly window starter", () => {
+  it("defaults to enabled for existing configurations and preserves an explicit opt-out", () => {
+    const decode = Schema.decodeUnknownSync(CodexSettings);
+    const encode = Schema.encodeSync(CodexSettings);
+    expect(decode({}).autoStartWeeklyWindow).toBe(true);
+    const disabled = decode({ autoStartWeeklyWindow: false });
+    expect(decode(encode(disabled)).autoStartWeeklyWindow).toBe(false);
+    expect(() => decode({ autoStartWeeklyWindow: "true" })).toThrow();
+  });
+});
 
 describe("slow request warnings", () => {
   it("defaults to 60 seconds and persists zero as disabled", () => {

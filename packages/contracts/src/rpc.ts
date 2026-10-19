@@ -331,6 +331,7 @@ import {
   ProviderConsumeResetCreditResult,
 } from "./providerUsageLimits.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
+import { CodexResetForecast, CodexResetForecastError } from "./codexResetForecast.ts";
 import {
   StorageCleanupReport,
   ServerSettings,
@@ -520,6 +521,7 @@ export const WS_METHODS = {
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
+  serverGetCodexResetForecast: "server.getCodexResetForecast",
   serverRefreshUsageRates: "server.refreshUsageRates",
 
   // Scheduled tasks
@@ -936,6 +938,12 @@ const WsServerGetUsageSummaryRpc = Rpc.make(WS_METHODS.serverGetUsageSummary, {
   payload: UsageSummaryInput,
   success: UsageSummary,
   error: Schema.Union([EnvironmentAuthorizationError, UsageReadError]),
+});
+
+const WsServerGetCodexResetForecastRpc = Rpc.make(WS_METHODS.serverGetCodexResetForecast, {
+  payload: Schema.Struct({}),
+  success: CodexResetForecast,
+  error: Schema.Union([EnvironmentAuthorizationError, CodexResetForecastError]),
 });
 
 /**
@@ -1961,6 +1969,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRetryResourceTelemetryRpc,
   WsServerCheckOtlpEndpointRpc,
   WsServerGetUsageSummaryRpc,
+  WsServerGetCodexResetForecastRpc,
   WsServerRefreshUsageRatesRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksListRpc,

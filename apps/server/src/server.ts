@@ -165,6 +165,8 @@ import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAcco
 import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain";
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as CodexResetForecast from "./usage/CodexResetForecast.ts";
+import * as CodexWeeklyWindowStarter from "./provider/CodexWeeklyWindowStarter.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -680,6 +682,8 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   // Usage reads provider history through the ProviderHost, which needs the
   // background policy below it.
   Layer.provideMerge(layerUsage),
+  Layer.provideMerge(CodexResetForecast.layer),
+  Layer.provideMerge(CodexWeeklyWindowStarter.layer),
   Layer.provideMerge(layerBackground),
   Layer.provideMerge(layerResourceDiagnostics),
   Layer.provideMerge(TraceDiagnostics.layer),
@@ -776,6 +780,8 @@ const layerMakeServer = Layer.unwrap(
       Effect.gen(function* () {
         yield* Deferred.succeed(runtimeStateParked, undefined).pipe(Effect.orDie);
         yield* awaitActivation;
+        const weeklyWindowStarter = yield* CodexWeeklyWindowStarter.CodexWeeklyWindowStarter;
+        yield* weeklyWindowStarter.start;
         const server = yield* HttpServer.HttpServer;
         const address = server.address;
         if (typeof address === "string" || !("port" in address)) {

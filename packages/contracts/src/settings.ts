@@ -682,13 +682,22 @@ export const CodexSettings = makeProviderSettingsSchema(
         description: "Additional CLI arguments passed to codex app-server on session start.",
       }),
     ),
+    autoStartWeeklyWindow: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({
+        title: "Automatically start weekly window",
+        providerSettingsForm: { control: "switch" },
+        description:
+          "Check every 60 minutes and run a brief, read-only Codex task when an unused weekly window needs starting. Uses gpt-5.6-luna and a small amount of quota. Requires CLI sign-in and reported weekly limits; never redeems banked resets.",
+      }),
+    ),
     customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"],
+    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs", "autoStartWeeklyWindow"],
   },
 );
 export type CodexSettings = typeof CodexSettings.Type;

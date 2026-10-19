@@ -1011,6 +1011,12 @@ export function createServerEnvironmentAtoms<R, E>(
   return {
     configValueAtom,
     pdSecretsStatus,
+    codexResetForecast: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:codex-reset-forecast",
+      tag: WS_METHODS.serverGetCodexResetForecast,
+      staleTimeMs: 60 * 60_000,
+      refreshIntervalMs: 60 * 60_000,
+    }),
     loginPdSecrets: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pd-secrets:login",
       tag: WS_METHODS.pdSecretsLogin,

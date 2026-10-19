@@ -11,12 +11,13 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState, type ReactElement } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { environmentPresentations, useEnvironmentPresentation } from "../../state/presentation";
 import { formatChatTimestampTooltip } from "../../timestampFormat";
 import { ComposerControl } from "../chat/ComposerControl";
 import { providerClients } from "../settings/providerDriverMeta";
-import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SidebarMenuButton, SidebarMenuItem, useSidebar } from "../ui/sidebar";
+import { UsageIndicatorDetails } from "./UsageIndicatorDetails";
 import { readUsagePagePreferences, saveUsagePagePreferences } from "./usagePagePreferences";
 
 const EMPTY_NOTICES: readonly string[] = [];
@@ -27,132 +28,210 @@ function accountName(account: LimitAccount) {
   );
 }
 
+/** Each inner arc is one day; a partial arc shows time elapsed in the current day. */
+function dayArc(start: number, end: number) {
+  const point = (angle: number) => {
+    const radians = ((angle - 90) * Math.PI) / 180;
+    return `${16 + 10.8 * Math.cos(radians)} ${16 + 10.8 * Math.sin(radians)}`;
+  };
+  return `M ${point(start)} A 10.8 10.8 0 0 1 ${point(end)}`;
+}
+
 /** A static, neutral quota glyph; it reads snapshots and never requests a provider refresh. */
 function WeeklyLimitIndicator({
   accounts,
   notices = EMPTY_NOTICES,
   title,
   render,
+  onNavigate,
 }: {
   readonly accounts: readonly LimitAccount[];
   readonly notices?: readonly string[];
   readonly title: string;
   readonly render: ReactElement;
+  readonly onNavigate?: () => void;
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
-  const [now, setNow] = useState(() => Date.now());
-  const summary = summarizeWeeklyLimits(accounts);
+  const [openedAt, setOpenedAt] = useState(() => Date.now());
+  const minute = useNowMinute();
+  const now = Math.max(openedAt, Date.parse(`${minute}:00.000Z`));
+  const summary = summarizeWeeklyLimits(accounts, now);
   const percent = summary.remainingPercent;
+  const banked = summary.bankedResets;
+  const elapsedDays = summary.elapsedDays;
   const label = `${title}: ${percent === null ? "unavailable" : `${percent}% remaining`}`;
   const time = (value: string) => formatChatTimestampTooltip(value, timestampFormat);
   const navigate = useNavigate();
   return (
-    <Tooltip
-      onOpenChange={(open) => {
-        if (open) setNow(Date.now());
+    <UsageIndicatorDetails
+      render={render}
+      label={label}
+      onOpen={() => setOpenedAt(Date.now())}
+      actionLabel="Usage details"
+      desktopHint="Click for usage details."
+      onActivate={() => {
+        saveUsagePagePreferences({ ...readUsagePagePreferences(), metric: "limits" });
+        onNavigate?.();
+        void navigate({ to: "/usage" });
       }}
-    >
-      <TooltipTrigger
-        render={render}
-        aria-label={label}
-        onClick={() => {
-          saveUsagePagePreferences({ ...readUsagePagePreferences(), metric: "limits" });
-          void navigate({ to: "/usage" });
-        }}
-      >
+      glyph={
         <span
           aria-hidden="true"
-          className="relative inline-flex size-7 shrink-0 items-center justify-center text-muted-foreground grayscale"
+          className="inline-flex size-8 shrink-0 items-center justify-center text-muted-foreground grayscale"
         >
           {/* Keep the ring aligned with its label instead of inheriting negative icon margins. */}
-          <svg
-            viewBox="0 0 32 32"
-            className="absolute inset-0 size-7 -rotate-90"
-            fill="none"
-            data-composer-control-icon
-          >
+          <svg viewBox="0 0 32 32" className="size-8" fill="none" data-composer-control-icon>
             <circle
               cx="16"
               cy="16"
-              r="13"
-              strokeWidth="2.5"
+              r="14.5"
+              strokeWidth="2.2"
               className="stroke-current opacity-25"
             />
             {percent !== null ? (
               <circle
                 cx="16"
                 cy="16"
-                r="13"
+                r="14.5"
                 pathLength="100"
-                strokeWidth="2.5"
+                strokeWidth="2.2"
                 strokeDasharray={`${percent} 100`}
+                transform="rotate(-90 16 16)"
                 className="stroke-current"
               />
             ) : null}
-          </svg>
-          <span className="text-4xs leading-none font-medium tabular-nums">
-            {percent === null ? "?" : `${percent}%`}
-          </span>
-        </span>
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        <div className="flex w-72 max-w-[calc(100vw-3rem)] flex-col gap-2 text-left">
-          <div className="font-medium">{title}</div>
-          <div>
-            {percent === null
-              ? "No account-wide seven-day limit reported."
-              : `${percent}% remaining`}
-            {summary.members.length > 1
-              ? ` · ${summary.members.length} accounts, equally weighted`
+            {elapsedDays !== null
+              ? Array.from({ length: 7 }, (_, day) => {
+                  const start = (day * 360) / 7 + 3;
+                  const end = ((day + 1) * 360) / 7 - 3;
+                  const fraction = Math.max(0, Math.min(1, elapsedDays - day));
+                  return (
+                    <g key={day}>
+                      <path
+                        d={dayArc(start, end)}
+                        strokeWidth="1.15"
+                        className="stroke-current opacity-25"
+                      />
+                      {fraction > 0 ? (
+                        <path
+                          d={dayArc(start, start + (end - start) * fraction)}
+                          strokeWidth="1.15"
+                          className="stroke-current opacity-85"
+                        />
+                      ) : null}
+                    </g>
+                  );
+                })
               : null}
-          </div>
-          <div>
-            {summary.nextResetAt && Date.parse(summary.nextResetAt) <= now
-              ? `Reported reset ${time(summary.nextResetAt)}; awaiting updated limits.`
-              : `Next regular reset: ${summary.nextResetAt ? time(summary.nextResetAt) : "not reported"} (local time)`}
-          </div>
-          {summary.members.length > 1 ? (
-            summary.members.map(({ account, window, remainingPercent }) => (
-              <div key={account.key} className="flex flex-col gap-0.5">
-                <span className="flex justify-between gap-3">
-                  <span>{accountName(account)}</span>
-                  <span className="shrink-0 tabular-nums">{remainingPercent}% remaining</span>
-                </span>
-                <span className="text-muted-foreground">
-                  {window.resetsAt ? `Reset ${time(window.resetsAt)}` : "Reset not reported"}
-                </span>
-              </div>
-            ))
-          ) : summary.members[0] ? (
+            <text
+              x="16"
+              y={banked ? 15.6 : 18.8}
+              textAnchor="middle"
+              className="fill-current text-4xs font-medium tabular-nums"
+            >
+              {percent === null ? "?" : `${percent}%`}
+            </text>
+            {banked ? (
+              <text
+                x="16"
+                y="23.5"
+                textAnchor="middle"
+                className="fill-current text-5xs font-medium tabular-nums"
+              >
+                +{banked}
+              </text>
+            ) : null}
+          </svg>
+        </span>
+      }
+    >
+      <div className="flex flex-col gap-2 text-left">
+        <div className="font-medium">{title}</div>
+        <div>
+          {percent === null ? "No account-wide seven-day limit reported." : `${percent}% remaining`}
+          {summary.members.length > 1
+            ? ` · ${summary.members.length} accounts, equally weighted`
+            : null}
+        </div>
+        <div>
+          {summary.elapsedDays === null
+            ? "Weekly period elapsed: not reported"
+            : `Weekly period elapsed: ${summary.elapsedDays.toFixed(1)} of 7 days${summary.members.length > 1 ? ` (average of ${summary.reportedPeriods} accounts)` : ""}`}
+          {summary.reportedPeriods < summary.members.length
+            ? `; ${summary.members.length - summary.reportedPeriods} periods not reported.`
+            : null}
+        </div>
+        <div>
+          {banked === null
+            ? "Banked resets: not reported"
+            : `Banked resets${accounts.length > 1 ? " (total)" : ""}: ${banked}`}
+          {banked !== null && summary.unreportedResetCredits > 0
+            ? `; ${summary.unreportedResetCredits} accounts not reported.`
+            : null}
+          {summary.nextCreditExpiresAt ? (
             <div className="text-muted-foreground">
-              <div>{summary.members[0].account.plan}</div>
-              <div>
-                {summary.members[0].account.environments
-                  .map((environment) => environment.label)
-                  .join(", ") || summary.members[0].account.sourceLabel}
-              </div>
+              Next credit expiry: {time(summary.nextCreditExpiresAt)} (local time)
             </div>
           ) : null}
-          {summary.missing.map((account) => (
-            <div key={account.key}>{accountName(account)}: weekly limit unavailable</div>
-          ))}
-          {notices.map((notice) => (
-            <div key={notice}>{notice}</div>
-          ))}
-          <div className="text-muted-foreground">
-            {summary.oldestCheckedAt
-              ? `Updated ${time(summary.oldestCheckedAt)}${summary.members.length > 1 ? " (oldest report)" : ""}. `
-              : null}
-            Click for usage details.
-          </div>
         </div>
-      </TooltipPopup>
-    </Tooltip>
+        <div>
+          {summary.nextResetAt && Date.parse(summary.nextResetAt) <= now
+            ? `Reported reset ${time(summary.nextResetAt)}; awaiting updated limits.`
+            : `Next regular reset: ${summary.nextResetAt ? time(summary.nextResetAt) : "not reported"} (local time)`}
+        </div>
+        {summary.members.length > 1 ? (
+          summary.members.map(({ account, window, remainingPercent, elapsedDays }) => (
+            <div key={account.key} className="flex flex-col gap-0.5">
+              <span className="flex justify-between gap-3">
+                <span>{accountName(account)}</span>
+                <span className="shrink-0 tabular-nums">{remainingPercent}% remaining</span>
+              </span>
+              <span className="text-muted-foreground">
+                {window.resetsAt ? `Reset ${time(window.resetsAt)}` : "Reset not reported"}
+              </span>
+              <span className="text-muted-foreground">
+                {elapsedDays === null
+                  ? "Period not reported"
+                  : `${elapsedDays.toFixed(1)} of 7 days elapsed`}
+                {account.limits.resetCredits
+                  ? ` · ${account.limits.resetCredits.availableCount} banked resets`
+                  : ""}
+              </span>
+            </div>
+          ))
+        ) : summary.members[0] ? (
+          <div className="text-muted-foreground">
+            <div>{summary.members[0].account.plan}</div>
+            <div>
+              {summary.members[0].account.environments
+                .map((environment) => environment.label)
+                .join(", ") || summary.members[0].account.sourceLabel}
+            </div>
+          </div>
+        ) : null}
+        {summary.missing.map((account) => (
+          <div key={account.key}>{accountName(account)}: weekly limit unavailable</div>
+        ))}
+        {notices.map((notice) => (
+          <div key={notice}>{notice}</div>
+        ))}
+        <div className="text-muted-foreground">
+          Outer ring: weekly allowance remaining. Inner segments: seven days elapsed. +N: banked
+          resets.
+        </div>
+        <div className="text-muted-foreground">
+          {summary.oldestCheckedAt
+            ? `Updated ${time(summary.oldestCheckedAt)}${summary.members.length > 1 ? " (oldest report)" : ""}. `
+            : null}
+        </div>
+      </div>
+    </UsageIndicatorDetails>
   );
 }
 
 /** All connected accounts share the same deduplication and cache as the Limits page. */
 export function SidebarWeeklyLimit() {
+  const { isMobile, setOpenMobile } = useSidebar();
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const accounts = collectLimitAccounts(presentations);
   const notices = collectLimitNotices(presentations);
@@ -163,6 +242,9 @@ export function SidebarWeeklyLimit() {
         notices={notices}
         title="Weekly limit, all accounts"
         render={<SidebarMenuButton size="icon" />}
+        onNavigate={() => {
+          if (isMobile) setOpenMobile(false);
+        }}
       />
     </SidebarMenuItem>
   );
