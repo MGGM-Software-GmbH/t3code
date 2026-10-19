@@ -4,6 +4,7 @@ import type {
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
 
 export const MODEL_CAPACITY_ERROR_MESSAGE =
   "Selected model is at capacity. Please try a different model.";
@@ -16,8 +17,10 @@ export function isModelCapacityError(message: string | null | undefined): boolea
 /** Anchor retries to the failed run, so scheduler sweeps cannot postpone them. */
 export function modelCapacityRetryAt(stoppedAtMs: number, delayMinutes: number): string | null {
   if (!Number.isInteger(delayMinutes) || delayMinutes <= 0) return null;
-  const retryAt = new Date(stoppedAtMs + delayMinutes * 60_000);
-  return Number.isFinite(retryAt.getTime()) ? retryAt.toISOString() : null;
+  return DateTime.make(stoppedAtMs + delayMinutes * 60_000).pipe(
+    Option.map(DateTime.formatIso),
+    Option.getOrNull,
+  );
 }
 
 /** Only a failed root turn of the current run owns the thread's failure state. */
