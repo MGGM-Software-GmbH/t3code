@@ -70,6 +70,7 @@ const PdSecretsContext = createContext<{
   >;
   readonly connected: boolean;
   readonly pending: boolean;
+  readonly background: boolean;
   readonly label: string;
   readonly check: () => Promise<void>;
 } | null>(null);
@@ -90,6 +91,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
   const [value, setValue] = useState("");
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
+  const [background, setBackground] = useState(false);
   const dismissed = useRef(new Set<EnvironmentId>());
   const generation = useRef(0);
   const login = useAtomCommand(serverEnvironment.loginPdSecrets, {
@@ -131,19 +133,28 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
   useEffect(() => {
     if (target && !snapshots.some((snapshot) => snapshot.environmentId === target.environmentId)) {
       generation.current++;
+      if (pending) {
+        toastManager.add({
+          type: "error",
+          title: `pd-secrets sign-in interrupted on ${target.label}`,
+          description: "The environment disconnected.",
+        });
+      }
       // eslint-disable-next-line react/set-state-in-effect -- A server disconnect must clear the in-flight credential form.
       setTarget(undefined);
       setFlowId(undefined);
       setValue("");
       setError(undefined);
+      setBackground(false);
     }
-  }, [snapshots, target]);
+  }, [snapshots, target, pending]);
 
   const open = (next: SignInTarget) => {
     generation.current++;
     setFlowId(undefined);
     setValue("");
     setError(undefined);
+    setBackground(false);
     setTarget(next);
   };
   const dismiss = () => {
@@ -154,9 +165,13 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
     setFlowId(undefined);
     setValue("");
     setError(undefined);
+    setBackground(false);
   };
   const check = useStableCallback(async () => {
-    if (pending) return;
+    if (pending) {
+      if (target) setBackground(false);
+      return;
+    }
     setPending(true);
     const checked = await Promise.all(
       snapshots.map(async (snapshot) => {
@@ -194,6 +209,41 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
       toastManager.add({ type: "success", title: "pd-secrets is connected" });
     }
   });
+  const completeSignIn = useStableCallback(
+    (result: Awaited<ReturnType<typeof login>>, requestTarget: SignInTarget) => {
+      if (result._tag === "Success") {
+        if (result.value.phase === "totp") {
+          setFlowId(result.value.flowId);
+          setBackground(false);
+        } else {
+          toastManager.add({
+            type: "success",
+            title: `pd-secrets is connected on ${requestTarget.label}`,
+          });
+          setTarget(undefined);
+          setFlowId(undefined);
+          setBackground(false);
+        }
+      } else {
+        const failure = squashAtomCommandFailure(result);
+        const message = isPdSecretsError(failure)
+          ? failure.message
+          : "Could not sign in to pd-secrets. Check the environment connection and configuration.";
+        toastManager.add({
+          type: "error",
+          title: `Could not sign in to pd-secrets on ${requestTarget.label}`,
+          description: message,
+        });
+        setError(message);
+        setFlowId(undefined);
+        if (background) {
+          dismissed.current.add(requestTarget.environmentId);
+          setTarget(undefined);
+          setBackground(false);
+        }
+      }
+    },
+  );
   const submit = async (event: React.SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!target || pending || !value) return;
@@ -210,21 +260,8 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
     Redacted.wipeUnsafe(secret);
     if (requestGeneration !== generation.current) {
       await cancel({ environmentId: target.environmentId, input: {} });
-    } else if (result._tag === "Success") {
-      if (result.value.phase === "totp") setFlowId(result.value.flowId);
-      else {
-        toastManager.add({ type: "success", title: `pd-secrets is connected on ${target.label}` });
-        setTarget(undefined);
-        setFlowId(undefined);
-      }
     } else {
-      const failure = squashAtomCommandFailure(result);
-      setError(
-        isPdSecretsError(failure)
-          ? failure.message
-          : "Could not sign in to pd-secrets. Check the environment connection and configuration.",
-      );
-      setFlowId(undefined);
+      completeSignIn(result, target);
     }
     setPending(false);
   };
@@ -232,7 +269,9 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
     (snapshot) => snapshot.status === "connected" && !snapshot.failed,
   );
   const label = pending
-    ? "pd-secrets: checking"
+    ? target
+      ? "pd-secrets: signing in"
+      : "pd-secrets: checking"
     : connected
       ? "pd-secrets: connected"
       : "pd-secrets: disconnected";
@@ -240,77 +279,98 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
     target &&
     snapshots.find((snapshot) => snapshot.environmentId === target.environmentId)?.allowed;
   const control = useMemo(
-    () => ({ installed, connected, pending, label, check }),
-    [installed, connected, pending, label, check],
+    () => ({ installed, connected, pending, background, label, check }),
+    [installed, connected, pending, background, label, check],
   );
 
   return (
     <PdSecretsContext value={control}>
       {children}
       <Dialog
-        open={target !== undefined}
+        open={target !== undefined && !background}
         onOpenChange={(isOpen) => {
-          if (!isOpen) dismiss();
+          if (!isOpen) {
+            if (pending) setBackground(true);
+            else dismiss();
+          }
         }}
       >
-        <DialogPopup>
-          <form
-            aria-busy={pending}
-            onSubmit={(event) => {
-              void submit(event);
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>Sign in to pd-secrets</DialogTitle>
-              <DialogDescription>{target?.label}</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-3 px-6 pb-6">
-              <Label htmlFor="pd-secrets-credential">
-                {flowId ? "TOTP code" : "Password Depot password"}
-              </Label>
-              <Input
-                key={flowId ?? "password"}
-                id="pd-secrets-credential"
-                type="password"
-                autoComplete={flowId ? "one-time-code" : "off"}
-                inputMode={flowId ? "numeric" : undefined}
-                maxLength={flowId ? 8 : 4096}
-                pattern={flowId ? "[0-9]{6,8}" : undefined}
-                required
-                autoFocus
-                disabled={pending || !allowed}
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-              />
-              {pending ? (
-                <div
-                  role="status"
-                  className="flex items-center gap-2 text-sm text-muted-foreground"
-                >
-                  <Spinner size="sm" aria-hidden="true" role="presentation" />
-                  <span>Signing in and completing setup…</span>
-                </div>
-              ) : null}
-              {error ? (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              ) : null}
-              {!allowed ? (
-                <p role="alert" className="text-sm text-destructive">
-                  This session cannot manage environment credentials.
-                </p>
-              ) : null}
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={dismiss}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={pending || !allowed || !value}>
-                {flowId ? "Verify code" : "Sign in"}
-              </Button>
-            </DialogFooter>
-          </form>
+        <DialogPopup data-pd-ignore>
+          <DialogHeader>
+            <DialogTitle>
+              {pending ? "Signing in to pd-secrets" : "Sign in to pd-secrets"}
+            </DialogTitle>
+            <DialogDescription>{target?.label}</DialogDescription>
+          </DialogHeader>
+          {pending ? (
+            <>
+              <div
+                role="status"
+                aria-busy="true"
+                className="flex items-center gap-3 px-6 pb-6 text-sm text-muted-foreground"
+              >
+                <Spinner size="lg" aria-hidden="true" role="presentation" />
+                <span>Signing in and completing setup…</span>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={dismiss}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={() => setBackground(true)}>
+                  Continue in background
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <form
+              data-pd-ignore
+              autoComplete="off"
+              onSubmit={(event) => {
+                void submit(event);
+              }}
+            >
+              <div className="grid gap-3 px-6 pb-6">
+                <Label htmlFor="pd-secrets-credential">
+                  {flowId ? "TOTP code" : "Password Depot password"}
+                </Label>
+                {/* Password-capture listeners can ignore the page marker and track type changes.
+                  Mount a separate text input for TOTP instead of reusing a password input. */}
+                <Input
+                  key={flowId ?? "password"}
+                  id="pd-secrets-credential"
+                  data-pd-ignore
+                  type={flowId ? "text" : "password"}
+                  autoComplete={flowId ? "one-time-code" : "off"}
+                  inputMode={flowId ? "numeric" : undefined}
+                  maxLength={flowId ? 8 : 4096}
+                  pattern={flowId ? "[0-9]{6,8}" : undefined}
+                  required
+                  autoFocus
+                  disabled={pending || !allowed}
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                />
+                {error ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {error}
+                  </p>
+                ) : null}
+                {!allowed ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    This session cannot manage environment credentials.
+                  </p>
+                ) : null}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={dismiss}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={pending || !allowed || !value}>
+                  {flowId ? "Verify code" : "Sign in"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogPopup>
       </Dialog>
     </PdSecretsContext>
@@ -321,7 +381,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
 export function PdSecretsControl() {
   const context = useContext(PdSecretsContext);
   if (!context) throw new Error("PdSecretsControl requires PdSecretsProvider");
-  const { installed, connected, pending, label, check } = context;
+  const { installed, connected, pending, background, label, check } = context;
   if (installed.length === 0) return null;
   return (
     <SidebarMenuItem className="shrink-0">
@@ -330,7 +390,7 @@ export function PdSecretsControl() {
           render={
             <SidebarMenuButton
               aria-label={label}
-              disabled={pending}
+              disabled={pending && !background}
               onClick={() => {
                 void check();
               }}
@@ -340,7 +400,11 @@ export function PdSecretsControl() {
                 className={connected ? "text-success-foreground" : "text-warning-foreground"}
                 aria-hidden="true"
               >
-                <KeyRoundIcon className="size-4" />
+                {pending ? (
+                  <Spinner size="md" aria-hidden="true" />
+                ) : (
+                  <KeyRoundIcon className="size-4" />
+                )}
               </span>
             </SidebarMenuButton>
           }

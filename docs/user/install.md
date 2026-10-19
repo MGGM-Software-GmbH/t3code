@@ -69,6 +69,11 @@ Enter your Password Depot password, then your TOTP code if requested. T3 passes
 these inputs to the environment's CLI without saving them. The CLI continues to
 own the encrypted cache and its Monday 05:00 expiry policy.
 
+Choose **Continue in background** while sign-in or the post-login script is
+running to keep using T3. The key control reopens the running operation; any
+required TOTP prompt opens automatically. A toast reports success or failure.
+**Cancel** stops sign-in instead. Keep the browser tab open until it ends.
+
 Use the key control in the sidebar to check again or reopen sign-in after
 dismissing it. Each environment uses its own installation and cache. Configure
 `pd-secrets` and the `~/.claude/.env` mappings on that host in a terminal before
