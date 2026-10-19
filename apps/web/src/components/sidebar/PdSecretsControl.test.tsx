@@ -142,6 +142,127 @@ const button = (label: string) =>
     (candidate) => candidate.textContent === label,
   )!;
 
+it.each(["Enter", "click", "submit"] as const)(
+  "privately submits password and TOTP with %s and renders progress before starting each request",
+  async (method) => {
+    setStatus(dgx, "disconnected");
+    const captured: string[] = [];
+    // Password Depot 19.0.6 reads credentials in document capture listeners,
+    // before React's form handler, without checking data-pd-ignore.
+    const capture = (event: Event) => {
+      if (event instanceof KeyboardEvent && event.key !== "Enter") return;
+      const field = document.querySelector<HTMLInputElement>("#pd-secrets-credential");
+      if (field?.value) captured.push(event.type);
+    };
+    for (const type of ["keydown", "click", "submit"]) {
+      document.addEventListener(type, capture, true);
+    }
+    let finishPassword!: (result: ReturnType<typeof AsyncResult.success>) => void;
+    let finishTotp!: (result: ReturnType<typeof AsyncResult.success>) => void;
+    actions.login.mockImplementation(({ input }) => {
+      expect(Redacted.value(input.password)).toBe("synthetic-password");
+      expect(credential()).toBeNull();
+      expect(button("Continue in background")).toBeDefined();
+      return new Promise((resolve) => {
+        finishPassword = resolve;
+      });
+    });
+    actions.respond.mockImplementation(({ input }) => {
+      expect(Redacted.value(input.code)).toBe("123456");
+      expect(credential()).toBeNull();
+      expect(button("Continue in background")).toBeDefined();
+      return new Promise((resolve) => {
+        finishTotp = resolve;
+      });
+    });
+    const send = () =>
+      act(async () => {
+        if (method === "Enter") {
+          credential().dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+          );
+        } else if (method === "click") {
+          document.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+        } else {
+          credential().form!.dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          );
+        }
+      });
+    try {
+      await render();
+      await enter("synthetic-password");
+      await send();
+      expect(captured).toEqual([]);
+      expect(actions.login).toHaveBeenCalledTimes(1);
+      await act(async () =>
+        finishPassword(AsyncResult.success({ phase: "totp", flowId: "test-flow" })),
+      );
+      await enter("123456");
+      await send();
+      expect(captured).toEqual([]);
+      expect(actions.respond).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        setStatus(dgx, "connected");
+        finishTotp(AsyncResult.success({ phase: "connected" }));
+      });
+      expect(actions.toast).toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
+    } finally {
+      for (const type of ["keydown", "click", "submit"]) {
+        document.removeEventListener(type, capture, true);
+      }
+    }
+  },
+);
+
+it("validates TOTP before starting verification and accepts a corrected code", async () => {
+  setStatus(dgx, "disconnected");
+  actions.login.mockResolvedValue(AsyncResult.success({ phase: "totp", flowId: "test-flow" }));
+  actions.respond.mockImplementation(() => {
+    setStatus(dgx, "connected");
+    return AsyncResult.success({ phase: "connected" });
+  });
+  await render();
+  await enter("synthetic-password");
+  await submit();
+  await enter("invalid");
+  await act(async () => button("Verify code").click());
+  expect(credential().validity.patternMismatch).toBe(true);
+  expect(credential().value).toBe("invalid");
+  expect(actions.respond).not.toHaveBeenCalled();
+  await enter("123456");
+  await act(async () => button("Verify code").click());
+  expect(actions.respond).toHaveBeenCalledTimes(1);
+});
+
+it("preserves composition and leaves unrelated keyboard and form events alone", async () => {
+  setStatus(dgx, "disconnected");
+  await render();
+  await enter("synthetic-password");
+  const composition = new KeyboardEvent("keydown", {
+    key: "Enter",
+    isComposing: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => credential().dispatchEvent(composition));
+  expect(composition.defaultPrevented).toBe(false);
+  expect(actions.login).not.toHaveBeenCalled();
+  expect(credential().value).toBe("synthetic-password");
+  const unrelatedForm = document.createElement("form");
+  const unrelatedInput = document.createElement("input");
+  unrelatedForm.append(unrelatedInput);
+  container.append(unrelatedForm);
+  for (const event of [
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    new Event("submit", { bubbles: true, cancelable: true }),
+  ]) {
+    (event.type === "submit" ? unrelatedForm : unrelatedInput).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  }
+  expect(actions.login).not.toHaveBeenCalled();
+});
+
 it("hides both control and dialog when no connected environment has pd-secrets", async () => {
   await render();
   expect(container.querySelector("button")).toBeNull();

@@ -18,6 +18,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
@@ -62,6 +63,44 @@ const snapshotsAtom = Atom.make((get) =>
 interface SignInTarget {
   readonly environmentId: EnvironmentId;
   readonly label: string;
+}
+
+/** Keep this local credential exchange out of document-level password capture. */
+function usePrivateCredentialSubmit(enabled: boolean, onSubmit: () => void) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const handle = useStableCallback((event: Event) => {
+    const form = formRef.current;
+    const input = inputRef.current;
+    if (!enabled || !form || !input) return;
+    const isEnter =
+      event instanceof KeyboardEvent && event.key === "Enter" && event.target === input;
+    const button =
+      event.type === "click" && event.target instanceof Element
+        ? event.target.closest<HTMLButtonElement>('button[type="submit"]')
+        : null;
+    if (!isEnter && button?.form !== form && !(event.type === "submit" && event.target === form)) {
+      return;
+    }
+    // Password Depot 19.0.6 ignores data-pd-ignore in its document capture
+    // listeners. Handle only this form at window capture, before those listeners.
+    event.stopPropagation();
+    if (event instanceof KeyboardEvent && event.isComposing) return;
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    input.value = "";
+    onSubmit();
+  });
+  useEffect(() => {
+    if (!enabled) return;
+    for (const type of ["keydown", "click", "submit"]) window.addEventListener(type, handle, true);
+    return () => {
+      for (const type of ["keydown", "click", "submit"]) {
+        window.removeEventListener(type, handle, true);
+      }
+    };
+  }, [enabled, handle]);
+  return { formRef, inputRef };
 }
 
 const PdSecretsContext = createContext<{
@@ -244,16 +283,18 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
       }
     },
   );
-  const submit = async (event: React.SubmitEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submit = async () => {
     if (!target || pending || !value) return;
     const requestGeneration = generation.current;
     const secret = Redacted.make(value, {
       label: flowId ? "pd-secrets TOTP" : "pd-secrets password",
     });
-    setValue("");
-    setError(undefined);
-    setPending(true);
+    // Remove the credential field and commit progress before the RPC starts.
+    flushSync(() => {
+      setValue("");
+      setError(undefined);
+      setPending(true);
+    });
     const result = flowId
       ? await respond({ environmentId: target.environmentId, input: { flowId, code: secret } })
       : await login({ environmentId: target.environmentId, input: { password: secret } });
@@ -278,6 +319,12 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
   const allowed =
     target &&
     snapshots.find((snapshot) => snapshot.environmentId === target.environmentId)?.allowed;
+  const { formRef, inputRef } = usePrivateCredentialSubmit(
+    !!target && !background && !pending && !!allowed,
+    () => {
+      void submit();
+    },
+  );
   const control = useMemo(
     () => ({ installed, connected, pending, background, label, check }),
     [installed, connected, pending, background, label, check],
@@ -323,10 +370,11 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
             </>
           ) : (
             <form
+              ref={formRef}
               data-pd-ignore
               autoComplete="off"
               onSubmit={(event) => {
-                void submit(event);
+                event.preventDefault();
               }}
             >
               <div className="grid gap-3 px-6 pb-6">
@@ -336,6 +384,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
                 {/* Password-capture listeners can ignore the page marker and track type changes.
                   Mount a separate text input for TOTP instead of reusing a password input. */}
                 <Input
+                  ref={inputRef}
                   key={flowId ?? "password"}
                   id="pd-secrets-credential"
                   data-pd-ignore
