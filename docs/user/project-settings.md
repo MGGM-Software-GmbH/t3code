@@ -176,6 +176,17 @@ worktrees were removed or kept and why, plus any failures.
 Browser captures and rotated logs have separate retention periods. Expired capture links stop
 working. Current logs, message attachments, and browser profiles are kept.
 
+## Retry a busy model
+
+In **General**, set **Model capacity retry delay** to the number of minutes to wait after
+"Selected model is at capacity. Please try a different model." The default is 5 minutes;
+0 disables automatic retries. Retries keep the same provider, model, and model options.
+This setting is independent of usage-limit recovery.
+
+Use **Play** in the stopped thread to continue immediately, or cancel its scheduled retry
+in the thread's recovery notice. A server restart preserves the scheduled retry. Changing
+the thread's model prevents the old capacity failure from automatically starting another model.
+
 ## Project icons
 
 Select the project and open Project to choose an icon, emoji, monogram, or image. The choice applies to

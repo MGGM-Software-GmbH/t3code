@@ -61,6 +61,15 @@ beforeEach(() => {
 });
 
 describe("restoring V2 settings", () => {
+  it("restores model capacity retries after disabling them", async () => {
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, modelCapacityRetryDelayMinutes: 0 };
+    hooks.beginRender();
+    const restore = useSettingsRestore();
+    expect(restore.changedSettingLabels).toEqual(["Model capacity retry delay"]);
+    await restore.restoreDefaults();
+    expect(state.update.mock.calls[0]?.[0].modelCapacityRetryDelayMinutes).toBe(5);
+  });
+
   it("restores the slow request warning threshold after disabling warnings", async () => {
     state.settings = { ...DEFAULT_UNIFIED_SETTINGS, slowRequestWarningThresholdSeconds: 0 };
     hooks.beginRender();

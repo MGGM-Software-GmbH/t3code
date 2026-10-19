@@ -1253,6 +1253,10 @@ export const ServerSettings = Schema.Struct({
   ),
   snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Minutes between retries of a model-capacity failure; zero disables retries. */
+  modelCapacityRetryDelayMinutes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(5)),
+  ),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1649,6 +1653,9 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
+  modelCapacityRetryDelayMinutes: Schema.optionalKey(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({

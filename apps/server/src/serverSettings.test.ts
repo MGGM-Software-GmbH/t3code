@@ -110,6 +110,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       yield* fs.writeFileString(config.settingsPath, document);
       const settings = yield* service.getSettings;
       assert.isFalse(settings.autoResumeLimitedThreads);
+      assert.equal(settings.modelCapacityRetryDelayMinutes, 0);
       assert.isFalse(settings.continueThreadsAfterServerUpdate);
       assert.equal(yield* fs.readFileString(config.settingsPath), document);
     }).pipe(Effect.provide(layerServerSettings())),
@@ -130,12 +131,14 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         );
         assert.isNull(settings.sidebarAutoSettleAfterDays);
         assert.isTrue(settings.autoResumeLimitedThreads);
+        assert.equal(settings.modelCapacityRetryDelayMinutes, 5);
 
         yield* service.updateSettings({
           favorites: [],
           defaultModelSelection: null,
           defaultAutoPull: false,
           autoResumeLimitedThreads: false,
+          modelCapacityRetryDelayMinutes: 0,
           enableProviderUpdateChecks: true,
           sidebarAutoSettleAfterDays: 7,
           pullRequestMergeMethod: null,
@@ -149,6 +152,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           defaultModelSelection: null,
           defaultAutoPull: false,
           autoResumeLimitedThreads: false,
+          modelCapacityRetryDelayMinutes: 0,
           enableProviderUpdateChecks: true,
           sidebarAutoSettleAfterDays: 7,
           pullRequestMergeMethod: null,

@@ -111,6 +111,7 @@ describe("splitSharedServerPatch", () => {
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
       enableAgentBrowserAccess: false,
+      modelCapacityRetryDelayMinutes: 0,
       defaultThreadEnvMode: "worktree",
       newWorktreesStartFromOrigin: true,
     });
@@ -119,6 +120,7 @@ describe("splitSharedServerPatch", () => {
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
       newWorktreesStartFromOrigin: true,
+      modelCapacityRetryDelayMinutes: 0,
     });
     expect(localPatch).toEqual({
       enableAgentBrowserAccess: false,
@@ -134,6 +136,7 @@ describe("pickSharedServerSettings", () => {
     ).toEqual([
       "autoResumeLimitedThreads",
       "continueThreadsAfterServerUpdate",
+      "modelCapacityRetryDelayMinutes",
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",

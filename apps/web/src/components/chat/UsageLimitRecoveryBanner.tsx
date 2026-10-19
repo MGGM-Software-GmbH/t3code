@@ -9,6 +9,7 @@ import { Button } from "../ui/button";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 
 type RecoveryProps = {
+  capacity?: boolean;
   runId: RunId;
   resetAt: string | null;
   stoppedAt: string;
@@ -25,15 +26,27 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
     variant: "warning",
     priority: "urgent",
     icon: <GaugeIcon />,
-    title: "Usage limit reached",
-    description: resetAt
-      ? `Resets ${new Date(resetAt).toLocaleString()}`
-      : "Reset time unavailable; retry manually",
+    title: props.capacity ? "Model at capacity" : "Usage limit reached",
+    description:
+      props.capacity && props.recovery?.runId === runId && props.recovery.autoResume === false
+        ? "Automatic retry cancelled. Use Play to resume."
+        : resetAt
+          ? `${props.capacity ? "Retry with the same model" : "Resets"} ${new Date(resetAt).toLocaleString()}`
+          : props.capacity
+            ? "Use Play to retry with the same model"
+            : "Reset time unavailable; retry manually",
     actions: canSchedule ? <RecoveryActions key={`${runId}:${resetAt}`} {...props} /> : null,
   };
 }
 
-function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: RecoveryProps) {
+function RecoveryActions({
+  runId,
+  resetAt,
+  recovery,
+  snoozedUntil,
+  onChange,
+  capacity,
+}: RecoveryProps) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -76,9 +89,15 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button size="xs" variant="ghost" disabled={pending} onClick={() => void toggle("resume")}>
-        {pending ? "Saving..." : scheduled ? "Cancel auto-resume" : "Resume at reset"}
+        {pending
+          ? "Saving..."
+          : scheduled
+            ? "Cancel auto-resume"
+            : capacity
+              ? "Schedule retry"
+              : "Resume at reset"}
       </Button>
-      {!snoozed ? (
+      {!snoozed && !capacity ? (
         <Button
           size="xs"
           variant="ghost"

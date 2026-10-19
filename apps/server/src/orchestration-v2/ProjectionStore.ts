@@ -1,4 +1,5 @@
 import { applyThreadPullRequestLinkUpdate } from "@t3tools/shared/threadPullRequests";
+import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectTurnItemForWire } from "./WireProjection.ts";
 import * as Stream from "effect/Stream";
 import { makeThreadFind, findProjectedThreadItems } from "./ThreadFind.ts";
@@ -8,6 +9,8 @@ import type {
   OrchestrationV2ThreadHistoryPage,
 } from "@t3tools/contracts";
 import {
+  MODEL_CAPACITY_ERROR_MESSAGE,
+  isModelCapacityError,
   latestRootProviderFailure,
   latestUnheldRun,
   threadErrorSummary,
@@ -159,6 +162,7 @@ export type ProjectionLimitRecoveryCandidate = Pick<
   | "id"
   | "status"
   | "lastErrorClass"
+  | "lastError"
   | "latestRunId"
   | "usageLimitResetAt"
   | "archivedAt"
@@ -435,6 +439,7 @@ export interface ProjectionStoreV2Shape {
     readonly now: DateTime.Utc;
     readonly autoResume: boolean;
     readonly snooze: boolean;
+    readonly modelCapacityRetryDelayMinutes?: number;
   }) => Effect.Effect<ReadonlyArray<ProjectionLimitRecoveryCandidate>, ProjectionStoreV2Error>;
   /** Every candidate, or only `threadId` when a sweep checks one thread. */
   readonly getSettlementCandidates: (
@@ -3586,9 +3591,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           readonly run_id: string;
           readonly completed_at: string | null;
           readonly failure_payload_json: string;
+          readonly run_payload_json: string;
           readonly last_error: string | null;
         }>`
           SELECT t.payload_json, r.run_id, r.completed_at,
+            r.payload_json AS run_payload_json,
             item.payload_json AS failure_payload_json,
             (
               SELECT json_extract(session.payload_json, '$.lastError')
@@ -3626,7 +3633,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           WHERE t.deleted_at IS NULL
             AND json_extract(t.payload_json, '$.archivedAt') IS NULL
             AND json_extract(t.payload_json, '$.settledOverride') IS NOT 'settled'
-            AND json_extract(item.payload_json, '$.failure.class') = 'usage_limit'
+            AND ((json_extract(item.payload_json, '$.failure.class') = 'usage_limit'
             AND json_extract(item.payload_json, '$.failure.resetAt') IS NOT NULL
             AND julianday(json_extract(item.payload_json, '$.failure.resetAt')) > julianday(COALESCE(r.completed_at, json_extract(t.payload_json, '$.updatedAt')))
             AND (
@@ -3651,6 +3658,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 )
               )
             )
+            ) OR (
+              ${booleanInt((options.modelCapacityRetryDelayMinutes ?? 0) > 0)}
+              AND trim(json_extract(item.payload_json, '$.failure.message')) = ${MODEL_CAPACITY_ERROR_MESSAGE}
+            ))
             AND NOT EXISTS (
               SELECT 1 FROM orchestration_v2_projection_runtime_requests request
               WHERE request.thread_id = t.thread_id AND request.status = 'pending'
@@ -3665,11 +3676,21 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             item.type === "error" ? item.failure : null,
             row.last_error,
           );
-          if (summary.lastErrorClass !== "usage_limit") continue;
+          if (summary.lastErrorClass !== "usage_limit" && !isModelCapacityError(summary.lastError))
+            continue;
+          if (
+            isModelCapacityError(summary.lastError) &&
+            !modelSelectionsEqual(
+              thread.modelSelection,
+              (yield* decodeRunPayload(row.run_payload_json)).modelSelection,
+            )
+          )
+            continue;
           candidates.push({
             id: thread.id,
             status: "failed",
             lastErrorClass: summary.lastErrorClass,
+            lastError: summary.lastError,
             usageLimitResetAt: summary.usageLimitResetAt,
             latestRunId: RunId.make(row.run_id),
             latestRunCompletedAt:

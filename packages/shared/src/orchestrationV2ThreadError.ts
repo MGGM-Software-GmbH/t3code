@@ -5,6 +5,21 @@ import type {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
+export const MODEL_CAPACITY_ERROR_MESSAGE =
+  "Selected model is at capacity. Please try a different model.";
+
+/** Match only the recoverable capacity rejection, including already-persisted failures. */
+export function isModelCapacityError(message: string | null | undefined): boolean {
+  return message?.trim() === MODEL_CAPACITY_ERROR_MESSAGE;
+}
+
+/** Anchor retries to the failed run, so scheduler sweeps cannot postpone them. */
+export function modelCapacityRetryAt(stoppedAtMs: number, delayMinutes: number): string | null {
+  if (!Number.isInteger(delayMinutes) || delayMinutes <= 0) return null;
+  const retryAt = new Date(stoppedAtMs + delayMinutes * 60_000);
+  return Number.isFinite(retryAt.getTime()) ? retryAt.toISOString() : null;
+}
+
 /** Only a failed root turn of the current run owns the thread's failure state. */
 export function latestRootProviderFailure(
   run: OrchestrationV2Run | null,

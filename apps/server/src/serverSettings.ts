@@ -815,6 +815,7 @@ const make = Effect.gen(function* () {
           ...DEFAULT_SERVER_SETTINGS,
           continueThreadsAfterServerUpdate: false,
           autoResumeLimitedThreads: false,
+          modelCapacityRetryDelayMinutes: 0,
         };
         if (failure._tag === "Failure") {
           yield* Effect.logWarning("failed to parse settings.json, using defaults", {

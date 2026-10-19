@@ -28,6 +28,7 @@ import { useStableCallback } from "../hooks/useStableCallback";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
+  isModelCapacityError,
   latestExecutedRun,
   latestRootProviderFailure,
 } from "@t3tools/shared/orchestrationV2ThreadError";
@@ -2259,12 +2260,13 @@ export default function ChatView(props: ChatViewProps) {
     if (!isServerThread || serverProjection === null) return null;
     const run = latestExecutedRun(serverProjection.runs);
     if (run?.status === "interrupted") return run.id;
+    const failure = latestRootProviderFailure(run, serverProjection.turnItems);
     return run?.status === "failed" &&
-      serverRuntime?.lastErrorClass === "usage_limit" &&
-      latestRootProviderFailure(run, serverProjection.turnItems)?.class === "usage_limit"
+      ((serverRuntime?.lastErrorClass === "usage_limit" && failure?.class === "usage_limit") ||
+        (isModelCapacityError(serverRuntime?.lastError) && isModelCapacityError(failure?.message)))
       ? run.id
       : null;
-  }, [isServerThread, serverProjection, serverRuntime?.lastErrorClass]);
+  }, [isServerThread, serverProjection, serverRuntime?.lastErrorClass, serverRuntime?.lastError]);
   const parentSubagentThreadId =
     activeThread?.lineage.relationshipToParent === "subagent"
       ? activeThread.lineage.parentThreadId
@@ -7666,11 +7668,18 @@ export default function ChatView(props: ChatViewProps) {
   );
   const limitRecoveryBanner =
     serverRuntime?.status === "failed" &&
-    serverRuntime.lastErrorClass === "usage_limit" &&
+    (serverRuntime.lastErrorClass === "usage_limit" ||
+      isModelCapacityError(serverRuntime.lastError)) &&
     activeThreadShell?.latestRun
       ? usageLimitRecoveryBannerItem({
           runId: activeThreadShell.latestRun.runId,
-          resetAt: serverRuntime.usageLimitResetAt ?? null,
+          capacity: isModelCapacityError(serverRuntime.lastError),
+          resetAt: isModelCapacityError(serverRuntime.lastError)
+            ? settings.modelCapacityRetryDelayMinutes > 0 &&
+              activeThreadShell.limitRecovery?.runId === activeThreadShell.latestRun.runId
+              ? activeThreadShell.limitRecovery.resetAt
+              : null
+            : (serverRuntime.usageLimitResetAt ?? null),
           stoppedAt: activeThreadShell.latestRun.completedAt ?? activeThreadShell.updatedAt,
           recovery: activeThreadShell.limitRecovery ?? null,
           snoozedUntil: activeThreadShell.snoozedUntil,

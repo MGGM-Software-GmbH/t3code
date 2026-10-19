@@ -597,6 +597,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.autoResumeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads
         ? ["Auto-resume limited threads"]
         : []),
+      ...(settings.modelCapacityRetryDelayMinutes !==
+      DEFAULT_UNIFIED_SETTINGS.modelCapacityRetryDelayMinutes
+        ? ["Model capacity retry delay"]
+        : []),
       ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
         ? ["Snooze limited threads"]
         : []),
@@ -721,6 +725,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleKeepPullRequests,
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
+      settings.modelCapacityRetryDelayMinutes,
       settings.snoozeLimitedThreads,
       settings.sidebarProjectGroupingMode,
       settings.sidebarProjectSortOrder,
@@ -832,6 +837,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
+      modelCapacityRetryDelayMinutes: DEFAULT_UNIFIED_SETTINGS.modelCapacityRetryDelayMinutes,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -2393,6 +2399,30 @@ export function GeneralSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Snooze limited threads"
+            />
+          }
+        />
+
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("model-capacity-retry-delay")}
+          description="Minutes before retrying a model-capacity stop with the same model. Set to 0 to disable. Play resumes immediately."
+          settingKeys={["modelCapacityRetryDelayMinutes"]}
+          control={
+            <DraftInput
+              size="sm"
+              type="number"
+              min={0}
+              step={1}
+              className="w-full sm:w-24"
+              value={String(settings.modelCapacityRetryDelayMinutes)}
+              onCommit={(value) => {
+                const minutes = Number(value);
+                if (value.trim() !== "" && Number.isSafeInteger(minutes) && minutes >= 0) {
+                  updateSettings({ modelCapacityRetryDelayMinutes: minutes });
+                }
+              }}
+              aria-label="Model capacity retry delay (minutes)"
             />
           }
         />

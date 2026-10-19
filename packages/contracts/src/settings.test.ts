@@ -86,8 +86,27 @@ describe("MGGM defaults", () => {
       defaultAutoPull: true,
       sidebarAutoSettleAfterDays: null,
       autoResumeLimitedThreads: true,
+      modelCapacityRetryDelayMinutes: 5,
       pullRequestMergeMethod: "rebase",
     });
+  });
+
+  it("accepts zero and custom capacity retry delays and rejects invalid delays", () => {
+    for (const minutes of [0, 1, 5, 30]) {
+      expect(
+        decodeServerSettings({ modelCapacityRetryDelayMinutes: minutes })
+          .modelCapacityRetryDelayMinutes,
+      ).toBe(minutes);
+      expect(
+        decodeServerSettingsPatch({ modelCapacityRetryDelayMinutes: minutes })
+          .modelCapacityRetryDelayMinutes,
+      ).toBe(minutes);
+    }
+    for (const minutes of [-1, 0.5, "5", null]) {
+      expect(() =>
+        decodeServerSettingsPatch({ modelCapacityRetryDelayMinutes: minutes }),
+      ).toThrow();
+    }
   });
 
   it("starts the client with Working, steering, and the approved font sizes", () => {
