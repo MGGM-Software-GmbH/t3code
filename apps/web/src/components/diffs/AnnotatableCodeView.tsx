@@ -103,6 +103,7 @@ interface DiffSelectionContext {
   item: CodeViewItem<DiffCommentAnnotationGroup>;
 }
 
+/** Bound the annotation wrapper so the virtualized viewer owns scrolling inside block parents. */
 export function AnnotatableCodeView({
   codeViewKey,
   files,
@@ -250,7 +251,7 @@ export function AnnotatableCodeView({
   const detachedDraft =
     draft && (!draftFile || !restoreDiffReviewCommentRange(draftFile.fileDiff, draft.comment));
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       {detachedDraft && draft ? (
         <div>
           <p className="px-3 text-xs text-muted-foreground">

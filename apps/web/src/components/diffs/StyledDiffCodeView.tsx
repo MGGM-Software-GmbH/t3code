@@ -94,8 +94,10 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   font-family: var(--font-sans) !important;
   font-size: 12px !important;
   line-height: 1 !important;
+  /* Header controls scale with the app font; their row must still match diffHeaderHeight. */
+  height: 32px !important;
   min-height: 32px !important;
-  padding-block: 6px !important;
+  padding-block: 0 !important;
   padding-inline: 8px 12px !important;
 }
 
