@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   AcpRegistrySearchInput,
   AcpRegistrySearchResult,
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -33,6 +34,7 @@ const archiveUrl = "https://registry.test/example-agent.bin";
 const decodeAcpRegistrySettings = Schema.decodeSync(AcpRegistrySettings);
 const decodeSearchInput = Schema.decodeEffect(AcpRegistrySearchInput);
 const decodeSearchResult = Schema.decodeEffect(AcpRegistrySearchResult);
+const decodeUnknownAcpRegistrySettings = Schema.decodeUnknownSync(AcpRegistrySettings);
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 function makeAgent(
@@ -49,6 +51,15 @@ function makeAgent(
 
 function makeRegistry(agent: AcpRegistrySupport.AcpRegistryAgent): string {
   return JSON.stringify({ version: "1.0.0", agents: [agent] });
+}
+
+/** Keep the registry release newer than the PATH fixture to detect forced upgrades. */
+function makeCopilotAgent(): AcpRegistrySupport.AcpRegistryAgent {
+  return {
+    ...makeAgent({ npx: { package: "@github/copilot@1.0.98", args: ["--acp"] } }),
+    id: "github-copilot-cli",
+    version: "1.0.98",
+  };
 }
 
 function settings(input: Partial<AcpRegistrySettings> = {}): AcpRegistrySettings {
@@ -461,6 +472,101 @@ describe("AcpRegistrySupport", () => {
     );
   });
 
+  it.effect(
+    "runs the shipped Copilot preset without installing or replacing the system CLI",
+    () => {
+      const agent = makeCopilotAgent();
+      const requests: Array<string> = [];
+      return Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cacheDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-acp-registry-copilot-",
+        });
+        const toolchain = yield* makeFakeNpmToolchain(cacheDir);
+        const systemBin = path.join(cacheDir, "system-bin");
+        const systemBinary = path.join(systemBin, "copilot");
+        const installedCli = "#!/bin/sh\necho 'GitHub Copilot CLI 1.0.93.'\n";
+        yield* fileSystem.makeDirectory(systemBin);
+        yield* fileSystem.writeFileString(systemBinary, installedCli);
+        yield* fileSystem.chmod(systemBinary, 0o755);
+        const environment = {
+          ...toolchain.environment,
+          PATH: `${systemBin}:${toolchain.environment.PATH}`,
+        };
+        const preset = decodeUnknownAcpRegistrySettings(
+          DEFAULT_PROVIDER_INSTANCE_CONFIGS[ProviderInstanceId.make("githubCopilot")]?.config,
+        );
+        const resolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
+          cacheDir,
+          toolsDir: `${cacheDir}/tools`,
+          registryUrl,
+        }).pipe(Effect.provideService(HostProcess.Environment, environment));
+
+        const resolved = yield* resolver.resolve(preset, "/workspace", environment);
+        expect(resolved.spawn.command).toBe(systemBinary);
+        expect(resolved.spawn.args).toEqual(["--acp"]);
+        expect(yield* fileSystem.readFileString(systemBinary)).toBe(installedCli);
+        expect(yield* fileSystem.readFileString(toolchain.logPath)).toBe("");
+
+        expect(requests).toEqual([registryUrl]);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          layerResolver((request) => {
+            requests.push(request.url);
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(request, new Response(makeRegistry(agent))),
+            );
+          }),
+        ),
+      );
+    },
+  );
+
+  it.effect(
+    "reports a missing system CLI for the shipped Copilot preset without running npm",
+    () => {
+      const agent = makeCopilotAgent();
+      return Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cacheDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-acp-registry-copilot-missing-",
+        });
+        const toolchain = yield* makeFakeNpmToolchain(cacheDir);
+        const environment = {
+          ...toolchain.environment,
+          PATH: path.dirname(toolchain.npmPath),
+        };
+        const preset = decodeUnknownAcpRegistrySettings(
+          DEFAULT_PROVIDER_INSTANCE_CONFIGS[ProviderInstanceId.make("githubCopilot")]?.config,
+        );
+        const resolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
+          cacheDir,
+          toolsDir: `${cacheDir}/tools`,
+          registryUrl,
+        }).pipe(Effect.provideService(HostProcess.Environment, environment));
+
+        const unavailable = yield* resolver
+          .resolve(preset, "/workspace", environment)
+          .pipe(Effect.flip);
+        expect(unavailable).toMatchObject({
+          reason: "runner_unavailable",
+          detail: expect.stringContaining("'copilot'"),
+        });
+        expect(yield* fileSystem.readFileString(toolchain.logPath)).toBe("");
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          layerResolver((request) =>
+            Effect.succeed(HttpClientResponse.fromWeb(request, new Response(makeRegistry(agent)))),
+          ),
+        ),
+      );
+    },
+  );
+
   it.effect("installs into T3 home a package and launches its exposed command", () => {
     const agent = makeAgent({
       npx: { package: "@example/acp@V1.2.3", args: ["--stdio"] },
@@ -489,6 +595,38 @@ describe("AcpRegistrySupport", () => {
       const npmCommands = yield* fileSystem.readFileString(toolchain.logPath);
       expect(npmCommands.match(/^install --global /gmu)).toHaveLength(1);
       expect(npmCommands).toContain("install --global @example/acp@V1.2.3");
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        layerResolver((request) =>
+          Effect.succeed(HttpClientResponse.fromWeb(request, new Response(makeRegistry(agent)))),
+        ),
+      ),
+    );
+  });
+
+  it.effect("initializes a fresh npm 12 prefix before installing an agent", () => {
+    const agent = makeAgent({ npx: { package: "@example/acp@1.2.3" } });
+    return Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cacheDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-acp-registry-npm12-",
+      });
+      const toolchain = yield* makeFakeNpmToolchain(cacheDir);
+      const environment = { ...toolchain.environment, FAKE_NPM_REQUIRE_LIB: "1" };
+      const resolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
+        cacheDir,
+        toolsDir: `${cacheDir}/tools`,
+        registryUrl,
+      }).pipe(Effect.provideService(HostProcess.Environment, environment));
+
+      const resolved = yield* resolver.resolve(settings(), "/workspace", environment);
+
+      expect(resolved.spawn.command).toBe(toolchain.executablePath);
+      expect(resolved.distribution).toBe("npx");
+      expect(yield* fileSystem.readFileString(toolchain.logPath)).toContain(
+        "install --global @example/acp@1.2.3",
+      );
     }).pipe(
       Effect.scoped,
       Effect.provide(
@@ -1391,6 +1529,43 @@ describe("AcpRegistrySupport", () => {
 
       expect(inspection).toMatchObject({ status: "ready", agentId: agent.id });
       expect(requests).toBe(0);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        layerResolver((request) => {
+          requests += 1;
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(request, new Response(makeRegistry(agent))),
+          );
+        }),
+      ),
+    );
+  });
+
+  it.effect("loads a missing registry for an active inspection and reuses it", () => {
+    const agent = makeAgent({ npx: { package: "@example/acp@1.2.3" } });
+    let requests = 0;
+    return Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cacheDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-acp-registry-active-inspect-",
+      });
+      const resolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
+        cacheDir,
+        toolsDir: `${cacheDir}/tools`,
+        registryUrl,
+      });
+
+      const inspection = yield* resolver.inspect(settings(), undefined, {
+        allowRegistryFetch: true,
+      });
+      expect(inspection).toMatchObject({ status: "ready", agentId: agent.id });
+      expect(yield* fileSystem.exists(`${cacheDir}/acp-registry/registry.json`)).toBe(true);
+      expect(yield* resolver.inspect(settings(), undefined, { allowRegistryFetch: true })).toEqual(
+        inspection,
+      );
+      expect(requests).toBe(1);
+      expect(yield* fileSystem.exists(`${cacheDir}/tools`)).toBe(false);
     }).pipe(
       Effect.scoped,
       Effect.provide(

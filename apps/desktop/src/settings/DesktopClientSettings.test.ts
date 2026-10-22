@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
   ClientSettingsSchema,
+  StoredClientSettingsSchema,
   DEFAULT_CLIENT_SETTINGS,
   type ClientSettings,
 } from "@t3tools/contracts";
@@ -78,6 +79,7 @@ const decodeClientSettingsJson = Schema.decodeEffect(Schema.fromJsonString(Clien
 const decodeRecordJson = Schema.decodeEffect(
   Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 );
+const decodeStoredClientSettings = Schema.decodeEffect(StoredClientSettingsSchema);
 function layer(baseDir: string) {
   const layerEnvironment = DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
@@ -300,7 +302,7 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
-  it.effect("loads defaults from empty client settings documents", () =>
+  it.effect("preserves upstream defaults in existing empty client settings documents", () =>
     withClientSettings(
       Effect.gen(function* () {
         const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -309,7 +311,7 @@ describe("DesktopClientSettings", () => {
         yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
         yield* fileSystem.writeFileString(environment.clientSettingsPath, "{}\n");
 
-        assert.deepEqual(yield* settings.get, Option.some(yield* decodeClientSettingsJson("{}")));
+        assert.deepEqual(yield* settings.get, Option.some(yield* decodeStoredClientSettings({})));
       }),
     ),
   );

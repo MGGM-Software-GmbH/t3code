@@ -2375,7 +2375,7 @@ describe("Working section beta", () => {
     expect(ids(layout).slice(1)).toEqual(["finished-early", "finished-late", "asks-approval"]);
   });
 
-  it("places the shelf after queued tasks and before snoozed and settled threads", () => {
+  it("places Working before the inbox, queued tasks, and lower shelves", () => {
     const layout = buildThreadListV2Items({
       threads: [
         makeThread({ id: ThreadId.make("active"), title: "active" }),
@@ -2422,14 +2422,33 @@ describe("Working section beta", () => {
             : item.type,
       ),
     ).toEqual([
-      "queued",
-      "active",
       "v2-working-shelf",
       "working",
+      "queued",
+      "active",
       "v2-snoozed-shelf",
       "snoozed",
       "v2-settled-shelf",
       "settled",
+    ]);
+  });
+
+  it("keeps pins first and a collapsed Working header directly above returned threads", () => {
+    const layout = build();
+    const items = buildThreadListV2ListItems({
+      items: layout.items,
+      pendingTasks: [],
+      workingCount: layout.workingCount,
+      workingShelfHeaderIndex: layout.workingShelfHeaderIndex,
+    });
+    expect(
+      items.map((item) => (item.type === "v2-thread" ? item.item.thread.id : item.type)),
+    ).toEqual([
+      "pinned-working",
+      "v2-working-shelf",
+      "finished-late",
+      "asks-approval",
+      "finished-early",
     ]);
   });
 });

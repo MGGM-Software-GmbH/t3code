@@ -1,206 +1,90 @@
-import type { CodeViewDiffItem, FileDiffMetadata, SelectedLineRange } from "@pierre/diffs";
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
-import { StrictMode, type ComponentProps } from "react";
+import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
-
 import { act, render } from "../../../test/render";
-
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { buildFileDiffIdentityKey } from "~/lib/diffRendering";
-
-type ViewerProps = Omit<ComponentProps<typeof StyledDiffCodeView<unknown>>, "options"> & {
-  options: {
-    enableLineSelection: boolean;
-    enableGutterUtility: boolean;
-    onGutterUtilityClick: (
-      range: SelectedLineRange,
-      context: { item: CodeViewDiffItem<unknown> },
-    ) => void;
-  };
-};
-
-// Replace only the virtualized viewer; comment editing and submission use the real components.
-vi.mock("./StyledDiffCodeView", () => ({
-  StyledDiffCodeView: (props: ViewerProps) =>
-    props.items
-      ?.filter((item) => item.type === "diff")
-      .map((item) => (
-        <section key={item.id}>
-          <button
-            disabled={!props.options?.enableLineSelection || !props.options?.enableGutterUtility}
-            onClick={() => {
-              props.onSelectedLinesChange?.({ id: item.id, range });
-              props.options?.onGutterUtilityClick?.(range, { item });
-            }}
-          >
-            Comment on {item.fileDiff.name}
-          </button>
-          {props.selectedLines?.id === item.id ? (
-            <mark>Line {props.selectedLines.range.start}</mark>
-          ) : null}
-          {item.annotations?.map((annotation) => (
-            <div key={`${annotation.side}:${annotation.lineNumber}`}>
-              {props.renderAnnotation?.(annotation, item)}
-            </div>
-          ))}
-        </section>
-      )),
-}));
-
 import { AnnotatableCodeView } from "./AnnotatableCodeView";
 import type { StyledDiffCodeView } from "./StyledDiffCodeView";
+import { restoreDiffReviewCommentRange } from "~/reviewCommentContext";
 
-const target = DraftId.make("diff-draft-test");
-const range: SelectedLineRange = { start: 1, end: 1, side: "additions" };
-let container: HTMLDivElement;
-
-function file(
-  name: string,
-  fileVersion = 1,
-  type: FileDiffMetadata["type"] = "change",
-  prevName?: string,
-) {
-  const fileDiff = parsePatchFiles(
-    `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n@@ -1 +1 @@\n-old\n+new\n`,
-    name,
+vi.mock("./StyledDiffCodeView", () => ({
+  StyledDiffCodeView: ({
+    items,
+    options,
+    renderAnnotation,
+  }: ComponentProps<typeof StyledDiffCodeView>) => (
+    <div>
+      <button
+        onClick={() =>
+          options?.onGutterUtilityClick?.({ start: 2, end: 2, side: "additions" }, {
+            item: items![0]!,
+          } as never)
+        }
+      >
+        Select review lines
+      </button>
+      {items?.flatMap(
+        (item) =>
+          item.annotations?.map((annotation) =>
+            renderAnnotation?.(annotation, { item } as never),
+          ) ?? [],
+      )}
+    </div>
+  ),
+}));
+const target = DraftId.make("snapshot-integration");
+function fileDiff(value: string) {
+  return parsePatchFiles(
+    `diff --git a/file.ts b/file.ts\n--- a/file.ts\n+++ b/file.ts\n@@ -1,2 +1,2 @@\n before\n-old\n+${value}\n`,
   )[0]!.files[0]!;
-  fileDiff.type = type;
-  if (prevName) fileDiff.prevName = prevName;
-  return {
-    fileDiff,
-    filePath: name,
-    fileKey: buildFileDiffIdentityKey(fileDiff),
-    fileVersion,
-    collapsed: false,
-  };
 }
 
-function view(
-  files: ReturnType<typeof file>[],
-  codeViewKey = "initial",
-  pendingFiles: FileDiffMetadata[] = [],
-) {
-  return (
-    <StrictMode>
+describe("diff comment snapshots", () => {
+  it("submits the selected snapshot after an agent replaces the file, and clears saved annotations", async () => {
+    using _draft = {
+      [Symbol.dispose]() {
+        useComposerDraftStore.getState().setReviewComments(target, []);
+      },
+    };
+    const original = fileDiff("selected");
+    const replacement = fileDiff("agent replacement");
+    const view = (file: ReturnType<typeof fileDiff>) => (
       <AnnotatableCodeView
-        codeViewKey={codeViewKey}
-        files={files}
-        pendingFiles={pendingFiles}
-        sectionId="unstaged"
-        sectionTitle="Uncommitted"
+        codeViewKey="view"
         composerDraftTarget={target}
+        sectionId="working"
+        sectionTitle="Working tree"
+        files={[
+          {
+            fileDiff: file,
+            filePath: "file.ts",
+            fileKey: "file",
+            fileVersion: 1,
+            collapsed: false,
+          },
+        ]}
+        pendingFiles={[]}
         options={{}}
+        onRevealSearchMatch={() => {}}
         renderHeaderFilenameSuffix={() => null}
         renderHeaderPrefix={() => null}
-        onRevealSearchMatch={() => {}}
       />
-    </StrictMode>
-  );
-}
-
-function click(label: string) {
-  const button = Array.from(container.querySelectorAll("button")).find(
-    (node) => node.textContent === label,
-  );
-  if (!button) throw new Error(`Missing button: ${label}`);
-  return act(() => button.click());
-}
-
-function editor() {
-  const textarea = container.querySelector("textarea");
-  if (!textarea) throw new Error("Comment editor is not available");
-  return textarea;
-}
-
-function typeComment(text: string) {
-  return act(() => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-      editor(),
-      text,
     );
-    editor().dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
-function setup(): Disposable {
-  const reset = () => useComposerDraftStore.setState(useComposerDraftStore.getInitialState(), true);
-  reset();
-  container = document.createElement("div");
-  return { [Symbol.dispose]: reset };
-}
-
-describe("diff comment drafts", () => {
-  it.each(["removed file", "replaced rename"] as const)(
-    "allows a fresh comment after a %s loses its draft",
-    async (scenario) => {
-      using _drafts = setup();
-      const original =
-        scenario === "removed file"
-          ? file("a.ts")
-          : file("shared.ts", 1, "rename-changed", "old.ts");
-      await using screen = await render(view([original, file("b.ts")]), { container });
-      await click(`Comment on ${original.filePath}`);
-      await typeComment("Discard this draft");
-      const pending =
-        scenario === "removed file"
-          ? []
-          : [
-              {
-                ...file("shared.ts", 2, "rename-changed", "other.ts").fileDiff,
-                hunks: [],
-                cacheKey: "replacement:pending",
-              },
-            ];
-
-      await screen.rerender(view([file("b.ts")], "refreshed", pending));
-      expect(container.querySelector("textarea")).toBeNull();
-      await click("Comment on b.ts");
-      expect(editor().value).toBe("");
-      await typeComment("  Review b.ts  ");
-      await click("Comment");
-
-      expect(useComposerDraftStore.getState().getComposerDraft(target)?.reviewComments).toEqual([
-        expect.objectContaining({
-          filePath: "b.ts",
-          text: "Review b.ts",
-          selection: { ...range, endSide: "additions" },
-        }),
-      ]);
-      await screen.rerender(view([original, file("b.ts")], "returned"));
-      expect(container.querySelector("textarea")).toBeNull();
-      expect(container.querySelector("mark")).toBeNull();
-      expect(container.querySelector("p")?.textContent).toBe("Review b.ts");
-    },
-  );
-
-  it("keeps the text and selected line through refresh and a provisional lazy patch", async () => {
-    using _drafts = setup();
-    const original = file("shared.ts", 1, "rename-pure", "old.ts");
-    await using screen = await render(view([original]), { container });
-    await click("Comment on shared.ts");
-    await typeComment("Keep this draft");
-    const refreshed = file("shared.ts", 2, "rename-pure", "old.ts");
-    await screen.rerender(view([refreshed], "refreshed"));
-    expect(editor().value).toBe("Keep this draft");
-    expect(container.querySelector("mark")?.textContent).toBe("Line 1");
-
-    await screen.rerender(
-      view([], "loading", [
-        { ...refreshed.fileDiff, type: "rename-changed", hunks: [], cacheKey: "shared:pending" },
-      ]),
-    );
-    expect(container.querySelector("textarea")).toBeNull();
-    await screen.rerender(view([refreshed], "loaded"));
-    expect(editor().value).toBe("Keep this draft");
-    expect(container.querySelector("mark")?.textContent).toBe("Line 1");
-    await click("Comment");
-    expect(useComposerDraftStore.getState().getComposerDraft(target)?.reviewComments).toEqual([
-      expect.objectContaining({
-        filePath: "shared.ts",
-        text: "Keep this draft",
-        selection: { ...range, endSide: "additions" },
-      }),
-    ]);
-    expect(container.querySelector("p")?.textContent).toBe("Keep this draft");
+    await using screen = await render(view(original));
+    await screen.getByRole("button", { name: "Select review lines" }).click();
+    await screen.getByRole("textbox").fill("Keep the selected code");
+    await screen.rerender(view(replacement));
+    await expect.element(screen.getByText("Source changed.", { exact: false })).toBeVisible();
+    await screen.getByRole("button", { name: "Comment", exact: true }).click();
+    const comments = useComposerDraftStore.getState().getComposerDraft(target)!.reviewComments;
+    expect(comments).toHaveLength(1);
+    expect(comments[0]!.diff).toContain("+selected");
+    expect(comments[0]!.diff).not.toContain("agent replacement");
+    expect(restoreDiffReviewCommentRange(replacement, comments[0]!)).toBeNull();
+    expect(restoreDiffReviewCommentRange(original, comments[0]!)).not.toBeNull();
+    await screen.rerender(view(original));
+    await expect.element(screen.getByText("Keep the selected code")).toBeVisible();
+    await act(() => useComposerDraftStore.getState().setReviewComments(target, []));
+    await expect.element(screen.getByText("Keep the selected code")).not.toBeInTheDocument();
   });
 });

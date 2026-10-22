@@ -4038,6 +4038,96 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
+  it.effect(
+    "finds persisted capacity failures only while retries are enabled for the same model",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* ProjectionStore.ProjectionStoreV2;
+        const threadId = yield* addRolledBackRecoveryCandidate("capacity-candidate");
+        const original = (yield* store.getThreadProjection(threadId)).runs[0]!;
+        const now = yield* DateTime.now;
+        yield* store.apply({
+          id: EventId.make("capacity-candidate:run"),
+          type: "run.updated",
+          threadId,
+          occurredAt: now,
+          payload: { ...original, status: "failed", completedAt: now },
+        });
+        const item = {
+          id: TurnItemId.make("capacity-candidate:error"),
+          type: "error" as const,
+          threadId,
+          runId: original.id,
+          nodeId: original.rootNodeId,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: 2,
+          status: "failed" as const,
+          title: "Provider error",
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+          failure: {
+            class: "provider_error" as const,
+            code: null,
+            retryable: null,
+            message: "Selected model is at capacity. Please try a different model.",
+          },
+        };
+        yield* store.apply({
+          id: EventId.make("capacity-candidate:error"),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: now,
+          payload: item,
+        });
+        const options = {
+          now,
+          autoResume: false,
+          snooze: false,
+          modelCapacityRetryDelayMinutes: 5,
+        };
+        const candidate = (yield* store.getLimitRecoveryCandidates(options)).find(
+          (row) => row.id === threadId,
+        );
+        assert.equal(candidate?.lastError, item.failure.message);
+        assert.equal(candidate?.latestRunId, original.id);
+        assert.isNull(candidate?.usageLimitResetAt);
+        assert.isUndefined(
+          (yield* store.getLimitRecoveryCandidates({
+            ...options,
+            modelCapacityRetryDelayMinutes: 0,
+          })).find((row) => row.id === threadId),
+        );
+        const projection = yield* store.getThreadProjection(threadId);
+        yield* store.apply({
+          id: EventId.make("capacity-candidate:model-changed"),
+          type: "thread.metadata-updated",
+          threadId,
+          occurredAt: now,
+          payload: {
+            ...projection.thread,
+            modelSelection: { ...modelSelection, model: "different-model" },
+          },
+        });
+        assert.isUndefined(
+          (yield* store.getLimitRecoveryCandidates(options)).find((row) => row.id === threadId),
+        );
+        yield* store.apply({
+          id: EventId.make("capacity-candidate:other-error"),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: now,
+          payload: { ...item, failure: { ...item.failure, message: "Authentication failed" } },
+        });
+        assert.isUndefined(
+          (yield* store.getLimitRecoveryCandidates(options)).find((row) => row.id === threadId),
+        );
+      }),
+  );
+
   it.effect("projects only the latest failed root turn's limit into SQL and memory shells", () =>
     Effect.gen(function* () {
       const store = yield* ProjectionStore.ProjectionStoreV2;
@@ -4105,6 +4195,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             id: sqlShell.id,
             status: sqlShell.status,
             lastErrorClass: sqlShell.lastErrorClass,
+            lastError: sqlShell.lastError,
             usageLimitResetAt: sqlShell.usageLimitResetAt,
             latestRunId: sqlShell.latestRunId,
             latestRunCompletedAt: sqlShell.latestRunCompletedAt,

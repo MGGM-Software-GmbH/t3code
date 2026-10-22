@@ -45,6 +45,19 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it.each(["model capacity", "same model", "capacity retry minutes"])(
+    "finds the capacity retry setting for %s",
+    (query) => {
+      expect(searchSettings(query).map((item) => item.id)).toContain("model-capacity-retry-delay");
+    },
+  );
+
+  it("finds the slow request warning threshold by the warning text", () => {
+    expect(searchSettings("some requests are slow").map((item) => item.id)).toContain(
+      "slow-request-warning-threshold",
+    );
+  });
+
   it.each(["OTel", "OTLP", "telemetry export", "Grafana"])(
     "finds environment telemetry settings for %s",
     (query) => {
@@ -294,7 +307,10 @@ describe("searchSettings", () => {
 
   it("ranks keybinding commands after other settings", () => {
     const ids = searchSettings("model").map((item) => item.id);
-    expect(ids[0]).toBe("default-model");
+    expect(ids).toContain("default-model");
+    expect(ids.indexOf("keybinding-modelPicker.toggle")).toBeGreaterThan(
+      ids.indexOf("model-capacity-retry-delay"),
+    );
     expect(ids.indexOf("keybinding-modelPicker.toggle")).toBeGreaterThan(
       ids.indexOf("text-generation-model"),
     );

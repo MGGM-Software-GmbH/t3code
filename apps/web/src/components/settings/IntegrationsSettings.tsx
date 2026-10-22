@@ -1,6 +1,7 @@
 import { DeviceHostUpdates } from "../device/DeviceHostUpdates";
 import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import { PdSecretsSettings } from "./PdSecretsSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
 import { EasDeviceHostsSettings } from "./EasDeviceHostsSettings";
@@ -1628,6 +1629,9 @@ export function IntegrationsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      {/* Server-authoritative agent access is scoped by the header selection;
+          the preview defaults below are device-local and ignore it. */}
+      <PdSecretsSettings />
       <SettingsSection id="browser" title="Browser">
         <AgentBrowserAccessSetting />
         {previewDefaultsDisabled ? (

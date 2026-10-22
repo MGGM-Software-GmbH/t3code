@@ -49,13 +49,14 @@ describe("client settings hydration", () => {
 
   it("waits for saved model preferences before applying the first server edit", async () => {
     const provider = ProviderInstanceId.make("codex_work");
+    const unmigratedSettings = { ...DEFAULT_SERVER_SETTINGS, favorites: null };
     let finishRead!: (settings: ClientSettings) => void;
     persistenceMocks.getClientSettings.mockReturnValueOnce(
       new Promise((resolve) => {
         finishRead = resolve;
       }),
     );
-    const patch = prepareModelPreferencesPatch(DEFAULT_SERVER_SETTINGS, {
+    const patch = prepareModelPreferencesPatch(unmigratedSettings, {
       setModelFavorites: [{ provider, model: "new", favorite: true }],
       setModelsHidden: [{ provider, model: "new", hidden: true }],
     });
@@ -66,7 +67,7 @@ describe("client settings hydration", () => {
         [provider]: { hiddenModels: ["saved-hidden"], modelOrder: ["saved-order"] },
       },
     });
-    const edited = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, await patch);
+    const edited = applyServerSettingsPatch(unmigratedSettings, await patch);
     expect(edited.favorites).toEqual([...savedSettings.favorites, { provider, model: "new" }]);
     expect(edited.providerModelPreferences?.[provider]).toEqual({
       hiddenModels: ["saved-hidden", "new"],
@@ -413,6 +414,7 @@ describe("mergeEnvironmentSettings", () => {
   it("combines the selected environment's server settings with client preferences", () => {
     const serverSettings = {
       ...DEFAULT_SERVER_SETTINGS,
+      favorites: null,
       providerInstances: {
         [ProviderInstanceId.make("codex_remote")]: {
           driver: ProviderDriverKind.make("codex"),
@@ -498,8 +500,11 @@ it("uses the environment's model preferences after migration, including empty li
     favorites: [{ provider: ProviderInstanceId.make("codex_work"), model: "old" }],
     providerModelPreferences: { codex_work: { hiddenModels: ["old"], modelOrder: [] } },
   };
+  expect(
+    mergeEnvironmentSettings({ ...DEFAULT_SERVER_SETTINGS, favorites: null }, client).favorites,
+  ).toEqual(client.favorites);
   expect(mergeEnvironmentSettings(DEFAULT_SERVER_SETTINGS, client).favorites).toEqual(
-    client.favorites,
+    DEFAULT_SERVER_SETTINGS.favorites,
   );
   const merged = mergeEnvironmentSettings(
     { ...DEFAULT_SERVER_SETTINGS, favorites: [], providerModelPreferences: {} },

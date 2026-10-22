@@ -14,6 +14,10 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  * even where they differ from the method prefix.
  */
 const RPC_AGGREGATES = {
+  [WS_METHODS.pdSecretsStatus]: "server",
+  [WS_METHODS.pdSecretsLogin]: "server",
+  [WS_METHODS.pdSecretsRespond]: "server",
+  [WS_METHODS.pdSecretsCancel]: "server",
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: "orchestration",
@@ -80,6 +84,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverRetryResourceTelemetry]: "server",
   [WS_METHODS.serverCheckOtlpEndpoint]: "server",
   [WS_METHODS.serverGetUsageSummary]: "server",
+  [WS_METHODS.serverGetCodexResetForecast]: "server",
   [WS_METHODS.serverRefreshUsageRates]: "server",
   [WS_METHODS.serverSignalProcess]: "server",
   [WS_METHODS.serverReportClientActivity]: "server",

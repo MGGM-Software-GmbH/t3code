@@ -83,7 +83,7 @@ describe("mobile themes", () => {
     for (const appearance of ["light", "dark"] as const) {
       const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId);
       const colors = theme
-        ? getThemeColorsForAppearance(theme, appearance)!
+        ? (getThemeColorsForAppearance(theme, appearance) ?? theme.colors)
         : appearance === "dark"
           ? T3_CODE_DARK_THEME_COLORS
           : T3_CODE_LIGHT_THEME_COLORS;

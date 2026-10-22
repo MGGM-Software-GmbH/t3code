@@ -1438,10 +1438,10 @@ export function resolveFffNativeDependencies(
     );
   }
 
+  // The Linux Node and Electron runtimes require glibc. A direct musl
+  // dependency is rejected by pnpm's glibc-only staging configuration.
   return Object.fromEntries(
-    architectures.flatMap((architecture) =>
-      ["gnu", "musl"].map((libc) => [`@ff-labs/fff-bin-linux-${architecture}-${libc}`, version]),
-    ),
+    architectures.map((architecture) => [`@ff-labs/fff-bin-linux-${architecture}-gnu`, version]),
   );
 }
 

@@ -483,7 +483,9 @@ export function buildThreadListV2ListItems(input: {
   const snoozedEnd = settledShelfHeaderIndex ?? threadItems.length;
   const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
   const activeEnd = workingShelfHeaderIndex ?? workingEnd;
-  const result: ThreadListV2ListItem[] = [...pendingItems, ...threadItems.slice(0, activeEnd)];
+  let pinnedEnd = 0;
+  while (pinnedEnd < input.items.length && input.items[pinnedEnd]!.pinned) pinnedEnd += 1;
+  const result: ThreadListV2ListItem[] = threadItems.slice(0, pinnedEnd);
   const shelfDisabled = input.shelfPreferencesLoading === true;
   if (workingShelfHeaderIndex !== null && workingCount > 0) {
     result.push({
@@ -495,6 +497,7 @@ export function buildThreadListV2ListItems(input: {
     });
     result.push(...threadItems.slice(workingShelfHeaderIndex, workingEnd));
   }
+  result.push(...pendingItems, ...threadItems.slice(pinnedEnd, activeEnd));
   if (snoozedShelfHeaderIndex !== null && snoozedCount > 0) {
     result.push({
       type: "v2-snoozed-shelf",

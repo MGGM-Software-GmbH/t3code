@@ -17,6 +17,7 @@ import {
   resolveProviderCatalogAvailability,
   resolveSelectableProviderInstance,
   shouldShowInstanceBadge,
+  sortProviderInstanceEntries,
 } from "./providerInstances";
 
 function provider(input: {
@@ -60,6 +61,38 @@ const model = (slug: string, isCustom = false, isDefault = false) => ({
 });
 
 describe("isProviderInstancePickerReady", () => {
+  it("places the shipped Copilot before custom ACP instances and respects disabling it", () => {
+    const entries = deriveProviderInstanceEntries([
+      provider({ provider: ProviderDriverKind.make("acpRegistry"), instanceId: "custom_agent" }),
+      provider({
+        provider: ProviderDriverKind.make("acpRegistry"),
+        instanceId: "githubCopilot",
+        displayName: "GitHub Copilot",
+      }),
+    ]);
+    const sorted = sortProviderInstanceEntries(entries);
+    expect(sorted.map((entry) => entry.instanceId)).toEqual(["githubCopilot", "custom_agent"]);
+    expect(sorted[0]?.isDefault).toBe(true);
+    expect(sorted[0]?.displayName).toBe("GitHub Copilot");
+    expect(sorted[1]?.isDefault).toBe(false);
+
+    const [disabled] = applyProviderInstanceSettings(
+      sorted,
+      {
+        providerInstances: {
+          [ProviderInstanceId.make("githubCopilot")]: {
+            driver: ProviderDriverKind.make("acpRegistry"),
+            enabled: false,
+          },
+        },
+        projectSettingsOverrides: {},
+      },
+      null,
+    );
+    expect(disabled && isProviderInstancePickerReady(disabled)).toBe(false);
+    expect(disabled && isProviderInstancePickerVisible(disabled)).toBe(false);
+  });
+
   it("rejects a disabled instance even while its last probe status is ready", () => {
     const [entry] = deriveProviderInstanceEntries([
       provider({

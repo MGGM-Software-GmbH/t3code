@@ -34,6 +34,7 @@ import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
+  isModelCapacityError,
   latestExecutedRun,
   latestRootProviderFailure,
 } from "@t3tools/shared/orchestrationV2ThreadError";
@@ -357,7 +358,8 @@ import {
   reviewCommentContextLabel,
   terminalContextReference,
 } from "../lib/composerContextRecords";
-import { type ReviewCommentContext } from "../reviewCommentContext";
+import { refreshFileReviewComments, type ReviewCommentContext } from "../reviewCommentContext";
+import { readProjectFileForReview } from "./files/projectFilesQueryState";
 import { environmentCatalog } from "../connection/catalog";
 import { ConnectionDiagnosisHeadline } from "./settings/ConnectionDiagnosisDetails";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
@@ -1052,6 +1054,24 @@ function makeModelDisabledReason(
   };
 }
 
+// Keep the async cleanup outside the component so React Compiler can compile the chat view.
+async function refreshReviewCommentsForSend(
+  comments: readonly ReviewCommentContext[],
+  readFile: Parameters<typeof refreshFileReviewComments>[1],
+  pending: { current: boolean },
+  onError: (message: string) => void,
+): Promise<ReviewCommentContext[] | null> {
+  pending.current = true;
+  try {
+    return await refreshFileReviewComments(comments, readFile);
+  } catch (error) {
+    onError(error instanceof Error ? error.message : "Could not refresh review comments.");
+    return null;
+  } finally {
+    pending.current = false;
+  }
+}
+
 export default function ChatView(props: ChatViewProps) {
   const {
     environmentId,
@@ -1556,11 +1576,15 @@ export default function ChatView(props: ChatViewProps) {
     if (!isServerThread || serverProjection === null) return null;
     const run = latestExecutedRun(serverProjection.runs);
     if (run?.status === "interrupted") return run.id;
-    return run?.status === "failed" &&
-      serverRuntime?.lastErrorClass === "usage_limit" &&
-      latestRootProviderFailure(run, serverProjection.turnItems)?.class === "usage_limit"
-      ? run.id
-      : null;
+    if (run?.status !== "failed") return null;
+    const failure = latestRootProviderFailure(run, serverProjection.turnItems);
+    if (serverRuntime?.lastErrorClass === "usage_limit" && failure?.class === "usage_limit") {
+      return run.id;
+    }
+    if (isModelCapacityError(serverRuntime?.lastError) && isModelCapacityError(failure?.message)) {
+      return run.id;
+    }
+    return null;
   })();
   const parentSubagentThreadId =
     activeThread?.lineage.relationshipToParent === "subagent"
@@ -5611,11 +5635,18 @@ export default function ChatView(props: ChatViewProps) {
   });
   const limitRecoveryBanner =
     serverRuntime?.status === "failed" &&
-    serverRuntime.lastErrorClass === "usage_limit" &&
+    (serverRuntime.lastErrorClass === "usage_limit" ||
+      isModelCapacityError(serverRuntime.lastError)) &&
     activeThreadShell?.latestRun
       ? usageLimitRecoveryBannerItem({
           runId: activeThreadShell.latestRun.runId,
-          resetAt: serverRuntime.usageLimitResetAt ?? null,
+          capacity: isModelCapacityError(serverRuntime.lastError),
+          resetAt: isModelCapacityError(serverRuntime.lastError)
+            ? settings.modelCapacityRetryDelayMinutes > 0 &&
+              activeThreadShell.limitRecovery?.runId === activeThreadShell.latestRun.runId
+              ? activeThreadShell.limitRecovery.resetAt
+              : null
+            : (serverRuntime.usageLimitResetAt ?? null),
           stoppedAt: activeThreadShell.latestRun.completedAt ?? activeThreadShell.updatedAt,
           recovery: activeThreadShell.limitRecovery ?? null,
           snoozedUntil: activeThreadShell.snoozedUntil,
@@ -6590,7 +6621,19 @@ export default function ChatView(props: ChatViewProps) {
     const composerAttachmentsSnapshot = [...composerImagesSnapshot, ...composerFilesSnapshot];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
-    const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
+    const reviewRefreshPrompt = promptRef.current;
+    const composerReviewCommentsSnapshot = await refreshReviewCommentsForSend(
+      composerReviewComments,
+      (filePath) => {
+        if (!activeWorkspaceRoot)
+          throw new Error("Cannot refresh review comments without a workspace.");
+        return readProjectFileForReview(environmentId, activeWorkspaceRoot, filePath);
+      },
+      sendInFlightRef,
+      (message) => setThreadError(activeThread.id, message),
+    );
+    if (composerReviewCommentsSnapshot === null || promptRef.current !== reviewRefreshPrompt)
+      return;
     const composerThreadContextsSnapshot = [...composerThreadContexts];
     const messageTextForSend = composerTerminalContexts
       .filter((context) => !composerTerminalContextsSnapshot.includes(context))
@@ -6639,6 +6682,7 @@ export default function ChatView(props: ChatViewProps) {
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+      sendInFlightRef.current = false;
       return;
     }
 

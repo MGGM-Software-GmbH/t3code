@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 
 import type {
+  ComposerContextRecord,
   FilesystemEntryMetadata,
   FilesystemGetMetadataInput,
   FilesystemGetMetadataResult,
@@ -11,8 +12,10 @@ import type {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "@t3tools/contracts";
+import { ReviewCommentContextRecord } from "@t3tools/contracts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { remapFileReviewComments } from "@t3tools/shared/fileReviewComments";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -107,6 +110,27 @@ export const WorkspaceFileSystemError = Schema.Union([
 ]);
 export type WorkspaceFileSystemError = typeof WorkspaceFileSystemError.Type;
 
+export class WorkspaceReviewCommentTruncatedError extends Schema.TaggedError<WorkspaceReviewCommentTruncatedError>()(
+  "WorkspaceReviewCommentTruncatedError",
+  { workspaceRoot: Schema.String, relativePath: Schema.String },
+) {
+  override get message(): string {
+    return `Workspace file '${this.relativePath}' exceeds the review comment read limit.`;
+  }
+}
+
+export class WorkspaceReviewCommentWorkspaceMissingError extends Schema.TaggedError<WorkspaceReviewCommentWorkspaceMissingError>()(
+  "WorkspaceReviewCommentWorkspaceMissingError",
+  {},
+) {
+  override get message(): string {
+    return "File review comments require a workspace for the provider turn.";
+  }
+}
+
+const isReviewCommentRecord = Schema.is(ReviewCommentContextRecord);
+
+/** Service tag for workspace file operations. */
 export class WorkspaceFileSystem extends Context.Service<
   WorkspaceFileSystem,
   {
@@ -119,6 +143,17 @@ export class WorkspaceFileSystem extends Context.Service<
     ) => Effect.Effect<
       ProjectReadFileResult,
       WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
+    >;
+    /** Refresh file review anchors against the workspace used by the next provider turn. */
+    readonly refreshReviewComments: (input: {
+      readonly cwd: string | null;
+      readonly records: ReadonlyArray<ComposerContextRecord>;
+    }) => Effect.Effect<
+      ComposerContextRecord[],
+      | WorkspaceFileSystemError
+      | WorkspacePaths.WorkspacePathOutsideRootError
+      | WorkspaceReviewCommentTruncatedError
+      | WorkspaceReviewCommentWorkspaceMissingError
     >;
     /** Writes inside a known workspace only. */
     readonly writeFile: (
@@ -434,6 +469,35 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  const refreshReviewComments: WorkspaceFileSystem["Service"]["refreshReviewComments"] = Effect.fn(
+    "WorkspaceFileSystem.refreshReviewComments",
+  )(function* (input) {
+    const byFile = new Map<string, ReviewCommentContextRecord[]>();
+    for (const record of input.records) {
+      if (!isReviewCommentRecord(record) || record.sectionId !== `file:${record.filePath}`)
+        continue;
+      const comments = byFile.get(record.filePath) ?? [];
+      comments.push(record);
+      byFile.set(record.filePath, comments);
+    }
+    const refreshed = new Map<string, ReviewCommentContextRecord>();
+    for (const [relativePath, comments] of byFile) {
+      if (input.cwd === null) return yield* new WorkspaceReviewCommentWorkspaceMissingError();
+      const file = yield* readFile({ cwd: input.cwd, relativePath });
+      if (file.truncated) {
+        return yield* new WorkspaceReviewCommentTruncatedError({
+          workspaceRoot: input.cwd,
+          relativePath,
+        });
+      }
+      const snapshots = comments.map((comment) => ({ ...comment, id: comment.contextId }));
+      for (const { id, ...comment } of remapFileReviewComments(null, file.contents, snapshots)) {
+        refreshed.set(id, comment);
+      }
+    }
+    return input.records.map((record) => refreshed.get(record.contextId) ?? record);
+  });
+
   /**
    * Resolves the file a write targets. The deepest existing ancestor resolves to
    * its real path before the root check, so neither the file nor the directories
@@ -565,7 +629,7 @@ export const make = Effect.gen(function* () {
     return { relativePath: target.relativePath };
   });
 
-  return WorkspaceFileSystem.of({ getMetadata, readFile, writeFile });
+  return WorkspaceFileSystem.of({ getMetadata, readFile, refreshReviewComments, writeFile });
 });
 
 export const layer = Layer.effect(WorkspaceFileSystem, make);

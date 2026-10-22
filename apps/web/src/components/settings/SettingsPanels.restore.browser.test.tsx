@@ -61,13 +61,33 @@ function setup() {
 }
 
 describe("restoring V2 settings", () => {
+  it("restores model capacity retries after disabling them", async () => {
+    setup();
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, modelCapacityRetryDelayMinutes: 0 };
+    await using screen = await renderRestore();
+    const { restore } = screen;
+    expect(restore.changedSettingLabels).toEqual(["Model capacity retry delay"]);
+    await act(() => restore.restoreDefaults());
+    expect(state.update.mock.calls[0]?.[0].modelCapacityRetryDelayMinutes).toBe(5);
+  });
+
+  it("restores the slow request warning threshold after disabling warnings", async () => {
+    setup();
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, slowRequestWarningThresholdSeconds: 0 };
+    await using screen = await renderRestore();
+    const { restore } = screen;
+    expect(restore.changedSettingLabels).toEqual(["Slow request warning threshold"]);
+    await act(() => restore.restoreDefaults());
+    expect(state.update.mock.calls[0]?.[0].slowRequestWarningThresholdSeconds).toBe(60);
+  });
+
   it.each([
     ["persistComposerContextStrip", "Composer context"],
     ["autoResumeLimitedThreads", "Auto-resume limited threads"],
     ["snoozeLimitedThreads", "Snooze limited threads"],
   ] as const)("restores %s when it is the only changed setting", async (key, label) => {
     setup();
-    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, [key]: true };
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, [key]: !DEFAULT_UNIFIED_SETTINGS[key] };
     await using screen = await renderRestore();
     const { restore } = screen;
 
@@ -81,7 +101,10 @@ describe("restoring V2 settings", () => {
 
   it("does not reset settings after cancellation", async () => {
     setup();
-    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, autoResumeLimitedThreads: true };
+    state.settings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      autoResumeLimitedThreads: !DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
+    };
     state.confirm.mockResolvedValue(false);
     await using screen = await renderRestore();
     const { restore } = screen;

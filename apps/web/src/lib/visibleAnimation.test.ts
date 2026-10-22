@@ -36,8 +36,8 @@ function animationElement() {
   };
 }
 
-function attach(element: HTMLElement) {
-  const cleanup = observeVisibleAnimation(element);
+function attach(element: HTMLElement, allowReducedMotion = false) {
+  const cleanup = observeVisibleAnimation(element, { allowReducedMotion });
   if (cleanup) cleanups.push(cleanup);
   return cleanup;
 }
@@ -108,6 +108,44 @@ describe("observeVisibleAnimation", () => {
     page.dispatchEvent(new Event("visibilitychange"));
     expect(animation.state()).toBe("running");
   });
+
+  it.each([false, true])(
+    "keeps explicit progress moving when reduced motion starts as %s, while pausing hidden progress",
+    (initiallyReduced) => {
+      motion.matches = initiallyReduced;
+      const progress = animationElement();
+      const decorative = animationElement();
+      attach(progress.element, true);
+      attach(decorative.element);
+      const observer = observers[0]!;
+      observer.report(progress.element, true);
+      observer.report(decorative.element, true);
+      expect(progress.state()).toBe("running");
+      expect(decorative.state()).toBe(initiallyReduced ? "paused" : "running");
+
+      motion.matches = true;
+      motion.dispatchEvent(new Event("change"));
+      expect(progress.state()).toBe("running");
+      expect(decorative.state()).toBe("paused");
+
+      page.visibilityState = "hidden";
+      page.dispatchEvent(new Event("visibilitychange"));
+      expect(progress.state()).toBe("paused");
+      expect(progress.willChange()).toBe("auto");
+      page.visibilityState = "visible";
+      page.dispatchEvent(new Event("visibilitychange"));
+      expect(progress.state()).toBe("running");
+      observer.report(progress.element, false);
+      expect(progress.state()).toBe("paused");
+      observer.report(progress.element, true);
+      expect(progress.state()).toBe("running");
+
+      motion.matches = false;
+      motion.dispatchEvent(new Event("change"));
+      expect(progress.state()).toBe("running");
+      expect(decorative.state()).toBe("running");
+    },
+  );
 
   it("shares observers, releases the final ref, and ignores late callbacks after remount", () => {
     const addVisibility = vi.spyOn(page, "addEventListener");

@@ -121,6 +121,36 @@ const managedConnection = {
 } as const;
 
 describe("mobile connection storage", () => {
+  it("initializes MGGM preferences once and preserves subsequent device choices", async () => {
+    const initial = await loadPreferences();
+    expect(initial).toMatchObject({
+      themeId: "mggm-dark",
+      themeMode: "dark",
+      followUpBehavior: "steer",
+      workingShelfEnabled: true,
+      baseFontSize: 17,
+      markdownFontSize: 16,
+      codeFontSize: 15,
+    });
+    expect(JSON.parse(mocks.getPreferencesJson()!)).toEqual(initial);
+    await savePreferencesPatch({
+      themeMode: "system",
+      followUpBehavior: "queue",
+      workingShelfEnabled: false,
+    });
+    expect(await loadPreferences()).toMatchObject({
+      themeMode: "system",
+      followUpBehavior: "queue",
+      workingShelfEnabled: false,
+    });
+  });
+
+  it("preserves implicit upstream preferences on an existing device", async () => {
+    mocks.setPreferencesJson("{}", 1);
+    expect(await loadPreferences()).toEqual({});
+    expect(mocks.getPreferencesJson()).toBe("{}");
+  });
+
   beforeEach(() => {
     mocks.clear();
     vi.clearAllMocks();
@@ -202,6 +232,7 @@ describe("mobile connection storage", () => {
   });
 
   it("persists Material You independently for each appearance", async () => {
+    mocks.setPreferencesJson("{}", 1);
     const themes = { lightThemeId: "material-you", darkThemeId: "ocean" } as const;
     await savePreferencesPatch(themes);
     await expect(loadPreferences()).resolves.toEqual(themes);
@@ -238,6 +269,7 @@ describe("mobile connection storage", () => {
   });
 
   it("persists thread list shelf preferences", async () => {
+    mocks.setPreferencesJson("{}", 1);
     await expect(
       savePreferencesPatch({
         threadListSettledShelfExpanded: false,

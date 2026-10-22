@@ -30,12 +30,14 @@ import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as Scheduler from "./Scheduler.ts";
 
-it.effect.each(["on time", "after restart"])(
+it.effect.each(["on time", "after restart", "capacity", "capacity after restart"])(
   "runs Scheduled Tasks and a persisted limit retry through the same scheduler %s",
   (scenario) =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;
-      const resetAt = DateTime.formatIso(DateTime.add(now, { seconds: 60 }));
+      const capacity = scenario.startsWith("capacity");
+      const delaySeconds = capacity ? 300 : 60;
+      const resetAt = DateTime.formatIso(DateTime.add(now, { seconds: delaySeconds }));
       const thread: OrchestrationV2ThreadShell = {
         id: ThreadId.make("thread:limited"),
         projectId: ProjectId.make("project:test"),
@@ -59,8 +61,11 @@ it.effect.each(["on time", "after restart"])(
         latestRunCompletedAt: now,
         activeRunId: null,
         status: "failed",
-        lastErrorClass: "usage_limit",
-        usageLimitResetAt: resetAt,
+        lastErrorClass: capacity ? "provider_error" : "usage_limit",
+        lastError: capacity
+          ? "Selected model is at capacity. Please try a different model."
+          : "Plan limit reached.",
+        usageLimitResetAt: capacity ? null : resetAt,
         pendingRuntimeRequest: null,
         latestVisibleMessage: null,
         latestUserMessageAt: now,
@@ -82,8 +87,8 @@ it.effect.each(["on time", "after restart"])(
           requestId: CommandId.make("recovery:choice"),
         },
       };
-      if (scenario === "after restart") {
-        yield* TestClock.adjust("65 seconds");
+      if (scenario.includes("after restart")) {
+        yield* TestClock.adjust(`${delaySeconds + 5} seconds`);
       }
       const current = yield* Ref.make(thread);
       const commands = yield* Ref.make<ReadonlyArray<OrchestrationV2ServerCommand>>([]);
@@ -141,8 +146,8 @@ it.effect.each(["on time", "after restart"])(
         });
         const sql = yield* SqlClient.SqlClient;
         yield* sql`UPDATE scheduled_tasks SET next_run_at = ${resetAt} WHERE task_id = ${task.id}`;
-        if (scenario === "on time") {
-          yield* TestClock.adjust("55 seconds");
+        if (!scenario.includes("after restart")) {
+          yield* TestClock.adjust(`${delaySeconds - 5} seconds`);
           assert.deepEqual(yield* Ref.get(commands), []);
         }
         yield* TestClock.adjust("5 seconds");

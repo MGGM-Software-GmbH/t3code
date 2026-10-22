@@ -187,6 +187,13 @@ export const ReviewCommentContextRecord = Schema.Struct({
   diff: BoundedString(COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS),
   fenceLanguage: Schema.optionalKey(BoundedString(64)),
   pullRequest: Schema.optionalKey(PullRequestContextMetadata),
+  sourceAnchor: Schema.optionalKey(
+    Schema.Struct({
+      before: BoundedString(COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS),
+      after: BoundedString(COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS),
+    }),
+  ),
+  sourceStatus: Schema.optionalKey(Schema.Literals(["current", "removed", "unresolved"])),
 }).check(Schema.makeFilter((record) => record.endIndex >= record.startIndex));
 export type ReviewCommentContextRecord = typeof ReviewCommentContextRecord.Type;
 

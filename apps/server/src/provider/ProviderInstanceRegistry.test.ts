@@ -95,6 +95,7 @@ const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
   homePath: "",
   shadowHomePath: "",
   launchArgs: "",
+  autoStartWeeklyWindow: true,
   customModels: [],
   ...overrides,
 });

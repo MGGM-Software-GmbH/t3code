@@ -508,6 +508,7 @@ export class AcpRegistryCatalog extends Context.Service<
     readonly inspect: (
       settings: AcpRegistrySettings,
       environment?: NodeJS.ProcessEnv,
+      options?: { readonly allowRegistryFetch?: boolean },
     ) => Effect.Effect<AcpRegistryInspection, AcpRegistryError>;
     readonly resolve: (
       settings: AcpRegistrySettings,
@@ -1205,7 +1206,11 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     if (Option.isSome(receipt) && distribution === "npx") return receipt.value;
 
     const packageRoot = packageInstallRoot(agent, distribution);
-    yield* fileSystem.makeDirectory(packageRoot, { recursive: true }).pipe(
+    // npm 12 requires the POSIX global prefix's lib directory to exist before
+    // installing the first package into a T3-managed prefix.
+    const initialDirectory =
+      distribution === "npx" && platform !== "win32" ? path.join(packageRoot, "lib") : packageRoot;
+    yield* fileSystem.makeDirectory(initialDirectory, { recursive: true }).pipe(
       Effect.mapError(
         (cause) =>
           new AcpRegistryError({
@@ -1677,7 +1682,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
       : Effect.void;
 
   const inspect: AcpRegistryCatalog["Service"]["inspect"] = Effect.fn("AcpRegistryCatalog.inspect")(
-    function* (settings, environment) {
+    function* (settings, environment, options) {
       if (settings.source === "local") {
         const command = settings.commandPath.trim();
         if (!command) return { status: "unconfigured" } as const;
@@ -1693,7 +1698,9 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
       }
       const agentId = settings.agentId.trim();
       if (agentId.length === 0) return { status: "unconfigured" } as const;
-      const registry = yield* loadCachedRegistry();
+      // Passive readiness stays local. Active probes may initialize a fresh
+      // environment's registry cache before its first configured agent runs.
+      const registry = yield* options?.allowRegistryFetch ? loadRegistry() : loadCachedRegistry();
       const agent = registry.agents.find((candidate) => candidate.id === agentId);
       if (agent === undefined) return { status: "not_found", agentId } as const;
       const documentationUrl = agent.website ?? agent.repository;

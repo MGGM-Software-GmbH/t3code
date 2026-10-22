@@ -68,21 +68,30 @@ describe("splitSharedServerPatch", () => {
     },
     DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
   ])("shares the text generation model and options, including reset (%j)", (selection) => {
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+        },
+      },
+    };
     const patch = { textGenerationModelSelection: selection };
     expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
-    expect(pickSharedServerSettings({ ...DEFAULT_SERVER_SETTINGS, ...patch })).toMatchObject(patch);
+    expect(pickSharedServerSettings({ ...settings, ...patch })).toMatchObject(patch);
     const environment = {
       environmentId: boxId,
       label: "Remote Box",
       syncEligible: true,
       settings: {
-        ...DEFAULT_SERVER_SETTINGS,
+        ...settings,
         textGenerationModelSelection: { ...selection, model: "different-model" },
       },
     };
     const input = {
       primaryEnvironmentId: primaryId,
-      primarySettings: { ...DEFAULT_SERVER_SETTINGS, ...patch },
+      primarySettings: { ...settings, ...patch },
       environments: [environment],
     };
     expect(findSharedSettingsMismatches(input)).toEqual([
@@ -102,6 +111,7 @@ describe("splitSharedServerPatch", () => {
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
       enableAgentBrowserAccess: false,
+      modelCapacityRetryDelayMinutes: 0,
       defaultThreadEnvMode: "worktree",
       newWorktreesStartFromOrigin: true,
     });
@@ -110,6 +120,7 @@ describe("splitSharedServerPatch", () => {
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
       newWorktreesStartFromOrigin: true,
+      modelCapacityRetryDelayMinutes: 0,
     });
     expect(localPatch).toEqual({
       enableAgentBrowserAccess: false,
@@ -125,6 +136,7 @@ describe("pickSharedServerSettings", () => {
     ).toEqual([
       "autoResumeLimitedThreads",
       "continueThreadsAfterServerUpdate",
+      "modelCapacityRetryDelayMinutes",
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",

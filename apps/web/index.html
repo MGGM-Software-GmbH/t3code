@@ -51,6 +51,14 @@
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
+          "mggm-dark": {
+            dark: {
+              background: "oklch(0.144788 0 0)",
+              foreground: "oklch(0.860694 0 0)",
+              accent: "oklch(0.462918 0.243052 263.375)",
+              chrome: "oklch(0.144788 0 0)",
+            },
+          },
           "t3-chat": {
             light: {
               background: "oklch(0.982446 0.010114 325.653)",
@@ -139,6 +147,7 @@
           "ocean",
           "ember",
           "iris",
+          "mggm-dark",
           "t3-chat-dark",
           "t3-grove",
           "t3-ocean",
@@ -217,7 +226,23 @@
         };
 
         try {
-          const storedTheme = window.localStorage.getItem("t3code:theme");
+          let storedTheme = window.localStorage.getItem("t3code:theme");
+          // Initialize only a new browser. A saved system choice or sparse settings
+          // document belongs to the user, including one from an upstream install.
+          if (
+            storedTheme === null &&
+            [
+              "t3code:client-settings:v1",
+              CUSTOM_THEMES_STORAGE_KEY,
+              THEME_APPEARANCE_MODE_STORAGE_KEY,
+              THEME_FOLLOW_SYSTEM_STORAGE_KEY,
+              THEME_HALVES_STORAGE_KEY,
+            ].every((key) => window.localStorage.getItem(key) === null)
+          ) {
+            storedTheme = "mggm-dark";
+            window.localStorage.setItem("t3code:theme", storedTheme);
+            window.localStorage.setItem(THEME_APPEARANCE_MODE_STORAGE_KEY, "dark");
+          }
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           // Older builds stored the dark T3 Chat palette as its own theme id
           // and every maintainer theme under a t3- prefix; keep those
@@ -479,7 +504,7 @@
     </style>
     <title>T3 Code (Beta)</title>
   </head>
-  <body>
+  <body data-pd-ignore>
     <div id="root">
       <div id="boot-shell">
         <div id="boot-shell-card" aria-label="T3 Code splash screen">
