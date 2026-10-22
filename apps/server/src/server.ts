@@ -17,6 +17,10 @@ import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import type * as Crypto from "effect/Crypto";
+import type * as FileSystem from "effect/FileSystem";
+import type * as Path from "effect/Path";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -1075,4 +1079,14 @@ const layerMakeServer = Layer.unwrap(
   }),
 ).pipe(Layer.provide(ProcessRunner.layer));
 
-export const runServer = Layer.launch(layerMakeServer);
+// Keep the CLI boundary explicit: inferring requirements through the full runtime layer
+// can widen this context to any and lose the services supplied by the CLI runtime.
+export const runServer: Effect.Effect<
+  never,
+  Layer.Error<typeof layerMakeServer>,
+  | ServerConfig.ServerConfig
+  | FileSystem.FileSystem
+  | Path.Path
+  | Crypto.Crypto
+  | ChildProcessSpawner.ChildProcessSpawner
+> = Layer.launch(layerMakeServer);
