@@ -387,7 +387,9 @@ function timelineListStateFor(identity: string): {
   const rememberedPosition = readTimelinePosition(identity);
   return {
     identity,
-    rememberedPosition,
+    // Reopening follows the latest work, including work after an interruption.
+    // Keep disclosures without restoring a reading position from an earlier visit.
+    rememberedPosition: rememberedPosition ? { ...rememberedPosition, atEnd: true } : undefined,
     workGroupViewState: rememberedPosition?.disclosures?.workGroupState ?? {
       scrollPositions: new Map(),
       expandedEntries: new Set(),
@@ -632,9 +634,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const [expandedAttemptIds, setExpandedAttemptIds] = useState<ReadonlySet<RunAttemptId>>(
     () => listState.rememberedPosition?.disclosures?.attempts ?? new Set(),
   );
-  const [positionedThreadKey, setPositionedThreadKey] = useState<string | null>(() =>
-    listState.rememberedPosition?.atEnd === false ? null : listIdentityKey,
-  );
+  const [positionedThreadKey, setPositionedThreadKey] = useState<string | null>(null);
   const restoringThreadPosition = positionedThreadKey !== listIdentityKey;
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const [settlingListIdentity, setSettlingListIdentity] = useState<string | null>(listIdentityKey);
@@ -949,7 +949,34 @@ const ConversationTimeline = memo(function ConversationTimeline({
           : list.scrollToEnd({ animated: false });
     void Promise.resolve(scrolling).then(() => {
       if (cancelled) return;
-      if (position?.atEnd !== false || index < 0) {
+      if (position?.atEnd !== false) {
+        // End scrolling also starts from estimates. Follow the measured end
+        // while recycled rows settle, just as for a saved reading position.
+        let stableFrames = 0;
+        let previousHeight = -1;
+        const reconcileEnd = () => {
+          if (cancelled) return;
+          const element = list.getScrollableNode();
+          if (!element) return;
+          const height = element.scrollHeight;
+          const offset = Math.max(0, height - element.clientHeight);
+          const atEnd = Math.abs(element.scrollTop - offset) <= 1;
+          stableFrames = atEnd && height === previousHeight ? stableFrames + 1 : 0;
+          previousHeight = height;
+          if (!atEnd) {
+            void list.scrollToOffset({ offset, animated: false }).then(() => {
+              if (!cancelled) settleFrame = requestAnimationFrame(reconcileEnd);
+            });
+          } else if (stableFrames >= 2) {
+            setPositionedThreadKey(listIdentityKey);
+          } else {
+            settleFrame = requestAnimationFrame(reconcileEnd);
+          }
+        };
+        settleFrame = requestAnimationFrame(reconcileEnd);
+        return;
+      }
+      if (index < 0) {
         setPositionedThreadKey(listIdentityKey);
         return;
       }

@@ -202,7 +202,6 @@ import { type LegendListRef } from "@legendapp/list/react";
 import {
   CHAT_TIMELINE_ANCHOR_OFFSET,
   timelineContentOverflowsViewport,
-  readTimelinePosition,
   observeTimelineRun,
   type TimelineRunObservation,
   type TimelineScrollMode,
@@ -4687,32 +4686,28 @@ export default function ChatView(props: ChatViewProps) {
     timelineLiveFollowEnabled,
   ]);
 
-  // A thread switch restores that thread's remembered follow state; the refs
+  // A thread switch opens at the latest content; the refs
   // the scroll handlers read catch up after commit.
   const [timelineThreadReset, setTimelineThreadReset] = useState({
     threadKey: activeThreadKey,
-    followEnd: true,
   });
   if (timelineThreadReset.threadKey !== activeThreadKey) {
-    const followEnd = readTimelinePosition(routeThreadKey)?.atEnd !== false;
-    setTimelineThreadReset({ threadKey: activeThreadKey, followEnd });
-    setTimelineLiveFollowEnabled(followEnd);
-    setShowScrollToBottom(!followEnd);
+    setTimelineThreadReset({ threadKey: activeThreadKey });
+    setTimelineLiveFollowEnabled(true);
+    setShowScrollToBottom(false);
   }
   useEffect(() => {
-    const { followEnd } = timelineThreadReset;
-    isAtEndRef.current = followEnd;
+    if (timelineThreadReset.threadKey !== activeThreadKey) return;
+    isAtEndRef.current = true;
     timelineScrollIntentRef.current = null;
-    timelineScrollModeRef.current = followEnd ? "following-end" : "free-scrolling";
-    liveFollowUserScrollGenerationRef.current = followEnd
-      ? anchorUserScrollGenerationRef.current
-      : null;
+    timelineScrollModeRef.current = "following-end";
+    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
     pendingTimelineAnchorRef.current = null;
     positionedTimelineAnchorRef.current = null;
     settledTimelineAnchorRef.current = null;
     activeTimelineAnchorIndexRef.current = null;
     showScrollDebouncer.current.cancel();
-  }, [timelineThreadReset]);
+  }, [activeThreadKey, timelineThreadReset]);
 
   useEffect(() => {
     if (!activeThread?.id || terminalUiState.terminalOpen) return;
