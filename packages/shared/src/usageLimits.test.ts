@@ -19,8 +19,6 @@ import {
   elapsedShare,
   paceOf,
   paceRemainingPercent,
-  providersWithLimits,
-  remainingPercent,
   weeklyLimitWindow,
   summarizeWeeklyLimits,
   usesChatGptSharing,
