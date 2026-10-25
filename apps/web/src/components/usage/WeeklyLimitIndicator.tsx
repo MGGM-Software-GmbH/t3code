@@ -233,9 +233,11 @@ function WeeklyLimitIndicator({
               aria-label={accountName(account)}
               className="flex flex-col gap-0.5"
             >
-              <span className="flex justify-between gap-3">
-                <span>{accountName(account)}</span>
-                <span className="shrink-0 tabular-nums">{remainingPercent}% remaining</span>
+              <span>
+                {accountName(account)}{" "}
+                <span className="whitespace-nowrap tabular-nums">
+                  ({remainingPercent}% remaining)
+                </span>
               </span>
               <span className="text-muted-foreground">
                 {window.resetsAt ? `Reset ${time(window.resetsAt)}` : "Reset not reported"}

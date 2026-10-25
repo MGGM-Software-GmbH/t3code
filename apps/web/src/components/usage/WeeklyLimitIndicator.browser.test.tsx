@@ -254,6 +254,12 @@ it("shows each account's expiry while using the earliest expiry for the pooled w
   expect(indicators[1]!.querySelector("text.text-reset-expiry-foreground")).toBeNull();
   await act(async () => indicators[0]!.click());
   const popup = document.querySelector('[data-slot="popover-popup"]')!;
+  expect(popup.querySelector('[role="group"][aria-label="Team"]')?.textContent).toContain(
+    "Team (75% remaining)",
+  );
+  expect(popup.querySelector('[role="group"][aria-label="Second"]')?.textContent).toContain(
+    "Second (25% remaining)",
+  );
   expect(popup.querySelector(`time[datetime="${sooner}"]`)).not.toBeNull();
   expect(popup.querySelector(`time[datetime="${later}"]`)).not.toBeNull();
   expect(
