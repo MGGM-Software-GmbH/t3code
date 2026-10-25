@@ -10,12 +10,106 @@ import {
   filterSharedServerPatch,
   findSharedSettingsMismatches,
   pickSharedServerSettings,
+  splitSharedServerPatch,
 } from "./sharedSettings.ts";
 
 const primaryId = EnvironmentId.make("env-primary");
 const laptopId = EnvironmentId.make("env-laptop");
 const boxId = EnvironmentId.make("env-box");
 const restartCapabilities = { threadRestartContinuation: true };
+
+describe("splitSharedServerPatch", () => {
+  it.each([
+    {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-sol",
+      options: [{ id: "reasoningEffort", value: "low" }],
+    },
+    {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+      options: [{ id: "effort", value: "high" }],
+    },
+    DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+  ])("shares the text generation model and options, including reset (%j)", (selection) => {
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+        },
+      },
+    };
+    const patch = { textGenerationModelSelection: selection };
+    expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
+    expect(pickSharedServerSettings({ ...settings, ...patch })).toMatchObject(patch);
+    const environment = {
+      environmentId: boxId,
+      label: "Remote Box",
+      syncEligible: true,
+      settings: {
+        ...settings,
+        textGenerationModelSelection: { ...selection, model: "different-model" },
+      },
+    };
+    const input = {
+      primaryEnvironmentId: primaryId,
+      primarySettings: { ...settings, ...patch },
+      environments: [environment],
+    };
+    expect(findSharedSettingsMismatches(input)).toEqual([
+      { environmentId: boxId, label: "Remote Box" },
+    ]);
+    expect(
+      findSharedSettingsMismatches({
+        ...input,
+        environments: [{ ...environment, settings: input.primarySettings }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("routes preference keys to the shared patch and machine keys to the local patch", () => {
+    const { sharedPatch, localPatch } = splitSharedServerPatch({
+      sidebarAutoSettleAfterDays: 7,
+      sidebarAutoSettleOnMerge: false,
+      continueThreadsAfterServerUpdate: true,
+      enableAgentBrowserAccess: false,
+      modelCapacityRetryDelayMinutes: 0,
+      defaultThreadEnvMode: "worktree",
+      newWorktreesStartFromOrigin: true,
+    });
+    expect(sharedPatch).toEqual({
+      sidebarAutoSettleAfterDays: 7,
+      sidebarAutoSettleOnMerge: false,
+      continueThreadsAfterServerUpdate: true,
+      newWorktreesStartFromOrigin: true,
+      modelCapacityRetryDelayMinutes: 0,
+    });
+    expect(localPatch).toEqual({
+      enableAgentBrowserAccess: false,
+      defaultThreadEnvMode: "worktree",
+    });
+  });
+});
+
+describe("pickSharedServerSettings", () => {
+  it("returns only the shared keys", () => {
+    expect(
+      Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).sort(),
+    ).toEqual([
+      "autoResumeLimitedThreads",
+      "continueThreadsAfterServerUpdate",
+      "modelCapacityRetryDelayMinutes",
+      "newWorktreesStartFromOrigin",
+      "sidebarAutoSettleAfterDays",
+      "sidebarAutoSettleOnMerge",
+      "snoozeLimitedThreads",
+      "sourceControlWritingStyle",
+      "textGenerationModelSelection",
+    ]);
+  });
+});
 
 describe("filterSharedServerPatch", () => {
   it.each([true, false])(

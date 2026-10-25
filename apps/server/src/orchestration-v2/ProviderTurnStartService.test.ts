@@ -15,6 +15,8 @@ import {
   RunId,
   ThreadId,
   ProjectId,
+  ComposerContextId,
+  type ComposerContextRecord,
   type OrchestrationV2ThreadProjection,
   OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
@@ -32,6 +34,7 @@ import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -125,6 +128,9 @@ function startWithMissingWorktree(
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
+          refreshReviewComments: ({ records }) => Effect.succeed([...records]),
+        }),
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
@@ -259,6 +265,8 @@ it.each([
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
+  readonly contextRecords?: ReadonlyArray<ComposerContextRecord>;
+  readonly refreshReviewComments?: WorkspaceFileSystem.WorkspaceFileSystem["Service"]["refreshReviewComments"];
   readonly worktreePath?: string;
   readonly worktreesDir?: string;
   readonly fileSystem?: FileSystem.FileSystem;
@@ -334,6 +342,9 @@ function makeLocalCommandHarness(input: {
     nodeId: rootNodeId,
     role: "user",
     text: input.text,
+    ...(input.contextRecords === undefined
+      ? {}
+      : { context: { version: 1, records: input.contextRecords } }),
     attachments: [],
     streaming: false,
     createdBy: "user",
@@ -685,6 +696,10 @@ function makeLocalCommandHarness(input: {
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
+          refreshReviewComments:
+            input.refreshReviewComments ?? (({ records }) => Effect.succeed([...records])),
+        }),
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({
           prepareProviderHandoff: () => Effect.die("history read must fail first"),
         }),
@@ -1243,3 +1258,60 @@ for (const previousMessages of [[], ["/compact", " /COMPACT "]]) {
       }),
   );
 }
+
+effectIt.effect("does not open a provider when queued review context cannot be read", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      refreshReviewComments: () =>
+        Effect.fail(
+          new WorkspaceFileSystem.WorkspaceReviewCommentTruncatedError({
+            workspaceRoot: "/tmp/queued-review",
+            relativePath: "source.ts",
+          }),
+        ),
+    });
+    const error = yield* harness.start.pipe(Effect.flip);
+    expect(error.cause).toBeInstanceOf(WorkspaceFileSystem.WorkspaceReviewCommentTruncatedError);
+    expect(harness.open).not.toHaveBeenCalled();
+    expect(harness.startRootRun).not.toHaveBeenCalled();
+  }),
+);
+
+effectIt.effect(
+  "refreshes queued file context in the dispatch workspace before starting the provider",
+  () =>
+    Effect.gen(function* () {
+      const record: ComposerContextRecord = {
+        version: 1,
+        contextId: ComposerContextId.make("queued-review"),
+        label: "source.ts:L5",
+        kind: "review-comment",
+        sectionId: "file:source.ts",
+        sectionTitle: "File (current lines)",
+        filePath: "source.ts",
+        startIndex: 4,
+        endIndex: 4,
+        rangeLabel: "L5",
+        text: "Check this value",
+        diff: "const target = true;",
+      };
+      const refresh = vi.fn<
+        WorkspaceFileSystem.WorkspaceFileSystem["Service"]["refreshReviewComments"]
+      >(({ records }) => Effect.succeed(records.map((value) => ({ ...value, rangeLabel: "L6" }))));
+      const harness = makeLocalCommandHarness({
+        text: "Review [source.ts:L5](t3-context://v1/review-comment/queued-review)",
+        worktreePath: "/tmp/queued-review-worktree",
+        contextRecords: [record],
+        refreshReviewComments: refresh,
+        failReadsAfterRunning: true,
+      });
+      yield* harness.start;
+      expect(refresh).toHaveBeenCalledWith({
+        cwd: "/tmp/queued-review-worktree",
+        records: [record],
+      });
+      expect(harness.startRootRun.mock.calls[0]?.[0].message.text).toContain("L6");
+      expect(harness.startRootRun.mock.calls[0]?.[0].message.text).toContain(record.diff);
+    }),
+);

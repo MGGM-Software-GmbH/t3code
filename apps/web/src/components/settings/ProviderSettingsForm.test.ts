@@ -9,6 +9,30 @@ import {
 } from "./ProviderSettingsForm";
 
 describe("ProviderSettingsForm helpers", () => {
+  it("derives visible provider config fields from the client definition schema", () => {
+    const codex = providerClients.get(ProviderDriverKind.make("codex"));
+
+    expect(codex).toBeDefined();
+    expect(deriveProviderSettingsFields(codex!).map((field) => field.key)).toEqual([
+      "binaryPath",
+      "homePath",
+      "shadowHomePath",
+      "launchArgs",
+      "autoStartWeeklyWindow",
+    ]);
+  });
+
+  it("exposes an enabled-by-default Codex weekly-window setting and preserves opting out", () => {
+    const codex = providerClients.get(ProviderDriverKind.make("codex"))!;
+    const field = deriveProviderSettingsFields(codex).find(
+      (field) => field.key === "autoStartWeeklyWindow",
+    )!;
+    expect(field).toMatchObject({ control: "switch", defaultBooleanValue: true });
+    expect(nextProviderConfigWithFieldValue({}, field, false)).toEqual({
+      autoStartWeeklyWindow: false,
+    });
+  });
+
   it("keeps every masked field as a stored secret", () => {
     const settingsSchema = makeProviderSettingsSchema({
       token: TrimmedString.pipe(

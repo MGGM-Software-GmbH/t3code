@@ -1,8 +1,10 @@
 import {
   getSharedHighlighter,
+  File,
   VirtualizedFile,
   Virtualizer,
   type FileContents,
+  type FileRenderProps,
 } from "@pierre/diffs";
 import { Editor, TextDocument } from "@pierre/diffs/edit";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -130,12 +132,20 @@ class MeasuredFile extends VirtualizedFile {
   measure(
     rows: ReadonlyArray<readonly [lineIndex: number, height: number]>,
     contentWidth = 226.25,
+    annotations: ReadonlyArray<readonly [number, number]> = [],
   ) {
     const content = new MeasuredElement();
     content.width = contentWidth;
     content.children = rows.map(([lineIndex, height]) => {
       const row = new MeasuredElement(height);
       row.dataset.lineIndex = String(lineIndex);
+      const annotationHeight = annotations.find(
+        ([annotationLine]) => annotationLine === lineIndex,
+      )?.[1];
+      if (annotationHeight !== undefined) {
+        row.nextElementSibling = new MeasuredElement(annotationHeight);
+        row.nextElementSibling.dataset.lineAnnotation = "";
+      }
       return row;
     });
     const code = new MeasuredCodeElement();
@@ -153,6 +163,12 @@ class MeasuredFile extends VirtualizedFile {
     }
     code.width = codeWidth;
     content.width = contentWidth;
+  }
+
+  refreshLayout(file: FileContents, anchorLine?: number) {
+    const nextAnchorLine = this.updateFileLayoutCache(this.getRenderedFile(), file, anchorLine);
+    this.updateCodeViewLayout(file, 0);
+    return nextAnchorLine;
   }
 
   observeLayout() {
@@ -177,6 +193,271 @@ class MeasuredFile extends VirtualizedFile {
 }
 
 const instances: MeasuredFile[] = [];
+
+describe("external file refresh layout", () => {
+  it("keeps a mapped refresh correction made during the outer virtualizer render", () => {
+    class ScrollElement {
+      scrollTop = 100;
+      scrollHeight = 50000;
+      clientHeight = 400;
+      getBoundingClientRect() {
+        return { top: 0, height: this.clientHeight };
+      }
+      scrollTo({ top }: { top: number }) {
+        this.scrollTop = top;
+      }
+    }
+    vi.stubGlobal("HTMLElement", ScrollElement);
+    vi.stubGlobal("Document", vi.fn());
+    const root = new ScrollElement();
+    const container = {
+      getBoundingClientRect: () => ({ top: -root.scrollTop, height: 50000 }),
+    };
+    const virtualizer = new Virtualizer();
+    const engine = virtualizer as unknown as {
+      applyScrollFix(offset: number): void;
+      computeRenderRangeAndEmit(): void;
+    };
+    // Delayed highlighting restores the mapped line inside onRender, after
+    // the outer pass has captured an interim file-only anchor.
+    const instance = {
+      onRender: () => {
+        engine.applyScrollFix(20000);
+        return true;
+      },
+      reconcileHeights: () => false,
+    };
+    Object.assign(virtualizer, {
+      root,
+      height: 400,
+      heightDirty: false,
+      scrollHeightDirty: false,
+      observers: new Map([[container, instance]]),
+      visibleInstances: new Map([[container, instance]]),
+      getScrollAnchor: () => ({
+        fileElement: container,
+        fileOffset: -100,
+        fileTypeOffset: "top",
+      }),
+    });
+    engine.computeRenderRangeAndEmit();
+    expect(root.scrollTop).toBe(20100);
+  });
+
+  it.each([
+    [1, 0],
+    [1000, 0],
+    [1000, 48],
+  ])(
+    "restores the mapped anchor after inserting %i lines and replacing %i pixels of annotation geometry",
+    (insertedCount, removedAnnotationHeight) => {
+      class GeometryElement {
+        scrollTop = 0;
+        scrollHeight = 100000;
+        clientHeight = 400;
+        shadowRoot: { querySelector(selector: string): GeometryElement | null } | undefined;
+        constructor(readonly top: () => number = () => 0) {}
+        getBoundingClientRect() {
+          return { top: this.top(), height: 100000 };
+        }
+        scrollTo({ top }: { top: number }) {
+          this.scrollTop = top;
+        }
+      }
+      vi.stubGlobal("HTMLElement", GeometryElement);
+      vi.stubGlobal("Document", vi.fn());
+      const root = new GeometryElement();
+      root.scrollTop = 10008;
+      const virtualizer = new Virtualizer();
+      const container = new GeometryElement(() => -root.scrollTop);
+      let replacedEditSession = false;
+      Object.assign(virtualizer, {
+        root,
+        height: 400,
+        windowSpecs: { top: 9408, bottom: 11008 },
+        requestHeightReconcile: vi.fn(),
+        getScrollAnchor: () => ({
+          fileElement: container,
+          lineIndex: "500",
+          lineOffset: replacedEditSession ? -removedAnnotationHeight : 0,
+          fileOffset: -10008,
+          fileTypeOffset: "top",
+        }),
+      });
+      const file = {
+        name: "example.txt",
+        contents: Array.from({ length: 3000 }, (_, index) => `line ${index}`).join("\n"),
+        cacheKey: "before",
+      };
+      class RefreshFile extends VirtualizedFile {
+        refresh(next: FileContents) {
+          return this.render({
+            file: next,
+            fileContainer: container as unknown as HTMLElement,
+          });
+        }
+      }
+      const instance = new RefreshFile(
+        { disableFileHeader: true, overflow: "scroll" },
+        virtualizer,
+      );
+      const externalFile = instance as unknown as {
+        updateExternalFile(file: FileContents): boolean;
+      };
+      const updateExternalFile = externalFile.updateExternalFile.bind(instance);
+      const replaceSession = vi
+        .spyOn(externalFile, "updateExternalFile")
+        .mockImplementation((next) => {
+          // The editor can remove old annotation DOM while adopting the new session.
+          replacedEditSession = true;
+          return updateExternalFile(next);
+        });
+      Object.assign(instance, {
+        file,
+        top: 0,
+        isVisible: true,
+        isSetup: true,
+        fileContainer: container,
+        getOrCreateFileContainerNode: () => container,
+      });
+      let renderedFile: FileContents = file;
+      vi.spyOn(instance, "getRenderedFile").mockImplementation(() => renderedFile);
+      // Control only the DOM renderer; range selection and scroll restoration use production code.
+      const prototype = File.prototype as unknown as {
+        render(props: FileRenderProps<undefined>): boolean;
+      };
+      const render = vi.spyOn(prototype, "render").mockImplementation(function (
+        this: RefreshFile,
+        { file: nextFile, renderRange },
+      ) {
+        container.shadowRoot = {
+          querySelector: (selector) => {
+            const index = Number(selector.match(/data-line-index="(\d+)"/)?.[1]);
+            if (
+              !renderRange ||
+              index < renderRange.startingLine ||
+              index >= renderRange.startingLine + renderRange.totalLines
+            )
+              return null;
+            return new GeometryElement(() => index * 20 + 8 - root.scrollTop);
+          },
+        };
+        renderedFile = nextFile;
+        (this as unknown as { finalizeRender(): void }).finalizeRender();
+        return true;
+      });
+      try {
+        const inserted = Array.from(
+          { length: insertedCount },
+          (_, index) => `inserted ${index}`,
+        ).join("\n");
+        const next = { ...file, contents: `${inserted}\n${file.contents}`, cacheKey: "after" };
+        instance.refresh(next);
+        expect(root.scrollTop).toBe(10008 + insertedCount * 20);
+        instance.refresh(next);
+        expect(
+          container.shadowRoot?.querySelector(
+            `[data-line][data-line-index="${500 + insertedCount}"]`,
+          ),
+        ).not.toBeNull();
+      } finally {
+        replaceSession.mockRestore();
+        render.mockRestore();
+      }
+    },
+  );
+  it("retains measured rows and the anchor between separate changes", async () => {
+    const { instance, file } = await makeFixture();
+    const lines = file.contents.split("\n");
+    lines[lines.length - 1] = "changed last line";
+    const changed = { ...file, contents: `inserted\n${lines.join("\n")}`, cacheKey: "two-edits" };
+    expect(instance.refreshLayout(changed, 4999)).toBe(5000);
+    expect(instance.getLineHeight(121)).toBe(60);
+  });
+  it("moves measured wrapped heights with an unchanged suffix after insertion and deletion", async () => {
+    const { instance, file } = await makeFixture();
+    const before = instance.getLinePosition(5000)?.top;
+    const inserted = { ...file, contents: `inserted\n${file.contents}`, cacheKey: "inserted" };
+    expect(instance.refreshLayout(inserted, 4999)).toBe(5000);
+    expect(instance.getLineHeight(121)).toBe(60);
+    expect(instance.getLinePosition(5001)?.top).toBe(before! + 20);
+    expect(instance.refreshLayout(file, 5000)).toBe(4999);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLinePosition(5000)?.top).toBe(before);
+  });
+
+  it("invalidates changed rows while retaining unchanged prefix and suffix measurements", async () => {
+    const { instance, file } = await makeFixture();
+    instance.measure([
+      [120, 60],
+      [121, 80],
+      [122, 100],
+    ]);
+    const lines = file.contents.split("\n");
+    lines[121] = "changed";
+    instance.refreshLayout({ ...file, contents: lines.join("\n"), cacheKey: "changed" });
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLineHeight(121)).toBe(20);
+    expect(instance.getLineHeight(122)).toBe(100);
+  });
+
+  it("does not carry annotation heights to new line numbers", async () => {
+    const { instance, file } = await makeFixture();
+    instance.setLineAnnotations([{ lineNumber: 121 }]);
+    instance.measure([[120, 60]], 226.25, [[120, 100]]);
+    instance.refreshLayout({
+      ...file,
+      contents: `inserted\n${file.contents}`,
+      cacheKey: "inserted",
+    });
+    expect(instance.getLineHeight(121)).toBe(60);
+  });
+
+  it("retains layout for an unchanged refresh and invalidates a different file", async () => {
+    const { instance, file } = await makeFixture();
+    expect(instance.refreshLayout({ ...file, cacheKey: "refetched" }, 120)).toBe(120);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.refreshLayout({ ...file, name: "other.txt" }, 120)).toBeUndefined();
+    expect(instance.getLineHeight(120)).toBe(20);
+  });
+
+  it("preserves CRLF row measurements and clamps a removed anchor to the replacement", async () => {
+    const { instance, file } = await makeFixture();
+    const crlf = { ...file, contents: file.contents.replaceAll("\n", "\r\n"), cacheKey: "crlf" };
+    instance.refreshLayout(crlf);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(
+      instance.refreshLayout({ ...file, contents: "replacement", cacheKey: "replacement" }, 120),
+    ).toBe(0);
+    expect(instance.getLineHeight(120)).toBe(20);
+  });
+});
+
+describe("comment annotation layout", () => {
+  it("retains an existing comment height and removes only annotations when clearing", async () => {
+    const { instance } = await makeFixture();
+    instance.setLineAnnotations([{ lineNumber: 121 }]);
+    instance.measure([[120, 60]], 226.25, [[120, 100]]);
+    expect(instance.getLineHeight(120)).toBe(160);
+    const before = instance.getLinePosition(5000);
+    instance.setLineAnnotations([{ lineNumber: 121 }, { lineNumber: 5000 }]);
+    expect(instance.getLineHeight(120)).toBe(160);
+    expect(instance.getLinePosition(5000)?.top).toBe(before?.top);
+    instance.setLineAnnotations([]);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLinePosition(5000)?.top).toBe(before!.top - 100);
+  });
+  it("preserves measured wrapped rows when adding and removing comments", async () => {
+    const { instance } = await makeFixture();
+    const before = instance.getLinePosition(5000);
+    instance.setLineAnnotations([{ lineNumber: 5000 }]);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLinePosition(5000)?.top).toBe(before?.top);
+    instance.setLineAnnotations([]);
+    expect(instance.getLineHeight(120)).toBe(60);
+    expect(instance.getLinePosition(5000)?.top).toBe(before?.top);
+  });
+});
 const editors: Editor<"file", undefined, undefined>[] = [];
 
 beforeAll(async () => {
@@ -375,11 +656,150 @@ describe("wrapped editor document changes", () => {
     expect(instance.getLinePosition(6001)).toEqual({ top: 144008, height: 24 });
   });
 
-  it("still discards all measured rows when annotations change", async () => {
+  it("preserves unrelated measured rows when annotations change after an edit", async () => {
     const { instance, file, append } = await makeFixture();
     append();
+    const before = instance.getLinePosition(6001);
     instance.setLineAnnotations([{ lineNumber: 10, metadata: undefined }]);
     instance.updateCodeViewLayout(file, 0);
-    expect(instance.getLinePosition(6001)).toEqual({ top: 120008, height: 20 });
+    expect(instance.getLinePosition(6001)).toEqual(before);
   });
 });
+
+class EditorElement extends MeasuredElement {
+  style: Record<string, string> = {};
+  parentElement: EditorElement | null = null;
+
+  override appendChild(child: EditorElement) {
+    child.parentElement = this;
+    this.children.push(child);
+    return child;
+  }
+
+  append(child: EditorElement) {
+    this.appendChild(child);
+  }
+
+  prepend(child: EditorElement) {
+    child.parentElement = this;
+    this.children.unshift(child);
+  }
+
+  replaceChildren(...children: (EditorElement | string)[]) {
+    this.children = [];
+    for (const child of children) if (typeof child !== "string") this.appendChild(child);
+  }
+
+  setAttribute() {}
+  removeAttribute() {}
+  addEventListener() {}
+  removeEventListener() {}
+  after() {}
+
+  remove() {
+    if (this.parentElement) {
+      this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+    }
+  }
+
+  set innerHTML(value: string) {
+    expect(value.startsWith("<svg")).toBe(true);
+    this.replaceChildren(new EditorElement());
+  }
+
+  get firstElementChild() {
+    return this.children[0] ?? null;
+  }
+
+  querySelectorAll(selector: string) {
+    expect(selector).toBe("[data-code]");
+    return this.children.filter((child) => "code" in child.dataset);
+  }
+
+  querySelector(selector: string) {
+    expect(selector).toBe("[data-deletions]");
+    return null;
+  }
+
+  getContext() {
+    return { measureText: (text: string) => ({ width: text.length * 8 }) };
+  }
+}
+
+async function makeEditorFixture(lineCount: number) {
+  const { instance, file } = await makeFixture("wrap", lineCount);
+  vi.stubGlobal("SVGSVGElement", EditorElement);
+  vi.stubGlobal("Document", EditorElement);
+  vi.stubGlobal(
+    "document",
+    Object.assign(new EditorElement(), { createElement: () => new EditorElement() }),
+  );
+  vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", () => {});
+  vi.stubGlobal("getComputedStyle", () => ({
+    paddingTop: "0px",
+    fontSize: "13px",
+    fontFamily: "monospace",
+    tabSize: "2",
+    lineHeight: "20px",
+  }));
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  instance.setOptions({
+    ...instance.options,
+    useTokenTransformer: true,
+    controlledSelection: true,
+    themeType: "dark",
+  });
+  const content = new EditorElement();
+  content.dataset.content = "";
+  const gutter = new EditorElement();
+  gutter.dataset.gutter = "";
+  const code = new EditorElement();
+  code.dataset.code = "";
+  code.appendChild(gutter);
+  code.appendChild(content);
+  const shadow = new EditorElement();
+  shadow.appendChild(code);
+  const host = Object.assign(new EditorElement(), { shadowRoot: shadow });
+  const highlighter = await getSharedHighlighter({
+    themes: ["pierre-dark"],
+    langs: ["text"],
+    preferredHighlighter: "shiki-wasm",
+  });
+  const editor = new Editor("file");
+  editors.push(editor);
+  editor.edit(instance);
+  editor.__syncRenderView({
+    highlighter,
+    fileContainer: measuredElement(host),
+    file,
+    lineAnnotations: undefined,
+    renderRange: { startingLine: 0, totalLines: 1, bufferBefore: 0, bufferAfter: 0 },
+  });
+  const append = (count: number) => {
+    const lines = editor.getText().split("\n");
+    const end = { line: lines.length - 1, character: lines.at(-1)!.length };
+    editor.applyEdits([{ range: { start: end, end }, newText: "\n".repeat(count) }]);
+  };
+  const remove = (count: number) => {
+    const lines = editor.getText().split("\n");
+    const startLine = lines.length - count - 1;
+    editor.applyEdits([
+      {
+        range: {
+          start: { line: startLine, character: lines[startLine]!.length },
+          end: { line: lines.length - 1, character: lines.at(-1)!.length },
+        },
+        newText: "",
+      },
+    ]);
+  };
+  return { instance, editor, file, append, remove };
+}

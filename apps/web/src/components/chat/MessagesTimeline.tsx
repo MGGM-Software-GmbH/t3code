@@ -122,7 +122,9 @@ function timelineListStateFor(identity: string): {
   const rememberedPosition = readTimelinePosition(identity);
   return {
     identity,
-    rememberedPosition,
+    // Reopening follows the latest work, including work after an interruption.
+    // Keep disclosures without restoring a reading position from an earlier visit.
+    rememberedPosition: rememberedPosition ? { ...rememberedPosition, atEnd: true } : undefined,
     workGroupViewState: rememberedPosition?.disclosures?.workGroupState ?? {
       scrollPositions: new Map(),
       expandedEntries: new Set(),

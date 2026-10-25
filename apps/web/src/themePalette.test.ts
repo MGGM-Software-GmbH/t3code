@@ -5,6 +5,8 @@ import { BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
 import {
   getThemeColorsForMode,
   getThemeModes,
+  getThemeDefinition,
+  singleAppearanceOf,
   getCustomThemes,
   getStandardThemeColors,
   getStoredCustomThemeCollection,
@@ -272,6 +274,43 @@ describe("theme files", () => {
       canvas: canonical("#101827"),
       text: canonical("#eef5ff"),
     });
+  });
+
+  it("resolves the MGGM preset in dark mode without reserving a user's mggm theme id", () => {
+    const preset = getThemeDefinition("mggm-dark");
+    expect(preset?.label).toBe("MGGM");
+    expect(BUILT_IN_THEMES).toContain(preset);
+    expect(getThemeModes(preset!)).toEqual(["dark"]);
+    expect(singleAppearanceOf(preset!)).toBe("dark");
+    expect(resolveThemeAppearance("mggm-dark", true, false)).toBe("dark");
+    expect(resolveDesktopTheme("mggm-dark", false)).toBe("dark");
+    expect(asHex(getThemeColorsForMode(preset!, "dark")!.canvas)).toBe("#0a0a0a");
+
+    const customTheme = parseThemeFile({
+      version: THEME_FILE_VERSION,
+      id: "mggm",
+      name: "Personal MGGM",
+      appearance: "light",
+      colors: { canvas: "#f8fbff" },
+    });
+    const setItem = vi.fn();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) =>
+          key === CUSTOM_THEMES_STORAGE_KEY ? JSON.stringify([customTheme]) : null,
+        setItem,
+      },
+    });
+    invalidateCustomThemes();
+    try {
+      expect(getThemeDefinition("mggm")?.label).toBe("Personal MGGM");
+      expect(resolveThemeAppearance("mggm", true, true)).toBe("light");
+      expect(getThemeDefinition("mggm-dark")).toBe(preset);
+      expect(setItem).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      invalidateCustomThemes();
+    }
   });
 
   it("preserves valid imported-theme collections and drops malformed metadata", () => {

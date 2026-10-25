@@ -19,6 +19,10 @@ import {
   elapsedShare,
   paceOf,
   paceRemainingPercent,
+  providersWithLimits,
+  remainingPercent,
+  weeklyLimitWindow,
+  summarizeWeeklyLimits,
   usesChatGptSharing,
 } from "./usageLimits.ts";
 
@@ -57,6 +61,205 @@ describe("pace", () => {
     expect(paceOf(window, now)).toBe("under");
     expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("on");
     expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
+  });
+});
+
+describe("weekly toolbar limits", () => {
+  const weekly = {
+    ...window,
+    id: "secondary",
+    kind: "weekly" as const,
+    label: "Weekly",
+    windowDurationMins: 10080,
+  };
+  const limits = (usedPercent: number) => ({
+    checkedAt: "2026-09-03T11:00:00.000Z",
+    windows: [{ ...weekly, usedPercent }],
+  });
+  const account = (name: string, usedPercent: number) =>
+    collectLimitAccounts(
+      new Map([
+        [
+          EnvironmentId.make(name),
+          {
+            entry: { target: { label: name } },
+            serverConfig: {
+              providers: [provider({ displayName: name, usageLimits: limits(usedPercent) })],
+            },
+          },
+        ],
+      ]),
+    )[0]!;
+
+  it.each([
+    [0, 100],
+    [100, 0],
+    [24.6, 75],
+    [-5, 100],
+    [120, 0],
+  ])("reports remaining percent for %s used", (used, remaining) =>
+    expect(summarizeWeeklyLimits([account("one", used)]).remainingPercent).toBe(remaining),
+  );
+
+  it("averages distinct accounts equally without rounding each share first", () => {
+    const summary = summarizeWeeklyLimits([account("one", 20.4), account("two", 81.4)]);
+    expect(summary.remainingPercent).toBe(49);
+    expect(summary.members).toHaveLength(2);
+  });
+
+  it("averages elapsed weekly periods and sums only reported credits without double-counting accounts", () => {
+    const first = account("one", 20);
+    const second = account("two", 80);
+    const summary = summarizeWeeklyLimits(
+      [
+        {
+          ...first,
+          limits: {
+            ...first.limits,
+            windows: [{ ...weekly, usedPercent: 20, resetsAt: "2026-09-07T12:00:00.000Z" }],
+            resetCredits: { availableCount: 2, nextExpiresAt: "2026-09-10T12:00:00.000Z" },
+          },
+        },
+        {
+          ...second,
+          limits: {
+            ...second.limits,
+            windows: [{ ...weekly, usedPercent: 80, resetsAt: "2026-09-05T12:00:00.000Z" }],
+          },
+        },
+      ],
+      now,
+    );
+    expect(summary.elapsedDays).toBe(4);
+    expect(summary.members.map((member) => member.elapsedDays)).toEqual([3, 5]);
+    expect(summary.bankedResets).toBe(2);
+    expect(summary.unreportedResetCredits).toBe(1);
+    expect(summary.nextCreditExpiresAt).toBe("2026-09-10T12:00:00.000Z");
+  });
+
+  it("keeps missing period times and missing credits distinct from reported zero", () => {
+    const original = account("one", 35);
+    const unknown = {
+      ...original,
+      limits: {
+        ...original.limits,
+        windows: [{ ...weekly, usedPercent: 35, resetsAt: undefined }],
+      },
+    };
+    expect(summarizeWeeklyLimits([unknown], now)).toMatchObject({
+      elapsedDays: null,
+      reportedPeriods: 0,
+      bankedResets: null,
+    });
+    expect(
+      summarizeWeeklyLimits(
+        [{ ...unknown, limits: { ...unknown.limits, resetCredits: { availableCount: 0 } } }],
+        now,
+      ),
+    ).toMatchObject({ bankedResets: 0, nextCreditExpiresAt: null });
+  });
+
+  it.each([
+    ["2026-09-01T12:00:00.000Z", 7],
+    ["2026-09-20T12:00:00.000Z", 0],
+  ])("clamps the elapsed period for reset %s without changing the balance", (resetsAt, days) => {
+    const original = account("one", 35);
+    expect(
+      summarizeWeeklyLimits(
+        [
+          {
+            ...original,
+            limits: { ...original.limits, windows: [{ ...weekly, resetsAt, usedPercent: 35 }] },
+          },
+        ],
+        now,
+      ),
+    ).toMatchObject({ elapsedDays: days, remainingPercent: 65 });
+  });
+
+  it("reports the oldest included snapshot as the combined freshness", () => {
+    const older = account("older", 20);
+    const newer = account("newer", 80);
+    const summary = summarizeWeeklyLimits([
+      older,
+      { ...newer, limits: { ...newer.limits, checkedAt: "2026-09-03T12:00:00.000Z" } },
+    ]);
+    expect(summary.oldestCheckedAt).toBe(older.limits.checkedAt);
+  });
+
+  it("takes the next regular window reset rather than a reset-credit expiry", () => {
+    const first = account("one", 20);
+    const second = account("two", 80);
+    const summary = summarizeWeeklyLimits([
+      {
+        ...first,
+        limits: {
+          ...first.limits,
+          windows: [{ ...weekly, usedPercent: 20, resetsAt: "2026-09-06T12:00:00.000Z" }],
+          resetCredits: { availableCount: 1, nextExpiresAt: "2026-09-04T12:00:00.000Z" },
+        },
+      },
+      {
+        ...second,
+        limits: {
+          ...second.limits,
+          windows: [{ ...weekly, usedPercent: 80, resetsAt: "2026-09-05T12:00:00.000Z" }],
+        },
+      },
+    ]);
+    expect(summary.nextResetAt).toBe("2026-09-05T12:00:00.000Z");
+  });
+
+  it("keeps a reported balance after the reset passes instead of assuming a full account", () => {
+    const summary = summarizeWeeklyLimits([account("one", 75)]);
+    expect(summary.remainingPercent).toBe(25);
+    expect(summary.nextResetAt).toBe(window.resetsAt);
+  });
+
+  it("leaves missing and failed weekly reads unknown, without substituting other windows", () => {
+    const missing = { ...account("missing", 0), limits: { ...limits(0), windows: [window] } };
+    expect(summarizeWeeklyLimits([missing])).toMatchObject({
+      remainingPercent: null,
+      nextResetAt: null,
+      missing: [missing],
+    });
+    expect(summarizeWeeklyLimits([account("one", 40), missing])).toMatchObject({
+      remainingPercent: 60,
+      missing: [missing],
+    });
+    expect(weeklyLimitWindow({ ...limits(10), unavailable: { reason: "probeFailed" } })).toBeNull();
+    expect(
+      weeklyLimitWindow({ ...limits(10), windows: [{ ...weekly, windowDurationMins: 20160 }] }),
+    ).toBeNull();
+    expect(
+      weeklyLimitWindow({ ...limits(10), windows: [{ ...weekly, usedPercent: Number.NaN }] }),
+    ).toBeNull();
+    expect(summarizeWeeklyLimits([]).remainingPercent).toBeNull();
+  });
+
+  it("uses the main weekly allowance while excluding model-specific weekly buckets", () => {
+    const main = { ...weekly, id: "seven_day", usedPercent: 40 };
+    const scoped = { ...weekly, id: "seven_day_opus", usedPercent: 90 };
+    expect(weeklyLimitWindow({ ...limits(10), windows: [scoped, main] })).toEqual(main);
+    expect(weeklyLimitWindow({ ...limits(10), windows: [scoped] })).toBeNull();
+    expect(weeklyLimitWindow({ ...limits(10), windows: [{ ...weekly, id: "primary" }] })?.id).toBe(
+      "primary",
+    );
+  });
+
+  it("ignores missing or invalid reset times without discarding the reported percentage", () => {
+    const original = account("one", 35);
+    const summary = summarizeWeeklyLimits([
+      {
+        ...original,
+        limits: {
+          ...original.limits,
+          windows: [{ ...weekly, usedPercent: 35, resetsAt: "invalid" }],
+        },
+      },
+    ]);
+    expect(summary.remainingPercent).toBe(65);
+    expect(summary.nextResetAt).toBeNull();
   });
 });
 

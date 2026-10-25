@@ -101,7 +101,31 @@ export function useTimelinePositionRestore({
           : list.scrollToEnd({ animated: false });
     void Promise.resolve(scrolling).then(() => {
       if (cancelled) return;
-      if (position?.atEnd !== false || index < 0) {
+      if (position?.atEnd !== false) {
+        let stableFrames = 0;
+        let previousHeight = -1;
+        const reconcileEnd = () => {
+          if (cancelled) return;
+          const element = list.getScrollableNode();
+          if (!element) return;
+          const targetOffset = Math.max(0, element.scrollHeight - element.clientHeight);
+          if (Math.abs(element.scrollTop - targetOffset) > 1) {
+            stableFrames = 0;
+            previousHeight = element.scrollHeight;
+            void list.scrollToOffset({ offset: targetOffset, animated: false }).then(() => {
+              if (!cancelled) settleFrame = requestAnimationFrame(reconcileEnd);
+            });
+            return;
+          }
+          stableFrames = previousHeight === element.scrollHeight ? stableFrames + 1 : 0;
+          previousHeight = element.scrollHeight;
+          if (stableFrames >= 2) onPositioned(listIdentityKey);
+          else settleFrame = requestAnimationFrame(reconcileEnd);
+        };
+        settleFrame = requestAnimationFrame(reconcileEnd);
+        return;
+      }
+      if (index < 0) {
         onPositioned(listIdentityKey);
         return;
       }

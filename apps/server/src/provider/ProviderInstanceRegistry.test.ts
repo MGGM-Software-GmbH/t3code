@@ -86,6 +86,7 @@ const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
   homePath: "",
   shadowHomePath: "",
   launchArgs: "",
+  autoStartWeeklyWindow: true,
   customModels: [],
   ...overrides,
 });
@@ -112,10 +113,16 @@ const makeTildeProviderFixtures = Effect.fn(
     prefix: ".t3-provider-path-test-",
   });
   const codexPath = path.join(fixtureDir, "codex");
-  const claudePath = path.join(fixtureDir, "claude");
+  // The caller's home may be inside a CommonJS package; this fixture must stay ESM.
+  const claudePath = path.join(fixtureDir, "claude.mjs");
   const claudeHomePath = path.join(fixtureDir, "claude-home");
   const codexScriptPath = path.join(fixtureDir, "codex-script.json");
   const codexFixtureDir = path.join(import.meta.dirname, "testFixtures");
+
+  yield* fileSystem.writeFileString(
+    path.join(fixtureDir, "package.json"),
+    JSON.stringify({ type: "commonjs" }),
+  );
 
   yield* fileSystem.copyFile(path.join(codexFixtureDir, "codexCollabMockPeer.sh"), codexPath);
   yield* fileSystem.copyFile(

@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
   ProjectId,
@@ -14,6 +15,8 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Duration from "effect/Duration";
+import { ServerSettingsPatch } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -31,6 +34,8 @@ import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerSettingsModule from "./serverSettings.ts";
 import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.ts";
 
+const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
+const decodeModelSelection = Schema.decodeEffect(ModelSelection);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 
@@ -94,10 +99,148 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
+  it.effect("preserves an unreadable defaults profile without automatically resuming threads", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const document = '{"defaultsProfile":"unsupported","autoResumeLimitedThreads":false}';
+      yield* fs.writeFileString(config.settingsPath, document);
+      const settings = yield* service.getSettings;
+      assert.isFalse(settings.autoResumeLimitedThreads);
+      assert.equal(settings.modelCapacityRetryDelayMinutes, 0);
+      assert.isFalse(settings.continueThreadsAfterServerUpdate);
+      assert.equal(yield* fs.readFileString(config.settingsPath), document);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect(
+    "uses MGGM defaults for a new environment and retains explicit opt-outs after reload",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const settings = yield* service.getSettings;
+        assert.deepEqual(
+          settings.defaultModelSelection,
+          DEFAULT_SERVER_SETTINGS.defaultModelSelection,
+        );
+        assert.isFalse(
+          settings.providerInstances[ProviderInstanceId.make("githubCopilot")]!.enabled,
+        );
+        assert.isNull(settings.sidebarAutoSettleAfterDays);
+        assert.isTrue(settings.autoResumeLimitedThreads);
+        assert.equal(settings.modelCapacityRetryDelayMinutes, 5);
+
+        yield* service.updateSettings({
+          favorites: [],
+          defaultModelSelection: null,
+          defaultAutoPull: false,
+          autoResumeLimitedThreads: false,
+          modelCapacityRetryDelayMinutes: 0,
+          enableProviderUpdateChecks: true,
+          sidebarAutoSettleAfterDays: 7,
+          pullRequestMergeMethod: null,
+        });
+        const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
+          Effect.flatMap((reloadedService) => reloadedService.getSettings),
+          Effect.provide(ServerSettingsModule.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+        );
+        assert.deepInclude(reloaded, {
+          favorites: [],
+          defaultModelSelection: null,
+          defaultAutoPull: false,
+          autoResumeLimitedThreads: false,
+          modelCapacityRetryDelayMinutes: 0,
+          enableProviderUpdateChecks: true,
+          sidebarAutoSettleAfterDays: 7,
+          pullRequestMergeMethod: null,
+        });
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect(
+    "preserves omitted upstream defaults and personal provider choices through migration",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.writeFileString(
+          config.settingsPath,
+          JSON.stringify({
+            providerInstances: {
+              claudeAgent: { driver: "claudeAgent", enabled: false, config: {} },
+              claude_work: { driver: "claudeAgent", config: {} },
+              githubCopilot: {
+                driver: "acpRegistry",
+                enabled: true,
+                config: { commandPath: "copilot" },
+              },
+              codex_work: { driver: "codex", enabled: true, config: { homePath: "/work/codex" } },
+            },
+          }),
+        );
+        const settings = yield* service.getSettings;
+        assert.deepInclude(settings, {
+          favorites: null,
+          defaultModelSelection: null,
+          defaultAutoPull: false,
+          autoResumeLimitedThreads: false,
+          enableProviderUpdateChecks: true,
+          sidebarAutoSettleAfterDays: 3,
+          pullRequestMergeMethod: null,
+        });
+        assert.isFalse(settings.providerInstances[ProviderInstanceId.make("claudeAgent")]!.enabled);
+        assert.isTrue(settings.providerInstances[ProviderInstanceId.make("claude_work")]!.enabled);
+        assert.isTrue(
+          settings.providerInstances[ProviderInstanceId.make("githubCopilot")]!.enabled,
+        );
+        assert.deepEqual(
+          settings.providerInstances[ProviderInstanceId.make("codex_work")]!.config,
+          {
+            homePath: "/work/codex",
+          },
+        );
+        const document = JSON.parse(yield* fs.readFileString(config.settingsPath));
+        assert.equal(document.defaultsProfile, "mggm");
+        const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
+          Effect.flatMap((reloadedService) => reloadedService.getSettings),
+          Effect.provide(ServerSettingsModule.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+        );
+        assert.deepEqual(reloaded, settings);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect(
+    "persists a different model as a complete selection and preserves the profile on reload",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const selection = yield* decodeModelSelection({
+          instanceId: "codex",
+          model: "gpt-6-luna",
+          options: [{ id: "reasoningEffort", value: "medium" }],
+        });
+        yield* service.updateSettings({ defaultModelSelection: selection });
+        const document = JSON.parse(yield* fs.readFileString(config.settingsPath));
+        assert.equal(document.defaultsProfile, "mggm");
+        assert.deepEqual(document.defaultModelSelection, selection);
+        const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
+          Effect.flatMap((reloadedService) => reloadedService.getSettings),
+          Effect.provide(ServerSettingsModule.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+        );
+        assert.deepEqual(reloaded.defaultModelSelection, selection);
+        assert.isTrue(reloaded.defaultAutoPull);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
       const provider = ProviderInstanceId.make("codex_work");
+      yield* service.updateSettings({ favorites: [] });
       yield* Effect.all(
         [
           service.updateSettings({
@@ -545,6 +688,33 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     ).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("persists and broadcasts thread settlement settings", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const changes = yield* serverSettings.subscribeChanges;
+
+        const next = yield* serverSettings.updateSettings({
+          sidebarAutoSettleAfterDays: null,
+          sidebarAutoSettleOnMerge: false,
+        });
+        const change = Option.getOrUndefined(yield* Stream.runHead(changes));
+        const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+
+        const persisted = JSON.parse(raw) as Record<string, unknown>;
+
+        assert.strictEqual(next.sidebarAutoSettleAfterDays, null);
+        assert.isFalse(next.sidebarAutoSettleOnMerge);
+        assert.strictEqual(change?.sidebarAutoSettleAfterDays, null);
+        assert.isFalse(change?.sidebarAutoSettleOnMerge);
+        assert.isUndefined(persisted.sidebarAutoSettleAfterDays);
+        assert.isFalse(persisted.sidebarAutoSettleOnMerge);
+      }),
+    ).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
@@ -687,6 +857,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             enabled: false,
             config: {},
           },
+          [ProviderInstanceId.make("claudeAgent")]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: true,
+            config: {},
+          },
         },
       });
 
@@ -708,6 +883,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
         [claude]: {
           driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
           config: { customModels: ["z-ai/glm-5.3-flash"] },
         },
       };
@@ -821,6 +997,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const settings = yield* serverSettings.getSettings;
 
       assert.deepEqual(settings.providerInstances, {
+        ...DEFAULT_PROVIDER_INSTANCE_CONFIGS,
+        [ProviderInstanceId.make("githubCopilot")]: {
+          ...DEFAULT_PROVIDER_INSTANCE_CONFIGS[ProviderInstanceId.make("githubCopilot")]!,
+          enabled: true,
+        },
         [ProviderInstanceId.make("codex")]: {
           driver: ProviderDriverKind.make("codex"),
           config: { binaryPath: "/opt/guard/bin/codex" },
@@ -925,6 +1106,31 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("runs provider history only for files that still carry the legacy map", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(serverConfig.settingsPath, "{}");
+      yield* recordProviderUsage("grok");
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.deepEqual(settings.providerInstances, {
+        ...DEFAULT_PROVIDER_INSTANCE_CONFIGS,
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+          config: {},
+        },
+        [ProviderInstanceId.make("githubCopilot")]: {
+          ...DEFAULT_PROVIDER_INSTANCE_CONFIGS[ProviderInstanceId.make("githubCopilot")]!,
+          enabled: true,
+        },
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("migrates legacy providers from an invalid file without rewriting it", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
@@ -970,6 +1176,102 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("loads the shipped Copilot provider in fresh server settings", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const settings = yield* service.getSettings;
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("githubCopilot")], {
+        driver: ProviderDriverKind.make("acpRegistry"),
+        displayName: "GitHub Copilot",
+        enabled: false,
+        config: { source: "registry", agentId: "github-copilot-cli", commandPath: "copilot" },
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("keeps an explicit Copilot disable and executable configuration on load", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const instance = {
+        driver: ProviderDriverKind.make("acpRegistry"),
+        enabled: false,
+        displayName: "Work Copilot",
+        config: { source: "local", commandPath: "/opt/copilot", commandArgs: ["--acp"] },
+      };
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        JSON.stringify({ providerInstances: { githubCopilot: instance } }),
+      );
+
+      const settings = yield* service.getSettings;
+      assert.deepEqual(
+        settings.providerInstances[ProviderInstanceId.make("githubCopilot")],
+        instance,
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("keeps an explicit managed Copilot installation on load", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const instance = {
+        driver: ProviderDriverKind.make("acpRegistry"),
+        enabled: true,
+        config: { source: "registry", agentId: "github-copilot-cli", commandPath: "" },
+      };
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        JSON.stringify({ providerInstances: { githubCopilot: instance } }),
+      );
+
+      const settings = yield* service.getSettings;
+      assert.deepEqual(
+        settings.providerInstances[ProviderInstanceId.make("githubCopilot")],
+        instance,
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("resets only the shipped Copilot instance when its overrides are removed", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const copilotId = ProviderInstanceId.make("githubCopilot");
+      const customId = ProviderInstanceId.make("custom_agent");
+      const custom = { driver: ProviderDriverKind.make("acpRegistry"), enabled: false };
+      yield* service.updateSettings({
+        providerInstances: {
+          [copilotId]: { driver: ProviderDriverKind.make("acpRegistry"), enabled: false },
+          [customId]: custom,
+        },
+      });
+      const disabled = yield* service.getSettings;
+      assert.isFalse(disabled.providerInstances[copilotId]?.enabled);
+      const persisted = JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath));
+      assert.deepEqual(persisted.providerInstances.githubCopilot, {
+        driver: "acpRegistry",
+        enabled: false,
+      });
+
+      const reset = yield* service.updateProviderInstance({
+        operation: "remove",
+        instanceId: copilotId,
+      });
+      assert.deepEqual(
+        reset.providerInstances[copilotId],
+        DEFAULT_PROVIDER_INSTANCE_CONFIGS[copilotId],
+      );
+      assert.deepEqual(reset.providerInstances[customId], custom);
+      const resetFile = JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath));
+      assert.isUndefined(resetFile.providerInstances.githubCopilot);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("folds a legacy in-config enabled flag into the envelope on load", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
@@ -1000,6 +1302,67 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("cursor")], {
         driver: ProviderDriverKind.make("cursor"),
         config: { enabled: "nope" },
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("writes only non-default settings to disk", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* serverSettings.updateSettings({
+        addProjectBaseDirectory: "~/Development",
+        observability: {
+          otlpTracesUrl: "http://localhost:4318/v1/traces",
+          otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+        },
+        automaticGitFetchInterval: Duration.seconds(10),
+      });
+
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.deepEqual(JSON.parse(raw), {
+        defaultsProfile: "mggm",
+        addProjectBaseDirectory: "~/Development",
+        idleCompaction: "onReturn",
+        observability: {
+          otlpTracesUrl: "http://localhost:4318/v1/traces",
+          otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+        },
+        backgroundActivity: {
+          schemaVersion: 1,
+          profile: "custom",
+          baseProfile: "balanced",
+          overrides: {
+            automaticGitFetchInterval: 10_000,
+          },
+        },
+        automaticGitFetchInterval: 10_000,
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("saves a writing style whose other fields are defaults", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* serverSettings.updateSettings({
+        sourceControlWritingStyle: { mode: "conventional_commits" },
+      });
+      yield* serverSettings.updateSettings({ addProjectBaseDirectory: "~/Development" });
+
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.deepEqual(JSON.parse(raw), {
+        addProjectBaseDirectory: "~/Development",
+        sourceControlWritingStyle: { mode: "conventional_commits" },
+        defaultsProfile: "mggm",
+        idleCompaction: "onReturn",
+      });
+      assert.deepEqual((yield* serverSettings.getSettings).sourceControlWritingStyle, {
+        mode: "conventional_commits",
+        customInstructions: "",
+        followChangeRequestTemplates: true,
       });
     }).pipe(Effect.provide(layerServerSettings())),
   );

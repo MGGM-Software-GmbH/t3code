@@ -116,6 +116,36 @@ const managedConnection = {
 } as const;
 
 describe("mobile connection storage", () => {
+  it("initializes MGGM preferences once and preserves subsequent device choices", async () => {
+    const initial = await loadPreferences();
+    expect(initial).toMatchObject({
+      themeId: "mggm-dark",
+      themeMode: "dark",
+      followUpBehavior: "steer",
+      workingShelfEnabled: true,
+      baseFontSize: 17,
+      markdownFontSize: 16,
+      codeFontSize: 15,
+    });
+    expect(JSON.parse(mocks.getPreferencesJson()!)).toEqual(initial);
+    await savePreferencesPatch({
+      themeMode: "system",
+      followUpBehavior: "queue",
+      workingShelfEnabled: false,
+    });
+    expect(await loadPreferences()).toMatchObject({
+      themeMode: "system",
+      followUpBehavior: "queue",
+      workingShelfEnabled: false,
+    });
+  });
+
+  it("preserves implicit upstream preferences on an existing device", async () => {
+    mocks.setPreferencesJson("{}", 1);
+    expect(await loadPreferences()).toEqual({});
+    expect(mocks.getPreferencesJson()).toBe("{}");
+  });
+
   beforeEach(() => {
     mocks.clear();
     vi.clearAllMocks();
@@ -138,6 +168,15 @@ describe("mobile connection storage", () => {
     await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 17 });
   });
 
+  it("persists Material You independently for each appearance", async () => {
+    mocks.setPreferencesJson("{}", 1);
+    const themes = { lightThemeId: "material-you", darkThemeId: "ocean" } as const;
+    await savePreferencesPatch(themes);
+    await expect(loadPreferences()).resolves.toEqual(themes);
+    await savePreferencesPatch({ lightThemeId: "t3-chat" });
+    await expect(loadPreferences()).resolves.toEqual({ ...themes, lightThemeId: "t3-chat" });
+  });
+
   it("falls back to secure storage when SQLite cannot save preferences", async () => {
     mocks.setDatabaseFailures(true, true);
     await expect(savePreferencesPatch({ baseFontSize: 19 })).resolves.toEqual({ baseFontSize: 19 });
@@ -147,6 +186,36 @@ describe("mobile connection storage", () => {
     };
     expect(JSON.parse(fallback.payload)).toEqual({ baseFontSize: 19 });
     expect(fallback.updatedAt).toEqual(expect.any(Number));
+  });
+
+  it("persists thread list shelf preferences", async () => {
+    mocks.setPreferencesJson("{}", 1);
+    await expect(
+      savePreferencesPatch({
+        threadListSettledShelfExpanded: false,
+        threadListSnoozedShelfExpanded: true,
+        threadListWorkingShelfExpanded: true,
+        workingShelfEnabled: true,
+      }),
+    ).resolves.toEqual({
+      threadListSettledShelfExpanded: false,
+      threadListSnoozedShelfExpanded: true,
+      threadListWorkingShelfExpanded: true,
+      workingShelfEnabled: true,
+    });
+
+    await expect(loadPreferences()).resolves.toEqual({
+      threadListSettledShelfExpanded: false,
+      threadListSnoozedShelfExpanded: true,
+      threadListWorkingShelfExpanded: true,
+      workingShelfEnabled: true,
+    });
+    expect(JSON.parse(mocks.getPreferencesJson() ?? "")).toEqual({
+      threadListSettledShelfExpanded: false,
+      threadListSnoozedShelfExpanded: true,
+      threadListWorkingShelfExpanded: true,
+      workingShelfEnabled: true,
+    });
   });
 
   it("reconciles fallback preferences after SQLite recovers", async () => {

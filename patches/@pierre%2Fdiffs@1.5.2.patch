@@ -328,7 +328,7 @@ index 140f94f..96fc774 100644
  function prepareItemInstance(item) {
  	item.instance.cleanUp(true);
  	if (item.type === "diff") return item.instance.updateCodeViewLayout(item.item.fileDiff, item.top, void 0, item.item.annotations ?? []);
-diff --git a/dist/components/CodeViewSearch.js b/dist/components/CodeViewSearch.js
+diff --git a/pierre-1.5.2/package/dist/components/CodeViewSearch.js b/dist/components/CodeViewSearch.js
 new file mode 100644
 index 0000000..29370ad
 --- /dev/null
@@ -732,31 +732,58 @@ index 6f66bd3..3125fac 100644
  			} catch (error) {
  				if (disableErrorHandling) throw error;
 diff --git a/dist/components/VirtualizedFile.d.ts b/dist/components/VirtualizedFile.d.ts
-index 5e68e35..79dcd88 100644
+index 5e68e35..70e4079 100644
 --- a/dist/components/VirtualizedFile.d.ts
 +++ b/dist/components/VirtualizedFile.d.ts
-@@ -49,7 +49,7 @@ declare class VirtualizedFile<LAnnotation = undefined, Caret = undefined> extend
+@@ -49,8 +49,9 @@ declare class VirtualizedFile<LAnnotation = undefined, Caret = undefined> extend
    setVisibility(visible: boolean): void;
    rerender(): void;
    syncGhostTextRows(): void;
 -  applyDocumentChange(textDocument: TextDocument<'file', LAnnotation>, newLineAnnotations?: LineAnnotation<LAnnotation>[], shouldUpdateBuffer?: boolean): void;
 +  applyDocumentChange(textDocument: TextDocument<'file', LAnnotation>, newLineAnnotations?: LineAnnotation<LAnnotation>[], shouldUpdateBuffer?: boolean, startLine?: number): void;
    render({ fileContainer, file, forceRender, lineAnnotations, ...props }: FileRenderProps<LAnnotation>): boolean;
++  protected updateFileLayoutCache(previous: FileContents | undefined, file: FileContents, anchorLine?: number): number | undefined;
    protected finalizeRender(): void;
    private updatePendingRender;
+   syncVirtualizedTop(): void;
+@@ -69,4 +70,4 @@ declare class VirtualizedFile<LAnnotation = undefined, Caret = undefined> extend
+ }
+ //#endregion
+ export { VirtualizedFile };
+-//# sourceMappingURL=VirtualizedFile.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=VirtualizedFile.d.ts.map
 diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFile.js
-index d1f57cd..5908ad7 100644
+index d1f57cd..32fd750 100644
 --- a/dist/components/VirtualizedFile.js
 +++ b/dist/components/VirtualizedFile.js
-@@ -23,6 +23,7 @@ var VirtualizedFile = class extends File {
+@@ -5,6 +5,7 @@ import { areFileTargetsEqual } from "../utils/areFileTargetsEqual.js";
+ import { computeVirtualFileMetrics, getVirtualFileHeaderHeight, getVirtualFileHeaderRegion, getVirtualFilePaddingBottom } from "../utils/computeVirtualFileMetrics.js";
+ import { FILE_ANNOTATION_DOM_KEY, includesFileAnnotations, shouldRenderFileAnnotations } from "../utils/includesFileAnnotations.js";
+ import { File } from "./File.js";
++import { diffArrays } from "diff";
+ //#region src/components/VirtualizedFile.ts
+ const LAYOUT_CHECKPOINT_INTERVAL = 5e3;
+ const NO_GHOST_TEXT_ROWS = /* @__PURE__ */ new Map();
+@@ -21,8 +22,10 @@ var VirtualizedFile = class extends File {
+ 	height = 0;
+ 	cache = {
  		heights: /* @__PURE__ */ new Map(),
++		annotationHeights: /* @__PURE__ */ new Map(),
  		checkpoints: [],
  		fileAnnotationHeight: 0,
 +		codeWidth: void 0,
  		ghostTextRows: NO_GHOST_TEXT_ROWS
  	};
  	pendingRender;
-@@ -35,6 +36,8 @@ var VirtualizedFile = class extends File {
+@@ -30,11 +33,15 @@ var VirtualizedFile = class extends File {
+ 	isSetup = false;
+ 	layoutDirty = true;
+ 	forceRenderOverride;
++	pendingRefreshAnchor;
++	layoutCacheFile;
+ 	currentCollapsed;
+ 	constructor(options, virtualizer, metrics = DEFAULT_VIRTUAL_FILE_METRICS, workerManager, isContainerManaged = false) {
  		super(options, workerManager, isContainerManaged);
  		this.virtualizer = virtualizer;
  		this.metrics = metrics;
@@ -765,7 +792,28 @@ index d1f57cd..5908ad7 100644
  	}
  	setMetrics(metrics, force = false) {
  		const nextMetrics = computeVirtualFileMetrics(metrics);
-@@ -86,10 +89,12 @@ var VirtualizedFile = class extends File {
+@@ -48,6 +55,20 @@ var VirtualizedFile = class extends File {
+ 	syncLineAnnotations(lineAnnotations) {
+ 		if (lineAnnotations == null || !this.isNewAnnotations(lineAnnotations)) return false;
+ 		if (lineAnnotations.length === 0 && this.getLatestAnnotations().length === 0) return false;
++		// Subtract only annotation height on removal, preserving measured wrapped code rows.
++		const nextLines = new Set(lineAnnotations.map((annotation) => annotation.lineNumber));
++		for (const annotation of this.getLatestAnnotations()) {
++			if (nextLines.has(annotation.lineNumber)) continue;
++			if (annotation.lineNumber === 0) this.cache.fileAnnotationHeight = 0;
++			else {
++				const lineIndex = annotation.lineNumber - 1;
++				const annotationHeight = this.cache.annotationHeights.get(lineIndex) ?? 0;
++				const height = this.cache.heights.get(lineIndex);
++				if (height != null) this.cache.heights.set(lineIndex, height - annotationHeight);
++				this.cache.annotationHeights.delete(lineIndex);
++			}
++		}
++		this.cache.checkpoints.length = 0;
+ 		super.setLineAnnotations(lineAnnotations);
+ 		return true;
+ 	}
+@@ -86,10 +107,14 @@ var VirtualizedFile = class extends File {
  		if (this.isAdvancedMode()) throw new Error("VirtualizedFile.setThemeType cannot be used inside CodeView. Update CodeView options instead.");
  		super.setThemeType(themeType);
  	}
@@ -778,10 +826,12 @@ index d1f57cd..5908ad7 100644
 +		// Dropping unchanged wrapped rows moves the viewport before they can be remeasured.
 +		if (startLine === 0) this.cache.heights.clear();
 +		else for (const lineIndex of this.cache.heights.keys()) if (lineIndex >= startLine) this.cache.heights.delete(lineIndex);
++		if (startLine === 0) this.cache.annotationHeights.clear();
++		else for (const lineIndex of this.cache.annotationHeights.keys()) if (lineIndex >= startLine) this.cache.annotationHeights.delete(lineIndex);
  		if (this.cache.checkpoints.length > 0) this.cache.checkpoints.length = 0;
  		this.cache.ghostTextRows = NO_GHOST_TEXT_ROWS;
  		if (this.renderRange != null && resetRenderRange) this.renderRange = void 0;
-@@ -135,6 +140,13 @@ var VirtualizedFile = class extends File {
+@@ -135,6 +160,13 @@ var VirtualizedFile = class extends File {
  		if (this.code == null) return hasHeightChange;
  		const content = this.code.children[1];
  		if (!(content instanceof HTMLElement)) return hasHeightChange;
@@ -795,7 +845,35 @@ index d1f57cd..5908ad7 100644
  		if (this.renderRange != null && shouldRenderFileAnnotations(this.renderRange)) {
  			const nextFileAnnotationHeight = measureFileAnnotationHeight(content) ?? 0;
  			if (nextFileAnnotationHeight !== this.cache.fileAnnotationHeight) {
-@@ -358,12 +370,12 @@ var VirtualizedFile = class extends File {
+@@ -152,9 +184,12 @@ var VirtualizedFile = class extends File {
+ 			if (!measureAllRows && (cachedHeight == null || cachedHeight === lineHeight + ghostHeight)) continue;
+ 			let measuredHeight = line.getBoundingClientRect().height + ghostHeight;
+ 			let hasMetadata = false;
++			this.cache.annotationHeights.delete(lineIndex);
+ 			if (line.nextElementSibling instanceof HTMLElement && ("lineAnnotation" in line.nextElementSibling.dataset || "noNewline" in line.nextElementSibling.dataset)) {
+ 				if ("noNewline" in line.nextElementSibling.dataset) hasMetadata = true;
+-				measuredHeight += line.nextElementSibling.getBoundingClientRect().height;
++				const metadataHeight = line.nextElementSibling.getBoundingClientRect().height;
++				measuredHeight += metadataHeight;
++				if ("lineAnnotation" in line.nextElementSibling.dataset) this.cache.annotationHeights.set(lineIndex, metadataHeight);
+ 			}
+ 			const expectedHeight = this.getLineHeight(lineIndex, hasMetadata);
+ 			if (measuredHeight === expectedHeight) continue;
+@@ -171,10 +206,12 @@ var VirtualizedFile = class extends File {
+ 		return this.render({ file: this.file });
+ 	};
+ 	updateCodeViewLayout(file, top, reset, lineAnnotations) {
++		const previousLayoutFile = this.getLayoutFile();
+ 		const targetChanged = !areFileTargetsEqual(this.file, file);
+ 		if (targetChanged) this.updateExternalFile(file, lineAnnotations);
+ 		const { pendingRenderFile, layoutFileChanged, renderedFileChanged, annotationsChanged } = this.updatePendingRender(file, lineAnnotations);
+-		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true || layoutFileChanged;
++		if (layoutFileChanged) this.updateFileLayoutCache(previousLayoutFile, pendingRenderFile);
++		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true;
+ 		if (reset?.metrics != null) {
+ 			this.metrics = reset.metrics;
+ 			shouldResetLayoutCache = true;
+@@ -358,12 +395,13 @@ var VirtualizedFile = class extends File {
  			codeView.instanceChanged(this, true);
  		} else this.getSimpleVirtualizer()?.requestHeightReconcile(this);
  	}
@@ -804,12 +882,109 @@ index d1f57cd..5908ad7 100644
  		const { renderRange: previousRenderRange } = this;
  		this.getAdvancedVirtualizer()?.capturePendingLayoutAnchor();
  		super.applyDocumentChange(textDocument, newLineAnnotations);
++		this.layoutCacheFile = this.getLatestFile(this.file);
  		this.getSimpleVirtualizer()?.markDOMDirty();
 -		this.resetLayoutCache(this.isSimpleMode(), false);
 +		this.resetLayoutCache(this.isSimpleMode(), false, startLine);
  		const file = this.getRenderedFile();
  		if (!this.isSimpleMode()) this.computeApproximateSize(true);
  		else if (shouldUpdateBuffer && previousRenderRange != null && file != null) {
+@@ -374,8 +412,46 @@ var VirtualizedFile = class extends File {
+ 		this.forceRenderOverride = true;
+ 		this.virtualizer.instanceChanged(this, true);
+ 	}
++	// Measurements of unchanged code rows remain valid across external updates.
++	updateFileLayoutCache(previous, file, anchorLine) {
++		previous = this.layoutCacheFile ?? previous;
++		this.layoutCacheFile = file;
++		if (previous == null || previous.name !== file.name || previous.lang !== file.lang) {
++			this.resetLayoutCache();
++			return;
++		}
++		if (previous.contents === file.contents) return anchorLine;
++		const oldLines = previous.contents.split(/\r\n|\n|\r/);
++		const newLines = file.contents.split(/\r\n|\n|\r/);
++		const heights = new Map();
++		let oldIndex = 0;
++		let newIndex = 0;
++		let nextAnchor;
++		for (const change of diffArrays(oldLines, newLines)) {
++			if (change.added) newIndex += change.count;
++			else if (change.removed) {
++				if (anchorLine >= oldIndex && anchorLine < oldIndex + change.count) nextAnchor = Math.min(newIndex, newLines.length - 1);
++				oldIndex += change.count;
++			} else {
++				if (anchorLine >= oldIndex && anchorLine < oldIndex + change.count) nextAnchor = anchorLine + newIndex - oldIndex;
++				for (let offset = 0; offset < change.count; offset++) {
++					const height = this.cache.heights.get(oldIndex + offset);
++					if (height !== void 0) heights.set(newIndex + offset, height - (this.cache.annotationHeights.get(oldIndex + offset) ?? 0));
++				}
++				oldIndex += change.count;
++				newIndex += change.count;
++			}
++		}
++		this.resetLayoutCache();
++		this.cache.heights = heights;
++		return nextAnchor;
++	}
+ 	render({ fileContainer, file, forceRender = false, lineAnnotations, ...props }) {
++		const previousLayoutFile = this.pendingRender?.file ?? this.getRenderedFile();
+ 		const didFileChange = !areFileTargetsEqual(this.file, file);
++		// Replacing an editor session can remove annotation geometry before the next render.
++		const simpleVirtualizer = this.getSimpleVirtualizer();
++		const refreshAnchor = this.isSetup && simpleVirtualizer != null && (didFileChange || !areFileTargetsEqual(previousLayoutFile, this.getLatestFile(file) ?? file)) ? simpleVirtualizer.getScrollAnchor(simpleVirtualizer.getHeight()) : void 0;
+ 		if (didFileChange) {
+ 			this.updateExternalFile(file, lineAnnotations);
+ 			this.cachedHeaderHTML = void 0;
+@@ -391,7 +467,11 @@ var VirtualizedFile = class extends File {
+ 		})();
+ 		const { forceRenderOverride, isSetup } = this;
+ 		this.forceRenderOverride = void 0;
+-		if (layoutFileChanged) this.resetLayoutCache();
++		if (layoutFileChanged && this.isSimpleMode()) {
++			const ownAnchor = refreshAnchor?.fileElement === this.fileContainer && refreshAnchor.lineIndex != null ? refreshAnchor : void 0;
++			const nextLine = this.updateFileLayoutCache(previousLayoutFile, pendingRenderFile, ownAnchor == null ? void 0 : Number(ownAnchor.lineIndex));
++			this.pendingRefreshAnchor = ownAnchor != null && nextLine !== void 0 ? { ...ownAnchor, lineIndex: String(nextLine) } : void 0;
++		} else if (layoutFileChanged) this.resetLayoutCache();
+ 		fileContainer = this.getOrCreateFileContainerNode(fileContainer);
+ 		if (!isSetup) {
+ 			this.computeApproximateSize(false, pendingRenderFile);
+@@ -412,7 +492,16 @@ var VirtualizedFile = class extends File {
+ 			}
+ 		}
+ 		if (!this.isVisible && this.isSimpleMode() && (!didFileChange || !isSetup)) return this.renderPlaceholder(this.height);
+-		const windowSpecs = this.virtualizer.getWindowSpecs();
++		let windowSpecs = this.virtualizer.getWindowSpecs();
++		if (this.pendingRefreshAnchor != null) {
++			const position = this.getLinePosition(Number(this.pendingRefreshAnchor.lineIndex) + 1);
++			if (position != null) {
++				// Render the mapped row before restoring its measured viewport offset.
++				const anchorTop = (this.top ?? 0) + position.top;
++				const margin = (windowSpecs.bottom - windowSpecs.top) / 2;
++				windowSpecs = { top: anchorTop - margin, bottom: anchorTop + margin };
++			}
++		}
+ 		const fileTop = this.top ?? 0;
+ 		const renderRange = this.computeRenderRangeFromWindow(pendingRenderFile, fileTop, windowSpecs);
+ 		return super.render({
+@@ -427,6 +516,10 @@ var VirtualizedFile = class extends File {
+ 	finalizeRender() {
+ 		if (this.getRenderedFile() !== this.pendingRender?.file) throw new Error("VirtualizedFile.render: rendered a different file than its prepared layout");
+ 		this.pendingRender = void 0;
++		if (this.isSimpleMode() && this.pendingRefreshAnchor != null && this.fileContainer?.shadowRoot?.querySelector(`[data-line][data-line-index="${this.pendingRefreshAnchor.lineIndex}"]`) instanceof HTMLElement) {
++			this.getSimpleVirtualizer()?.scrollFix(this.pendingRefreshAnchor);
++			this.pendingRefreshAnchor = void 0;
++		}
+ 		if (this.isSimpleMode()) this.getSimpleVirtualizer()?.requestHeightReconcile(this);
+ 	}
+ 	updatePendingRender(nextFile, lineAnnotations) {
+@@ -635,4 +728,4 @@ function measureFileAnnotationHeight(content) {
+ //#endregion
+ export { VirtualizedFile };
+ 
+-//# sourceMappingURL=VirtualizedFile.js.map
+\ No newline at end of file
++//# sourceMappingURL=VirtualizedFile.js.map
 diff --git a/dist/components/VirtualizedFileDiff.js b/dist/components/VirtualizedFileDiff.js
 index 96f970f..1bb59c6 100644
 --- a/dist/components/VirtualizedFileDiff.js
@@ -832,6 +1007,52 @@ index 96f970f..1bb59c6 100644
  		this.pendingRender = {
  			latestDiff,
  			diff: pendingRenderDiff
+diff --git a/dist/components/Virtualizer.js b/dist/components/Virtualizer.js
+index 4063b99..e68249c 100644
+--- a/dist/components/Virtualizer.js
++++ b/dist/components/Virtualizer.js
+@@ -25,6 +25,7 @@ var Virtualizer = class Virtualizer {
+ 	type = "simple";
+ 	intersectionObserver;
+ 	scrollTop = 0;
++	scrollFixVersion = 0;
+ 	height = 0;
+ 	scrollHeight = 0;
+ 	windowSpecs = {
+@@ -245,13 +246,15 @@ var Virtualizer = class Virtualizer {
+ 		this.visibleInstancesDirty = false;
+ 		this.renderedObservers = this.observers.size;
+ 		const anchor = this.getScrollAnchor(this.height);
++		const scrollFixVersion = this.scrollFixVersion;
+ 		const updatedInstances = /* @__PURE__ */ new Set();
+ 		for (const instance of wrapperDirty ? this.observers.values() : this.visibleInstances.values()) if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		for (const instance of this.instancesChanged) {
+ 			if (updatedInstances.has(instance)) continue;
+ 			if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		}
+-		this.scrollFix(anchor);
++		// A mapped file refresh may already have corrected scroll during onRender.
++		if (this.scrollFixVersion === scrollFixVersion) this.scrollFix(anchor);
+ 		for (const instance of updatedInstances) {
+ 			this.reconcileQueue.delete(instance);
+ 			instance.reconcileHeights();
+@@ -288,6 +291,9 @@ var Virtualizer = class Virtualizer {
+ 		}
+ 	}
+ 	applyScrollFix(scrollOffset) {
++		this.scrollFixVersion++;
++		// A synchronous follow-up render must use the corrected viewport.
++		this.windowSpecs = { top: 0, bottom: 0 };
+ 		if (this.root == null || this.root instanceof Document) window.scrollTo({
+ 			top: window.scrollY + scrollOffset,
+ 			behavior: "instant"
+@@ -430,4 +436,4 @@ function getRelativeBoundingTop(element, scrollContainer) {
+ //#endregion
+ export { Virtualizer };
+ 
+-//# sourceMappingURL=Virtualizer.js.map
+\ No newline at end of file
++//# sourceMappingURL=Virtualizer.js.map
 diff --git a/dist/components/web-components.js b/dist/components/web-components.js
 index 6e7b486..5b7290f 100644
 --- a/dist/components/web-components.js
@@ -867,10 +1088,18 @@ index 6e7b486..5b7290f 100644
  		connectedCallback() {
  			const shadowRoot = this.shadowRoot ?? this.attachShadow({ mode: "open" });
 diff --git a/dist/editor/editor.js b/dist/editor/editor.js
-index 8f04a6f..c203023 100644
+index 8f04a6f..8a7508b 100644
 --- a/dist/editor/editor.js
 +++ b/dist/editor/editor.js
-@@ -1899,7 +1899,11 @@ var Editor = class {
+@@ -1054,6 +1054,7 @@ var Editor = class {
+ 				onBlur?.();
+ 			}, { passive: true }),
+ 			addEventListener(contentEl, "pointerdown", (e) => {
++				if (!targetIsContentElement(e)) return;
+ 				this.#canMountSelectionAction = true;
+ 				this.#suppressNativeSelectionSync = false;
+ 				if (e.pointerType !== "mouse") return;
+@@ -1899,7 +1900,11 @@ var Editor = class {
  			changedDocumentLines: this.#isDiff && !didLineCountChange ? getChangedDocumentLines(textDocument, change) : void 0,
  			documentLineCount: textDocument.lineCount
  		});
@@ -883,6 +1112,13 @@ index 8f04a6f..c203023 100644
  		if (didLineCountChange || this.#isDiff && this.#diffSyle === "unified") this.#resetCache();
  		if (newLineAnnotations != null) {
  			this.#lineAnnotations = newLineAnnotations;
+@@ -3693,4 +3698,4 @@ function splitsSurrogatePair(text, offset) {
+ //#endregion
+ export { Editor };
+ 
+-//# sourceMappingURL=editor.js.map
+\ No newline at end of file
++//# sourceMappingURL=editor.js.map
 diff --git a/dist/editor/searchPanel.d.ts b/dist/editor/searchPanel.d.ts
 index 9542849..1c1a51f 100644
 --- a/dist/editor/searchPanel.d.ts

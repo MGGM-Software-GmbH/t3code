@@ -12,6 +12,7 @@ import { AcpRequestError } from "effect-acp/errors";
 
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import { makeAcpRegistryAuth } from "./auth.ts";
+import { normalizeAcpRegistryAuthMethods } from "./probe.ts";
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 
@@ -24,6 +25,19 @@ const terminalMethod = {
   type: "terminal" as const,
   args: ["login"],
   env: { LOGIN: "yes", OVERRIDE: "method" },
+};
+const legacyTerminalMethod = {
+  id: "copilot-login",
+  name: "Log in with Copilot CLI",
+  description: "Run `copilot login` in the terminal",
+  _meta: {
+    "terminal-auth": {
+      command: "/native/copilot",
+      args: ["login"],
+      label: "Copilot Login",
+      env: { OVERRIDE: "legacy" },
+    },
+  },
 };
 const resolved: AcpRegistrySupport.ResolvedAcpRegistryAgent = {
   agent: {
@@ -59,6 +73,7 @@ const makeHarness = (
   failVerification = false,
   settings = decodeSettings({ agentId: "test-agent" }),
   providerInstanceId = instanceId,
+  withPty = true,
 ) =>
   Effect.gen(function* () {
     const verify = yield* Deferred.make<void>();
@@ -75,7 +90,7 @@ const makeHarness = (
     let closedBeforeTerminal = false;
     const written: string[] = [];
     const sizes: number[][] = [];
-    const controller = yield* makeAcpRegistryAuth({
+    const makeController = makeAcpRegistryAuth({
       instanceId: providerInstanceId,
       settings,
       cwd: "/workspace",
@@ -152,44 +167,48 @@ const makeHarness = (
             distribution: "binary" as const,
           })),
       }),
-      Effect.provideService(PtyAdapter.PtyAdapter, {
-        spawn: (input) =>
-          Effect.sync(() => {
-            terminalSpawn = input;
-            closedBeforeTerminal = closed.includes(runtimes);
-            return {
-              pid: 123,
-              write: (input) => {
-                written.push(input);
-              },
-              resize: (cols, rows) => {
-                sizes.push([cols, rows]);
-              },
-              kill: () => {
-                killed = true;
-              },
-              onData: (callback) => {
-                data = callback;
-                return () => {
-                  data = undefined;
-                };
-              },
-              onExit: (callback) => {
-                exit = callback;
-                return () => {
-                  exit = undefined;
-                };
-              },
-            };
-          }),
-      }),
     );
+    const controller = yield* withPty
+      ? makeController.pipe(
+          Effect.provideService(PtyAdapter.PtyAdapter, {
+            spawn: (input) =>
+              Effect.sync(() => {
+                terminalSpawn = input;
+                closedBeforeTerminal = closed.includes(runtimes);
+                return {
+                  pid: 123,
+                  write: (input) => {
+                    written.push(input);
+                  },
+                  resize: (cols, rows) => {
+                    sizes.push([cols, rows]);
+                  },
+                  kill: () => {
+                    killed = true;
+                  },
+                  onData: (callback) => {
+                    data = callback;
+                    return () => {
+                      data = undefined;
+                    };
+                  },
+                  onExit: (callback) => {
+                    exit = callback;
+                    return () => {
+                      exit = undefined;
+                    };
+                  },
+                };
+              }),
+          }),
+        )
+      : makeController;
     const state = (predicate: (state: ProviderAuthState) => boolean) =>
       controller
         .subscribe("owner")
         .pipe(Stream.filter(predicate), Stream.runHead, Effect.map(Option.getOrThrow));
     const phase = (phase: ProviderAuthState["phase"]) => state((value) => value.phase === phase);
-    yield* state((value) => (value.methods?.length ?? 0) > 0);
+    yield* state((value) => value.methods !== undefined);
     return {
       controller,
       verify,
@@ -309,6 +328,74 @@ it.effect(
       assert.deepEqual(h.started, [3]);
       assert.deepEqual(h.changed, [true]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("runs Copilot's advertised legacy terminal command instead of ACP authenticate", () =>
+  Effect.gen(function* () {
+    assert.deepEqual(normalizeAcpRegistryAuthMethods([legacyTerminalMethod], resolved.spawn), [
+      {
+        id: "copilot-login",
+        name: "Log in with Copilot CLI",
+        description: "Run `copilot login` in the terminal",
+        type: "terminal",
+        command: "OVERRIDE=legacy /native/copilot login",
+      },
+    ]);
+    const h = yield* makeHarness(legacyTerminalMethod);
+    const state = yield* h.state((value) => value.methods !== undefined);
+    assert.strictEqual(state.methods?.[0]?.type, "terminal");
+    yield* h.controller.start("owner", Effect.void, "copilot-login");
+    yield* h.phase("waiting");
+    assert.isTrue(h.closedBeforeTerminal());
+    assert.deepEqual(h.terminalSpawn(), {
+      shell: "/native/copilot",
+      args: ["login"],
+      cwd: "/workspace",
+      cols: 80,
+      rows: 24,
+      env: { PATH: "/tools", OVERRIDE: "legacy", AGENT_HOME: "/custom/home" },
+    });
+    assert.deepEqual(h.authenticated, []);
+    h.exit(0);
+    yield* h.phase("verifying");
+    yield* Deferred.succeed(h.verify, undefined);
+    yield* h.phase("succeeded");
+    assert.deepEqual(h.started, [3]);
+    assert.deepEqual(h.changed, [true]);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("rejects malformed legacy terminal metadata without invoking ACP authenticate", () =>
+  Effect.gen(function* () {
+    const method = {
+      ...legacyTerminalMethod,
+      _meta: { "terminal-auth": { command: "/native/copilot", args: ["login", 42] } },
+    };
+    assert.deepEqual(normalizeAcpRegistryAuthMethods([method], resolved.spawn), []);
+    const h = yield* makeHarness(method);
+    yield* h.controller.start("owner", Effect.void, "copilot-login");
+    const state = yield* h.phase("failed");
+    assert.strictEqual(state.message, "The provider did not advertise this sign-in method.");
+    assert.isUndefined(h.terminalSpawn());
+    assert.deepEqual(h.authenticated, []);
+    assert.deepEqual(h.started, []);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("does not offer legacy terminal sign-in without a PTY", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness(
+      legacyTerminalMethod,
+      false,
+      decodeSettings({ agentId: "test-agent" }),
+      instanceId,
+      false,
+    );
+    const state = yield* h.state((value) => value.methods !== undefined);
+    assert.deepEqual(state.methods, []);
+    assert.isUndefined(h.terminalSpawn());
+    assert.deepEqual(h.authenticated, []);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect("cancels the login PTY and rejects further terminal input", () =>
