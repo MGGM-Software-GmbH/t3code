@@ -224,7 +224,7 @@ it("warns as a banked expiry enters the next 120 hours without polling", async (
   expect(fetch).not.toHaveBeenCalled();
 });
 
-it("uses the earliest pooled expiry while keeping the composer scoped to its account", async () => {
+it("shows each account's expiry while using the earliest expiry for the pooled warning", async () => {
   await using test = await setup();
   const { container, setProviders, render } = test;
   actions.touch = true;
@@ -255,7 +255,23 @@ it("uses the earliest pooled expiry while keeping the composer scoped to its acc
   await act(async () => indicators[0]!.click());
   const popup = document.querySelector('[data-slot="popover-popup"]')!;
   expect(popup.querySelector(`time[datetime="${sooner}"]`)).not.toBeNull();
-  expect(popup.querySelector(`time[datetime="${later}"]`)).toBeNull();
+  expect(popup.querySelector(`time[datetime="${later}"]`)).not.toBeNull();
+  expect(
+    popup.querySelector('[role="group"][aria-label="Team"] time')?.getAttribute("datetime"),
+  ).toBe(later);
+  expect(
+    popup.querySelector('[role="group"][aria-label="Second"] time')?.getAttribute("datetime"),
+  ).toBe(sooner);
+  expect(
+    popup
+      .querySelector(`time[datetime="${later}"]`)
+      ?.classList.contains("text-reset-expiry-foreground"),
+  ).toBe(false);
+  expect(
+    popup
+      .querySelector(`time[datetime="${sooner}"]`)
+      ?.classList.contains("text-reset-expiry-foreground"),
+  ).toBe(true);
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -274,6 +290,29 @@ it("does not warn about banked credits whose expiry was not reported", async () 
   expect(document.querySelector('[data-slot="popover-popup"]')?.textContent).toContain(
     "Next banked reset expiry: not reported",
   );
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("distinguishes accounts without banked resets from accounts with an unreported expiry", async () => {
+  await using test = await setup();
+  const { container, setProviders, render } = test;
+  actions.touch = true;
+  const team = provider(codex, 20, "team@example.test");
+  const other = provider(second, 30, "second@example.test");
+  setProviders([
+    { ...team, usageLimits: { ...team.usageLimits!, resetCredits: { availableCount: 0 } } },
+    { ...other, usageLimits: { ...other.usageLimits!, resetCredits: { availableCount: 2 } } },
+  ]);
+  await render();
+  await act(async () => container.querySelector("button")!.click());
+  const popup = document.querySelector('[data-slot="popover-popup"]')!;
+  expect(popup.querySelector('[role="group"][aria-label="Team"]')?.textContent).toContain(
+    "Next banked reset expiry: none",
+  );
+  expect(popup.querySelector('[role="group"][aria-label="Second"]')?.textContent).toContain(
+    "Next banked reset expiry: not reported",
+  );
+  expect(popup.querySelector("time")).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });
 

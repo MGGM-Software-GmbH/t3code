@@ -1,6 +1,7 @@
 import { useState, type ReactElement, type ReactNode } from "react";
 
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -15,6 +16,7 @@ export function UsageIndicatorDetails({
   desktopHint,
   onActivate,
   onOpen,
+  wide = false,
 }: {
   readonly label: string;
   readonly render: ReactElement;
@@ -24,6 +26,7 @@ export function UsageIndicatorDetails({
   readonly desktopHint: string;
   readonly onActivate: () => void;
   readonly onOpen?: () => void;
+  readonly wide?: boolean;
 }) {
   const touch = useMediaQuery("(hover: none), (pointer: coarse)");
   const [open, setOpen] = useState(false);
@@ -43,6 +46,7 @@ export function UsageIndicatorDetails({
         <PopoverPopup
           side="top"
           width="md"
+          className={wide ? "w-[36rem]" : undefined}
           padding="compact"
           tooltipStyle
           scrollable
@@ -77,8 +81,13 @@ export function UsageIndicatorDetails({
       <TooltipTrigger render={render} aria-label={label} onClick={onActivate}>
         {glyph}
       </TooltipTrigger>
-      <TooltipPopup side="top">
-        <div className="flex w-72 max-w-[calc(100vw-3rem)] flex-col gap-2 text-left">
+      <TooltipPopup side="top" className={wide ? "max-w-[calc(100vw-2rem)]" : undefined}>
+        <div
+          className={cn(
+            "flex max-w-[calc(100vw-3rem)] flex-col gap-2 text-left",
+            wide ? "w-[34rem]" : "w-72",
+          )}
+        >
           {children}
           <div className="text-muted-foreground">{desktopHint}</div>
         </div>

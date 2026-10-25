@@ -22,6 +22,47 @@ import { readUsagePagePreferences, saveUsagePagePreferences } from "./usagePageP
 
 const EMPTY_NOTICES: readonly string[] = [];
 
+function resetExpiringSoon(expiresAt: string | undefined | null, now: number) {
+  const expiresIn = expiresAt ? Date.parse(expiresAt) - now : null;
+  return expiresIn !== null && expiresIn >= 0 && expiresIn <= 120 * 60 * 60_000;
+}
+
+/** Keep the expiry attached to its account and the local timestamp on one line. */
+function BankedResetExpiry({
+  credits,
+  now,
+}: {
+  readonly credits: LimitAccount["limits"]["resetCredits"];
+  readonly now: number;
+}) {
+  return (
+    <div className="flex flex-wrap gap-x-1 text-muted-foreground">
+      <span className="whitespace-nowrap">Next banked reset expiry: </span>
+      <span className="whitespace-nowrap">
+        {credits?.availableCount === 0 ? (
+          "none"
+        ) : credits?.nextExpiresAt ? (
+          <>
+            <time
+              dateTime={credits.nextExpiresAt}
+              className={
+                resetExpiringSoon(credits.nextExpiresAt, now)
+                  ? "text-reset-expiry-foreground"
+                  : undefined
+              }
+            >
+              {formatGermanTimestamp(credits.nextExpiresAt)}
+            </time>{" "}
+            (local time)
+          </>
+        ) : (
+          "not reported"
+        )}
+      </span>
+    </div>
+  );
+}
+
 function accountName(account: LimitAccount) {
   return (
     account.displayName ?? providerClients.get(account.driver)?.label ?? String(account.driver)
@@ -57,16 +98,14 @@ function WeeklyLimitIndicator({
   const summary = summarizeWeeklyLimits(accounts, now);
   const percent = summary.remainingPercent;
   const banked = summary.bankedResets;
-  const expiresIn = summary.nextCreditExpiresAt
-    ? Date.parse(summary.nextCreditExpiresAt) - now
-    : null;
-  const expiringSoon = expiresIn !== null && expiresIn >= 0 && expiresIn <= 120 * 60 * 60_000;
+  const expiringSoon = resetExpiringSoon(summary.nextCreditExpiresAt, now);
   const elapsedDays = summary.elapsedDays;
   const label = `${title}: ${percent === null ? "unavailable" : `${percent}% remaining`}`;
   const time = formatGermanTimestamp;
   const navigate = useNavigate();
   return (
     <UsageIndicatorDetails
+      wide
       render={render}
       label={label}
       onOpen={() => setOpenedAt(Date.now())}
@@ -174,23 +213,11 @@ function WeeklyLimitIndicator({
           {banked !== null && summary.unreportedResetCredits > 0
             ? `; ${summary.unreportedResetCredits} accounts not reported.`
             : null}
-          {banked ? (
-            <div className="text-muted-foreground">
-              Next banked reset expiry:{" "}
-              {summary.nextCreditExpiresAt ? (
-                <>
-                  <time
-                    dateTime={summary.nextCreditExpiresAt}
-                    className={expiringSoon ? "text-reset-expiry-foreground" : undefined}
-                  >
-                    {time(summary.nextCreditExpiresAt)}
-                  </time>{" "}
-                  (local time)
-                </>
-              ) : (
-                "not reported"
-              )}
-            </div>
+          {summary.members.length === 1 ? (
+            <BankedResetExpiry
+              credits={summary.members[0]!.account.limits.resetCredits}
+              now={now}
+            />
           ) : null}
         </div>
         <div>
@@ -200,7 +227,12 @@ function WeeklyLimitIndicator({
         </div>
         {summary.members.length > 1 ? (
           summary.members.map(({ account, window, remainingPercent, elapsedDays }) => (
-            <div key={account.key} className="flex flex-col gap-0.5">
+            <div
+              key={account.key}
+              role="group"
+              aria-label={accountName(account)}
+              className="flex flex-col gap-0.5"
+            >
               <span className="flex justify-between gap-3">
                 <span>{accountName(account)}</span>
                 <span className="shrink-0 tabular-nums">{remainingPercent}% remaining</span>
@@ -216,6 +248,7 @@ function WeeklyLimitIndicator({
                   ? ` · ${account.limits.resetCredits.availableCount} banked resets`
                   : ""}
               </span>
+              <BankedResetExpiry credits={account.limits.resetCredits} now={now} />
             </div>
           ))
         ) : summary.members[0] ? (
