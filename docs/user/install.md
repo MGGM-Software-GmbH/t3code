@@ -68,10 +68,12 @@ its cache on connection and once an hour. An expired cache opens a sign-in dialo
 Enter your Password Depot password, then your TOTP code if requested. T3 passes
 these inputs to the environment's CLI without saving them. The CLI continues to
 own the encrypted cache and its Monday 05:00 expiry policy.
+Unsubmitted inputs remain in the open dialog during a temporary connection loss,
+including when switching to an authenticator app. Submission waits for reconnection.
 
 Choose **Continue in background** while sign-in or the post-login script is
 running to keep using T3. The key control reopens the running operation; any
-required TOTP prompt opens automatically. A toast reports success or failure.
+required TOTP prompt opens automatically. A toast reports background success or failure.
 **Cancel** stops sign-in instead. Keep the browser tab open until it ends.
 
 Use the key control in the sidebar to check again or reopen sign-in after
@@ -87,6 +89,9 @@ T3 runs it from the server user's home without sign-in inputs or interactive
 prompts, waits up to ten minutes, and reports failure without returning script
 output. Status checks and thread starts do not run it. Each environment stores
 its own path; project overrides do not apply.
+If setup fails after sign-in, the dialog reports the script error without asking
+for the password again. The Password Depot connection remains valid. Correct the
+script on that environment; repeating sign-in is not needed to use its cached secrets.
 
 ## Command line
 

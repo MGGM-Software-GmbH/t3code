@@ -330,7 +330,76 @@ it("submits redacted password and TOTP to the selected environment, then closes 
   });
 });
 
-it("keeps the dialog pending until setup ends and exposes a script failure without a success toast", async () => {
+it.each(["password", "totp"] as const)(
+  "preserves the unsubmitted %s input across an environment reconnect",
+  async (phase) => {
+    await using test = await setup();
+    const { registry, setStatus, render } = test;
+    setStatus(dgx, "disconnected");
+    actions.login.mockResolvedValue(AsyncResult.success({ phase: "totp", flowId: "test-flow" }));
+    actions.respond.mockImplementation(() => {
+      setStatus(dgx, "connected");
+      return AsyncResult.success({ phase: "connected" });
+    });
+    await render();
+    if (phase === "totp") {
+      await enter("synthetic-password");
+      await submit();
+    }
+    const value = phase === "password" ? "synthetic-password" : "123456";
+    await enter(value);
+    await act(async () =>
+      registry.set(
+        environmentPresentations.presentationsAtom as Atom.Writable<unknown>,
+        new Map([
+          [wsl, presentation("WSL test")],
+          [dgx, { ...presentation("DGX test"), connection: { phase: "disconnected" } }],
+        ]),
+      ),
+    );
+    expect(credential()?.value).toBe(value);
+    expect(credential().disabled).toBe(true);
+    expect(document.body.textContent).toContain("Waiting for the environment to reconnect.");
+    expect(actions.cancel).not.toHaveBeenCalled();
+    await act(async () =>
+      registry.set(
+        environmentPresentations.presentationsAtom as Atom.Writable<unknown>,
+        new Map([
+          [wsl, presentation("WSL test")],
+          [dgx, presentation("DGX test")],
+        ]),
+      ),
+    );
+    expect(credential().value).toBe(value);
+    expect(credential().disabled).toBe(false);
+    expect(credential().type).toBe(phase === "password" ? "password" : "text");
+    expect(actions.cancel).not.toHaveBeenCalled();
+    await submit();
+    if (phase === "password") {
+      expect(actions.login).toHaveBeenCalledTimes(1);
+      expect(credential().type).toBe("text");
+    } else {
+      expect(actions.respond).toHaveBeenCalledWith({
+        environmentId: dgx,
+        input: { flowId: "test-flow", code: expect.anything() },
+      });
+      await expect.poll(credential).toBeNull();
+    }
+  },
+);
+
+it("preserves an open credential form when checking the connection again", async () => {
+  await using test = await setup();
+  const { container, setStatus, render } = test;
+  setStatus(dgx, "disconnected");
+  await render();
+  await enter("synthetic-password");
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  expect(credential().value).toBe("synthetic-password");
+  expect(actions.login).not.toHaveBeenCalled();
+});
+
+it("reports a script failure as connected setup failure without asking for credentials again", async () => {
   await using test = await setup();
   const { setStatus, render } = test;
   setStatus(dgx, "disconnected");
@@ -356,9 +425,15 @@ it("keeps the dialog pending until setup ends and exposes a script failure witho
     "pd-secrets is connected, but the post-login script failed",
   );
   expect(actions.toast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));
-  expect(credential().value).toBe("");
+  expect(credential()).toBeNull();
+  expect(document.body.textContent).toContain("pd-secrets is connected");
+  expect(document.querySelector('button[type="submit"]')).toBeNull();
+  expect(actions.toast).not.toHaveBeenCalled();
   expect(document.querySelector('[role="status"][aria-busy="true"]')).toBeNull();
   expect(document.querySelector('[role="status"] svg')).toBeNull();
+  await act(async () => button("Close").click());
+  await expect.poll(() => document.querySelector('[role="dialog"]')).toBeNull();
+  expect(actions.login).toHaveBeenCalledTimes(1);
 });
 
 it("keeps a hidden login running and reopens the dialog when TOTP is required", async () => {
@@ -449,7 +524,10 @@ it.each(["login_failed", "post_login_failed"] as const)(
     await expect.poll(credential).toBeNull();
     expect(actions.toast).toHaveBeenCalledWith({
       type: "error",
-      title: "Could not sign in to pd-secrets on DGX test",
+      title:
+        reason === "post_login_failed"
+          ? "pd-secrets setup failed on DGX test"
+          : "Could not sign in to pd-secrets on DGX test",
       description: new PdSecretsError({ reason }).message,
     });
     expect(actions.toast).not.toHaveBeenCalledWith(expect.objectContaining({ type: "success" }));

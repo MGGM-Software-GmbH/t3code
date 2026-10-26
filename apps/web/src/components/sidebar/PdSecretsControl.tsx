@@ -109,6 +109,7 @@ const PdSecretsContext = createContext<{
 /** Keep connection checks alive even while the mobile sidebar is closed. */
 export function PdSecretsProvider({ children }: { readonly children: ReactNode }) {
   const registry = useContext(RegistryContext);
+  const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const snapshots = useAtomValue(snapshotsAtom);
   const installed = snapshots.filter(
     (snapshot) => snapshot.status !== undefined && snapshot.status !== "not-installed",
@@ -117,6 +118,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
   const [flowId, setFlowId] = useState<string>();
   const [value, setValue] = useState("");
   const [error, setError] = useState<string>();
+  const [setupFailed, setSetupFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [background, setBackground] = useState(false);
   const dismissed = useRef(new Set<EnvironmentId>());
@@ -158,7 +160,13 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
     };
   }, [cancel, target]);
   useEffect(() => {
-    if (target && !snapshots.some((snapshot) => snapshot.environmentId === target.environmentId)) {
+    // Mobile browsers reconnect after backgrounding. Keep unsubmitted input in
+    // memory while the environment is offline; only an in-flight RPC is lost.
+    if (
+      target &&
+      (!presentations.has(target.environmentId) ||
+        (pending && !snapshots.some((snapshot) => snapshot.environmentId === target.environmentId)))
+    ) {
       generation.current++;
       if (pending) {
         toastManager.add({
@@ -172,15 +180,17 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
       setFlowId(undefined);
       setValue("");
       setError(undefined);
+      setSetupFailed(false);
       setBackground(false);
     }
-  }, [snapshots, target, pending]);
+  }, [presentations, snapshots, target, pending]);
 
   const open = (next: SignInTarget) => {
     generation.current++;
     setFlowId(undefined);
     setValue("");
     setError(undefined);
+    setSetupFailed(false);
     setBackground(false);
     setTarget(next);
   };
@@ -192,10 +202,11 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
     setFlowId(undefined);
     setValue("");
     setError(undefined);
+    setSetupFailed(false);
     setBackground(false);
   };
   const check = useStableCallback(async () => {
-    if (pending) {
+    if (target || pending) {
       if (target) setBackground(false);
       return;
     }
@@ -253,15 +264,22 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
         }
       } else {
         const failure = squashAtomCommandFailure(result);
+        const isSetupFailure = isPdSecretsError(failure) && failure.reason === "post_login_failed";
         const message = isPdSecretsError(failure)
           ? failure.message
           : "Could not sign in to pd-secrets. Check the environment connection and configuration.";
-        toastManager.add({
-          type: "error",
-          title: `Could not sign in to pd-secrets on ${requestTarget.label}`,
-          description: message,
-        });
+        if (!isSetupFailure || background) {
+          toastManager.add({
+            type: "error",
+            title: isSetupFailure
+              ? `pd-secrets setup failed on ${requestTarget.label}`
+              : `Could not sign in to pd-secrets on ${requestTarget.label}`,
+            description: message,
+          });
+        }
         setError(message);
+        setSetupFailed(isSetupFailure);
+        if (isSetupFailure) dismissed.current.add(requestTarget.environmentId);
         setFlowId(undefined);
         if (background) {
           dismissed.current.add(requestTarget.environmentId);
@@ -307,8 +325,10 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
   const allowed =
     target &&
     snapshots.find((snapshot) => snapshot.environmentId === target.environmentId)?.allowed;
+  const targetConnected =
+    target && presentations.get(target.environmentId)?.connection.phase === "connected";
   const { formRef, inputRef } = usePrivateCredentialSubmit(
-    !!target && !background && !pending && !!allowed,
+    !!target && !background && !pending && !setupFailed && !!allowed,
     () => {
       void submit();
     },
@@ -330,7 +350,11 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
         <DialogPopup data-pd-ignore>
           <DialogHeader>
             <DialogTitle>
-              {pending ? "Signing in to pd-secrets" : "Sign in to pd-secrets"}
+              {pending
+                ? "Signing in to pd-secrets"
+                : setupFailed
+                  ? "pd-secrets is connected"
+                  : "Sign in to pd-secrets"}
             </DialogTitle>
             <DialogDescription>{target?.label}</DialogDescription>
           </DialogHeader>
@@ -350,6 +374,17 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
                 </Button>
                 <Button type="button" onClick={() => setBackground(true)}>
                   Continue in background
+                </Button>
+              </DialogFooter>
+            </>
+          ) : setupFailed ? (
+            <>
+              <p role="alert" className="px-6 pb-6 text-sm text-destructive">
+                {error}
+              </p>
+              <DialogFooter>
+                <Button type="button" onClick={dismiss}>
+                  Close
                 </Button>
               </DialogFooter>
             </>
@@ -391,7 +426,9 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
                 ) : null}
                 {!allowed ? (
                   <p role="alert" className="text-sm text-destructive">
-                    This session cannot manage environment credentials.
+                    {targetConnected
+                      ? "This session cannot manage environment credentials."
+                      : "Waiting for the environment to reconnect."}
                   </p>
                 ) : null}
               </div>
