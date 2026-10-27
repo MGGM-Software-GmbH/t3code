@@ -5,6 +5,28 @@ import { describe, expect, it } from "vite-plus/test";
 import { customThemeNames, renderUniwindThemesCSS } from "./generate-uniwind-themes.mts";
 
 describe("generate mobile Uniwind themes", () => {
+  it("registers every custom palette for both appearances", () => {
+    expect(customThemeNames).toEqual([
+      "t3-chat-light",
+      "t3-chat-dark",
+      "grove-light",
+      "grove-dark",
+      "ocean-light",
+      "ocean-dark",
+      "ember-light",
+      "ember-dark",
+      "iris-light",
+      "iris-dark",
+      "mggm-dark-light",
+      "mggm-dark-dark",
+    ]);
+
+    const stylesheet = renderUniwindThemesCSS();
+    for (const themeName of customThemeNames) {
+      expect(stylesheet.match(new RegExp(`@variant ${themeName} \\{`, "gu"))).toHaveLength(1);
+    }
+  });
+
   it("gives every theme the same variables and a fixed Clerk palette for its appearance", () => {
     const css =
       NodeFS.readFileSync(NodePath.resolve(import.meta.dirname, "../global.css"), "utf8") +

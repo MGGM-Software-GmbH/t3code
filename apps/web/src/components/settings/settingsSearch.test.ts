@@ -52,6 +52,19 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it.each(["model capacity", "same model", "capacity retry minutes"])(
+    "finds the capacity retry setting for %s",
+    (query) => {
+      expect(searchSettings(query).map((item) => item.id)).toContain("model-capacity-retry-delay");
+    },
+  );
+
+  it("finds the slow request warning threshold by the warning text", () => {
+    expect(searchSettings("some requests are slow").map((item) => item.id)).toContain(
+      "slow-request-warning-threshold",
+    );
+  });
+
   it("matches titles, sections, and remembered setting details", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
@@ -134,6 +147,17 @@ describe("searchSettings", () => {
       id: "keybinding-thread.copyReference",
       to: "/settings/keybindings",
     });
+  });
+
+  it("ranks keybinding commands after other settings", () => {
+    const ids = searchSettings("model").map((item) => item.id);
+    expect(ids).toContain("default-model");
+    expect(ids.indexOf("keybinding-modelPicker.toggle")).toBeGreaterThan(
+      ids.indexOf("model-capacity-retry-delay"),
+    );
+    expect(ids.indexOf("keybinding-modelPicker.toggle")).toBeGreaterThan(
+      ids.indexOf("text-generation-model"),
+    );
   });
 
   it("sends commands without a default binding to the section", () => {

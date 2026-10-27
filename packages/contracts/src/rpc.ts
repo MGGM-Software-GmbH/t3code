@@ -24,6 +24,13 @@ import {
   ChatGptHandoffState,
 } from "./providerSetup.ts";
 import * as Schema from "effect/Schema";
+import {
+  PdSecretsStatus,
+  PdSecretsLoginInput,
+  PdSecretsRespondInput,
+  PdSecretsLoginResult,
+  PdSecretsError,
+} from "./pdSecrets.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
@@ -335,6 +342,7 @@ import {
   ProviderConsumeResetCreditResult,
 } from "./providerUsageLimits.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
+import { CodexResetForecast, CodexResetForecastError } from "./codexResetForecast.ts";
 import {
   StorageCleanupReport,
   DatabaseStorageStatus,
@@ -413,6 +421,10 @@ export const WS_METHODS = {
 
   providerUploadFeedback: "provider.uploadFeedback",
   providerAuthStart: "provider.auth.start",
+  pdSecretsStatus: "pd-secrets.status",
+  pdSecretsLogin: "pd-secrets.login",
+  pdSecretsRespond: "pd-secrets.respond",
+  pdSecretsCancel: "pd-secrets.cancel",
   providerConsumeResetCredit: "provider.consumeResetCredit",
   providerAuthComplete: "provider.auth.complete",
   chatGptReconnectProfile: "provider.chatgpt.reconnect-profile",
@@ -512,6 +524,7 @@ export const WS_METHODS = {
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
+  serverGetCodexResetForecast: "server.getCodexResetForecast",
   serverRefreshUsageRates: "server.refreshUsageRates",
 
   scheduledTasksList: "scheduledTasks.list",
@@ -649,6 +662,28 @@ const WsProviderAuthStartRpc = Rpc.make(WS_METHODS.providerAuthStart, {
   payload: ProviderAuthStartInput,
   success: ProviderAuthState,
   error: ProviderSetupRpcError,
+});
+
+const PdSecretsRpcError = Schema.Union([PdSecretsError, EnvironmentAuthorizationError]);
+const WsPdSecretsStatusRpc = Rpc.make(WS_METHODS.pdSecretsStatus, {
+  payload: Schema.Struct({}),
+  success: PdSecretsStatus,
+  error: PdSecretsRpcError,
+});
+const WsPdSecretsLoginRpc = Rpc.make(WS_METHODS.pdSecretsLogin, {
+  payload: PdSecretsLoginInput,
+  success: PdSecretsLoginResult,
+  error: PdSecretsRpcError,
+});
+const WsPdSecretsRespondRpc = Rpc.make(WS_METHODS.pdSecretsRespond, {
+  payload: PdSecretsRespondInput,
+  success: PdSecretsLoginResult,
+  error: PdSecretsRpcError,
+});
+const WsPdSecretsCancelRpc = Rpc.make(WS_METHODS.pdSecretsCancel, {
+  payload: Schema.Struct({}),
+  success: Schema.Void,
+  error: PdSecretsRpcError,
 });
 
 const WsProviderAuthRespondRpc = Rpc.make(WS_METHODS.providerAuthRespond, {
@@ -912,6 +947,16 @@ const WsServerGetUsageSummaryRpc = Rpc.make(WS_METHODS.serverGetUsageSummary, {
   error: Schema.Union([EnvironmentAuthorizationError, UsageReadError]),
 });
 
+const WsServerGetCodexResetForecastRpc = Rpc.make(WS_METHODS.serverGetCodexResetForecast, {
+  payload: Schema.Struct({}),
+  success: CodexResetForecast,
+  error: Schema.Union([EnvironmentAuthorizationError, CodexResetForecastError]),
+});
+
+/**
+ * Refetches the model rate table ahead of its daily TTL, so a model released
+ * since the last fetch gets priced. The next usage summary uses the new table.
+ */
 const WsServerRefreshUsageRatesRpc = Rpc.make(WS_METHODS.serverRefreshUsageRates, {
   payload: Schema.Struct({}),
   success: UsagePricing,
@@ -1922,6 +1967,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpdateProviderRpc,
   WsProviderConsumeResetCreditRpc,
   WsProviderAuthStartRpc,
+  WsPdSecretsStatusRpc,
+  WsPdSecretsLoginRpc,
+  WsPdSecretsRespondRpc,
+  WsPdSecretsCancelRpc,
   WsProviderAuthCompleteRpc,
   WsChatGptReconnectProfileRpc,
   WsChatGptImportProfileRpc,
@@ -1965,6 +2014,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRetryResourceTelemetryRpc,
   WsServerCheckOtlpEndpointRpc,
   WsServerGetUsageSummaryRpc,
+  WsServerGetCodexResetForecastRpc,
   WsServerRefreshUsageRatesRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksListRpc,

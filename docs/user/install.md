@@ -8,7 +8,94 @@ desktop, web, or mobile app. Set up the machine where the agents will work first
 You need an installed, authenticated provider before starting a thread. You can
 launch T3 Code and configure providers afterwards.
 
+## MGGM fork (Linux CLI)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | sh
+```
+
+This installs the latest published stable release from `MGGM-Software-GmbH/t3code`
+for Linux x64 or ARM64 and verifies the archive against that release's `SHA256SUMS`.
+It installs the complete runtime below `~/.t3/runtime/versions` and links
+`~/.local/bin/t3`. Add `~/.local/bin` to `PATH` if needed. Rerun the same command
+to update the fork; `t3 update` follows upstream releases.
+
+To pin a version, pass `T3CODE_VERSION` to `sh`, for example:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | T3CODE_VERSION=0.1.0-mggm.2 sh
+```
+
+In a devcontainer, install the CLI during the image build and check for a new
+release on rebuild. Keep the installed runtime outside the mounted T3 data
+directory so the mount does not hide the CLI. Persist T3 data separately. The
+installer does not start a server or service.
+
+### MGGM team defaults
+
+A new environment enables one Codex instance. Each employee authenticates their
+own Codex CLI with their own team account. Other providers, including the shipped
+Copilot entry, stay off until enabled in Settings. Executables are resolved from
+`PATH`; the fork does not create additional Codex homes or copy account credentials.
+
+New threads use GPT-6.1 Sol, High reasoning, Standard service, and Full Access.
+The model is a favorite; other available Codex models remain selectable. Confirm
+model access with the employee's account before the first team rollout. The
+default does not grant access to a model the account cannot use.
+
+New clients use the MGGM dark theme, interface/prompt/code sizes of 17/16/15,
+the Working shelf, and steering for messages sent during a running turn. Web and
+desktop glass opacity is 90%. Inactivity does not automatically settle threads.
+Limited threads resume at their reported reset time. Automatic pull is enabled
+for clean default-branch checkouts with an upstream and no local commits; pull
+requests default to rebase.
+
+These are adjustable defaults. Existing settings, including implicit values in
+older sparse settings files, are preserved. Provider update checks start off;
+maintain the Codex CLI version through the shared MGGM devcontainer setup.
+
+That setup also supplies the MGGM skills and project rules. Persist writable,
+employee-specific volumes for both the T3 home (`~/.t3`, or `T3CODE_HOME`) and
+Codex home (`~/.codex`, or `CODEX_HOME`) so rebuilds retain threads, settings, and
+the employee's login. Keep these volumes out of shared images and do not share
+one account directory between employees. The installer only installs T3 Code;
+it does not provision Codex, skills, or volume mounts.
+
+### Password Depot sign-in
+
+When `pd-secrets` is installed on a connected environment, the MGGM fork checks
+its cache on connection and once an hour. An expired cache opens a sign-in dialog.
+Enter your Password Depot password, then your TOTP code if requested. T3 passes
+these inputs to the environment's CLI without saving them. The CLI continues to
+own the encrypted cache and its Monday 05:00 expiry policy.
+Unsubmitted inputs remain in the open dialog during a temporary connection loss,
+including when switching to an authenticator app. Submission waits for reconnection.
+
+Choose **Continue in background** while sign-in or the post-login script is
+running to keep using T3. The key control reopens the running operation; any
+required TOTP prompt opens automatically. A toast reports background success or failure.
+**Cancel** stops sign-in instead. Keep the browser tab open until it ends.
+
+Use the key control in the sidebar to check again or reopen sign-in after
+dismissing it. Each environment uses its own installation and cache. Configure
+`pd-secrets` and the `~/.claude/.env` mappings on that host in a terminal before
+using browser sign-in. A session needs permission to maintain the environment
+to sign in.
+
+To run your own setup after sign-in, set **Settings → Sharing & access → pd-secrets →
+Post-login script** for that environment. Enter the path to a Bash script on the
+server, either absolute or beginning with `~/`. Leave it empty to run no script.
+T3 runs it from the server user's home without sign-in inputs or interactive
+prompts, waits up to ten minutes, and reports failure without returning script
+output. Status checks and thread starts do not run it. Each environment stores
+its own path; project overrides do not apply.
+If setup fails after sign-in, the dialog reports the script error without asking
+for the password again. The Password Depot connection remains valid. Correct the
+script on that environment; repeating sign-in is not needed to use its cached secrets.
+
 ## Command line
+
+The following commands install upstream releases.
 
 ```bash
 curl -fsSL https://t3.codes/install.sh | sh

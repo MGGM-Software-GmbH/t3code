@@ -485,6 +485,27 @@ export const make = Effect.fn("MobilePreferencesStore.make")(function* () {
       const legacyJson = yield* secureStorage.getItem(PREFERENCES_KEY);
       const legacyPreferences = parsePayload(legacyJson);
       parsed = legacyPreferences;
+      if (
+        Option.isNone(storedJson) &&
+        fallbackJson === null &&
+        legacyJson === null &&
+        databaseAvailable
+      ) {
+        // Seed a new device once. Sparse or malformed existing preferences keep their
+        // original meanings, including an implicit system theme and queued follow-ups.
+        const initial: Preferences = {
+          themeId: "mggm-dark",
+          darkThemeId: "mggm-dark",
+          themeMode: "dark",
+          baseFontSize: 17,
+          markdownFontSize: 16,
+          codeFontSize: 15,
+          followUpBehavior: "steer",
+          workingShelfEnabled: true,
+        };
+        yield* saveJson(yield* encode(PREFERENCES_KEY, initial));
+        return initial;
+      }
       if (legacyJson !== null && legacyPreferences !== null && databaseAvailable) {
         yield* saveJson(legacyJson);
         yield* secureStorage

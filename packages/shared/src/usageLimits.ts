@@ -524,6 +524,86 @@ export function remainingPercent(window: ServerProviderUsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
 }
 
+/** The account-wide seven-day allowance, never a session or model-specific substitute. */
+export function weeklyLimitWindow(limits: ServerProviderUsageLimits) {
+  if (limitsNotice(limits) !== null) return null;
+  const weekly = limits.windows.filter(
+    (window) =>
+      window.kind === "weekly" &&
+      ["primary", "secondary", "seven_day", "weekly"].includes(window.id) &&
+      (window.windowDurationMins === undefined || window.windowDurationMins === 7 * 24 * 60) &&
+      Number.isFinite(window.usedPercent),
+  );
+  const main = weekly.find((window) => window.id === "seven_day" || window.id === "weekly");
+  return main ?? (weekly.length === 1 ? weekly[0]! : null);
+}
+
+/**
+ * Equal account shares, like the Limits view. Callers deduplicate accounts with
+ * collectLimitAccounts first. Missing weekly allowances stay visible as missing,
+ * and a passed reset never fabricates a fresh balance. Elapsed periods are
+ * averaged separately from quota; banked credits are summed across accounts.
+ */
+export function summarizeWeeklyLimits(accounts: readonly LimitAccount[], now?: number) {
+  const members = accounts.flatMap((account) => {
+    const window = weeklyLimitWindow(account.limits);
+    if (!window) return [];
+    const elapsedDays =
+      now === undefined ? null : elapsedShare({ ...window, windowDurationMins: 10080 }, now);
+    return [
+      {
+        account,
+        window,
+        remainingPercent: remainingPercent(window),
+        elapsedDays: elapsedDays === null ? null : elapsedDays * 7,
+      },
+    ];
+  });
+  const periods = members.flatMap(({ elapsedDays }) => (elapsedDays === null ? [] : [elapsedDays]));
+  const credits = accounts.flatMap((account) =>
+    !account.limits.unavailable && account.limits.resetCredits ? [account.limits.resetCredits] : [],
+  );
+  const creditExpiries = credits.flatMap((credit) => {
+    const expires =
+      credit.availableCount > 0 && credit.nextExpiresAt
+        ? Date.parse(credit.nextExpiresAt)
+        : Number.NaN;
+    return Number.isFinite(expires) ? [expires] : [];
+  });
+  const resets = members.flatMap(({ window }) => {
+    const at = resetMillis(window);
+    return at === null ? [] : [at];
+  });
+  const used = members.reduce(
+    (sum, { window }) => sum + Math.max(0, Math.min(100, window.usedPercent)),
+    0,
+  );
+  const checkedTimes = members
+    .map(({ account }) => Date.parse(account.limits.checkedAt))
+    .filter(Number.isFinite);
+  return {
+    members,
+    missing: accounts.filter((account) => !members.some((member) => member.account === account)),
+    remainingPercent: members.length > 0 ? Math.round(100 - used / members.length) : null,
+    elapsedDays:
+      periods.length > 0 ? periods.reduce((sum, days) => sum + days, 0) / periods.length : null,
+    reportedPeriods: periods.length,
+    bankedResets:
+      credits.length > 0 ? credits.reduce((sum, credit) => sum + credit.availableCount, 0) : null,
+    unreportedResetCredits: accounts.length - credits.length,
+    nextCreditExpiresAt:
+      creditExpiries.length > 0
+        ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...creditExpiries)))
+        : null,
+    nextResetAt:
+      resets.length > 0 ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...resets))) : null,
+    oldestCheckedAt:
+      checkedTimes.length > 0
+        ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...checkedTimes)))
+        : null,
+  };
+}
+
 function resetMillis(window: ServerProviderUsageWindow): number | null {
   if (window.resetsAt === undefined) return null;
   const at = Date.parse(window.resetsAt);

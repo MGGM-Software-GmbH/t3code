@@ -167,6 +167,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   preserveComposerFocusOnPointerDown?: boolean;
   isEditingQueuedMessage: boolean;
   onSubmitMessage: React.MouseEventHandler<HTMLButtonElement>;
+  onSubmitAlternateMessage: () => void;
   onResume: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
@@ -212,6 +213,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         isEditingQueuedMessage={props.isEditingQueuedMessage}
         onSubmitMessage={props.onSubmitMessage}
+        onSubmitAlternateMessage={props.onSubmitAlternateMessage}
         onResume={props.onResume}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}

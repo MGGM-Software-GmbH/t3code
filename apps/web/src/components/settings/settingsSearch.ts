@@ -410,6 +410,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["redesign look style sidebar composer black quieter classic"],
   },
   {
+    id: "model-capacity-retry-delay",
+    title: "Model capacity retry delay",
+    to: "/settings/general",
+    searchTerms: [
+      "selected model at capacity retry minutes recover continue play same model disable",
+    ],
+  },
+  {
     id: "working-shelf",
     title: "Working section",
     to: "/settings/general",
@@ -474,6 +482,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "In-app notifications",
     to: "/settings/general",
     searchTerms: ["notification toast popup completion input approval failure"],
+  },
+  {
+    id: "slow-request-warning-threshold",
+    title: "Slow request warning threshold",
+    to: "/settings/general",
+    searchTerms: ["some requests are slow warning timeout threshold seconds disable"],
   },
   {
     id: "time-format",
@@ -793,6 +807,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Device hosts",
     to: "/settings/devices",
     searchTerms: ["ssh remote simulator emulator ios android mac mini identity key connection"],
+  },
+  {
+    id: "pd-secrets-post-login-script",
+    title: "Post-login script",
+    to: "/settings/access",
+    scope: "environment",
+    searchTerms: ["pd-secrets Password Depot sign in login bash script integration"],
   },
   {
     id: "agent-device-access",
