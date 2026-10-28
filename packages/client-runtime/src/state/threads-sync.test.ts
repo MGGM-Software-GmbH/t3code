@@ -361,6 +361,268 @@ const deleted = (sequence = 3): OrchestrationV2ThreadStreamItem => {
 };
 
 describe("EnvironmentThreads", () => {
+  it.effect.each(["socket", "http", "cache", "gap"] as const)(
+    "loads through pending questions from %s and retains their history across bounded snapshots",
+    (source) =>
+      Effect.gen(function* () {
+        const command = (
+          ordinal: number,
+        ): Extract<OrchestrationV2TurnItem, { type: "command_execution" }> => ({
+          id: TurnItemId.make(`history-${ordinal}`),
+          threadId: THREAD_ID,
+          runId: null,
+          nodeId: null,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal,
+          status: "completed",
+          title: null,
+          startedAt: v2Now,
+          completedAt: v2Now,
+          updatedAt: v2Now,
+          type: "command_execution",
+          input: "pwd",
+          output: "history",
+          exitCode: 0,
+        });
+        const question: OrchestrationV2TurnItem = {
+          ...command(20),
+          type: "user_input_request",
+          nodeId: PENDING_QUESTION.nodeId,
+          requestId: PENDING_QUESTION.id,
+          responseMode: "message",
+          questions: [{ id: "choice", header: "Choice", question: "Continue?", options: [] }],
+        };
+        const projected = (item: OrchestrationV2TurnItem) => ({
+          position: 0,
+          sourceThreadId: THREAD_ID,
+          sourceItemId: item.id,
+          visibility: "local" as const,
+          item,
+        });
+        const wire = (item: OrchestrationV2TurnItem) => ({
+          ...projected(item),
+          item: {
+            ...item,
+            startedAt: "2026-06-20T00:00:00.000Z",
+            completedAt: "2026-06-20T00:00:00.000Z",
+            updatedAt: "2026-06-20T00:00:00.000Z",
+          },
+        });
+        const requested: string[] = [];
+        const gapStarted = yield* Deferred.make<void>();
+        const releaseGap = yield* Deferred.make<void>();
+        const initial = {
+          ...BASE_PROJECTION,
+          runtimeRequests: [PENDING_QUESTION],
+          turnItems: [command(200), question],
+          visibleTurnItems: [projected(command(200))],
+        };
+        const history = {
+          historyCursor: "first",
+          hasMoreHistory: true,
+          latestLocalTurnOrdinal: 200,
+        };
+        const harness = yield* makeHarness({
+          ...(source === "cache" ? { cached: initial, cachedHistory: history } : {}),
+          ...(source === "http"
+            ? {
+                httpSnapshot: {
+                  _tag: "present" as const,
+                  snapshot: { snapshotSequence: 1, projection: initial },
+                  history,
+                },
+              }
+            : {}),
+          historyHttpClient: HttpClient.make((request, url) => {
+            const cursor = url.searchParams.get("cursor")!;
+            requested.push(cursor);
+            if (source === "gap" && cursor === "replacement") {
+              return Effect.gen(function* () {
+                yield* Deferred.succeed(gapStarted, undefined);
+                yield* Deferred.await(releaseGap);
+                return HttpClientResponse.fromWeb(
+                  request,
+                  Response.json({
+                    snapshotSequence: 12,
+                    items: [wire(command(100)), wire(command(200))],
+                    nextCursor: "second",
+                    hasMoreHistory: true,
+                  }),
+                );
+              });
+            }
+            expect(["first", "second"]).toContain(cursor);
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  snapshotSequence: 1,
+                  items: cursor === "first" ? [wire(command(100))] : [wire(question)],
+                  nextCursor: cursor === "first" ? "second" : "before-question",
+                  hasMoreHistory: true,
+                }),
+              ),
+            );
+          }),
+        });
+        if (source === "socket" || source === "gap")
+          yield* Queue.offer(harness.inputs, {
+            ...snapshot(initial),
+            historyCursor: "first",
+            hasMoreHistory: true,
+            latestLocalTurnOrdinal: 200,
+          });
+        yield* awaitThreadState(
+          harness.observed,
+          (state) => state.history.oldestLoadedTurnOrdinal === 20 && !state.history.loading,
+        );
+        expect(requested).toEqual(["first", "second"]);
+        const replacementItems = source === "gap" ? [command(300)] : [command(200), command(201)];
+        const next = {
+          ...initial,
+          turnItems: [...replacementItems, question],
+          visibleTurnItems: replacementItems.map(projected),
+        };
+        yield* Queue.offer(harness.inputs, {
+          ...snapshot(next, 12),
+          historyCursor: "replacement",
+          hasMoreHistory: true,
+          latestLocalTurnOrdinal: source === "gap" ? 300 : 201,
+        });
+        const retained = yield* awaitThreadState(
+          harness.observed,
+          (state) =>
+            Option.isSome(state.data) &&
+            state.data.value.turnItems.some(
+              (item) => item.ordinal === (source === "gap" ? 300 : 201),
+            ),
+        );
+        expect(
+          Option.getOrThrow(retained.data).visibleTurnItems.map((row) => row.item.ordinal),
+        ).toEqual(source === "gap" ? [20, 100, 200, 300] : [20, 100, 200, 201]);
+        if (source === "gap") {
+          yield* Deferred.await(gapStarted);
+          expect(retained.history.historyCursor).toBe("replacement");
+          yield* Deferred.succeed(releaseGap, undefined);
+          yield* awaitThreadState(
+            harness.observed,
+            (state) => state.history.oldestLoadedTurnOrdinal === 20 && !state.history.loading,
+          );
+          expect(requested).toEqual(["first", "second", "replacement", "second"]);
+        } else {
+          expect(retained.history.historyCursor).toBe("before-question");
+          expect(requested).toEqual(["first", "second"]);
+        }
+        yield* Queue.offer(harness.inputs, questionResolved(13));
+        yield* Queue.offer(harness.inputs, {
+          ...snapshot(
+            {
+              ...next,
+              runtimeRequests: [{ ...PENDING_QUESTION, status: "resolved", resolvedAt: v2Now }],
+            },
+            14,
+          ),
+          historyCursor: "replacement",
+          hasMoreHistory: true,
+          latestLocalTurnOrdinal: 201,
+        });
+        const answered = yield* awaitThreadState(
+          harness.observed,
+          (state) => state.history.historyCursor === "replacement",
+        );
+        expect(
+          Option.getOrThrow(answered.data).visibleTurnItems.map((row) => row.item.ordinal),
+        ).toEqual(source === "gap" ? [300] : [200, 201]);
+      }),
+  );
+
+  it.effect.each(["answer", "HTTP error", "stalled cursor"] as const)(
+    "stops automatic question history loading after an in-flight %s",
+    (outcome) =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const question: OrchestrationV2TurnItem = {
+          id: TurnItemId.make("older-question-item"),
+          threadId: THREAD_ID,
+          runId: null,
+          nodeId: PENDING_QUESTION.nodeId,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: 1,
+          status: "completed",
+          title: null,
+          startedAt: v2Now,
+          completedAt: v2Now,
+          updatedAt: v2Now,
+          type: "user_input_request",
+          requestId: PENDING_QUESTION.id,
+          questions: [{ id: "choice", header: "Choice", question: "Continue?", options: [] }],
+        };
+        let requests = 0;
+        const harness = yield* makeHarness({
+          historyHttpClient: HttpClient.make((request) =>
+            Effect.gen(function* () {
+              requests += 1;
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+              if (outcome === "HTTP error" && requests === 1) {
+                return HttpClientResponse.fromWeb(
+                  request,
+                  new Response("Unavailable", { status: 503 }),
+                );
+              }
+              return HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  snapshotSequence: 1,
+                  items: [],
+                  nextCursor: outcome === "stalled cursor" && requests === 1 ? "first" : "next",
+                  hasMoreHistory: requests === 1,
+                }),
+              );
+            }),
+          ),
+        });
+        yield* Queue.offer(harness.inputs, {
+          ...snapshot({
+            ...BASE_PROJECTION,
+            runtimeRequests: [PENDING_QUESTION],
+            turnItems: [question],
+          }),
+          historyCursor: "first",
+          hasMoreHistory: true,
+        });
+        yield* Deferred.await(started);
+        if (outcome === "answer") {
+          yield* Queue.offer(harness.inputs, questionResolved(2));
+          yield* awaitThreadState(
+            harness.observed,
+            (state) =>
+              Option.isSome(state.data) &&
+              state.data.value.runtimeRequests[0]?.status === "resolved",
+          );
+        }
+        yield* Deferred.succeed(release, undefined);
+        yield* awaitThreadState(harness.observed, (state) =>
+          outcome === "answer"
+            ? state.history.historyCursor === "next"
+            : state.history.error !== null,
+        );
+        expect(requests).toBe(1);
+        if (outcome !== "answer") {
+          expect(yield* harness.loadEarlier()).toEqual({ _tag: "loaded" });
+          expect(requests).toBe(2);
+          expect((yield* SubscriptionRef.get(harness.threadState)).history.error).toBeNull();
+        }
+      }),
+  );
+
   it.effect("discards an oversized version-4 cache and requests a fresh bounded snapshot", () =>
     Effect.gen(function* () {
       const item: OrchestrationV2TurnItem = {

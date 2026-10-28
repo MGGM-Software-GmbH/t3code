@@ -3069,6 +3069,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     )
                     AND request.type = 'run_interrupt_request'
                   UNION
+                  SELECT item.rowid AS item_rowid, item.ordinal, item.turn_item_id
+                  FROM orchestration_v2_projection_runtime_requests AS request
+                  CROSS JOIN orchestration_v2_projection_turn_items AS item
+                    ON item.node_id = request.node_id
+                  WHERE request.thread_id = ${threadId}
+                    AND request.kind = 'user_input' AND request.status = 'pending'
+                    AND item.thread_id = ${threadId} AND item.type = 'user_input_request'
+                    AND ${window.rowLimit} > 0 AND ${window.anchorItemId ?? null} IS NULL
+                  UNION
                   SELECT latest.item_rowid, latest.ordinal, latest.turn_item_id
                   FROM (
                     SELECT rowid AS item_rowid, ordinal, turn_item_id
