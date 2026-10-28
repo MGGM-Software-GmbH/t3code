@@ -222,6 +222,52 @@ describe("sidebar collision detection", () => {
 });
 
 describe("sidebar drag projection", () => {
+  it("retains both idle shelves and project labels when an idle thread is pinned", () => {
+    const items = [
+      pinnedHeader,
+      thread("p", "pinned"),
+      divider,
+      marker("active-placeholder"),
+      marker("idle-recent-header"),
+      thread("recent", "active"),
+      marker("idle-projects-header"),
+      marker("idle-project:alpha"),
+      thread("older", "active"),
+      settledHeader,
+    ];
+    const result = preview({ items, settledOrder: [], settledExpanded: false }, "recent", "p");
+    for (const name of [
+      "idle-recent-header",
+      "idle-projects-header",
+      "idle-project:alpha",
+    ] as const) {
+      expect(result.get(sidebarMarkerId(name))?.scaleY).toBe(1);
+    }
+    expect(result.get("older")?.scaleY).toBe(1);
+    expect(result.get(sidebarMarkerId("active-placeholder"))?.scaleY).toBe(0);
+  });
+
+  it("accepts unpinning onto a collapsed idle shelf without treating it as a settled drop", () => {
+    const items = [
+      pinnedHeader,
+      thread("p", "pinned"),
+      divider,
+      marker("active-placeholder"),
+      marker("idle-projects-header"),
+      settledHeader,
+    ];
+    expect(
+      resolveSidebarDropTarget(items, "p", sidebarMarkerId("idle-projects-header"))?.section,
+    ).toBe("active");
+    const result = preview(
+      { items, settledOrder: [], settledExpanded: false },
+      "p",
+      sidebarMarkerId("idle-projects-header"),
+    );
+    expect(result.get(sidebarMarkerId("idle-projects-header"))?.scaleY).toBe(1);
+    expect(result.get(sidebarMarkerId("active-placeholder"))?.scaleY).toBe(0);
+  });
+
   it.each([
     ["a2", "a1"],
     ["p", "a1"],

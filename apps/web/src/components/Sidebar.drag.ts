@@ -16,6 +16,8 @@ type Layout = Parameters<SortingStrategy>[0];
 const isShelfHeader = (item: SidebarListItem | undefined) =>
   item?.kind === "marker" &&
   (item.marker === "working-header" ||
+    item.marker === "idle-recent-header" ||
+    item.marker === "idle-projects-header" ||
     item.marker === "snoozed-header" ||
     item.marker === "settled-header");
 const isBottomShelfHeader = (item: SidebarListItem | undefined) =>
@@ -181,7 +183,34 @@ export function createSidebarSortingStrategy(input: {
       projected.push(...groups.working);
     }
     marker("pinned-divider");
-    section("active");
+    const activeMarkers = new Map<number, SidebarListMarker[]>();
+    let activeRowIndex = 0;
+    for (const item of items) {
+      if (item.kind === "thread" && item.section === "active") activeRowIndex += 1;
+      else if (
+        item.kind === "marker" &&
+        (item.marker.startsWith("idle-") || item.marker === "active-placeholder")
+      ) {
+        const markers = activeMarkers.get(activeRowIndex) ?? [];
+        markers.push(item.marker);
+        activeMarkers.set(activeRowIndex, markers);
+      }
+    }
+    const hasIdleMarkers = items.some(
+      (item) => item.kind === "marker" && item.marker.startsWith("idle-"),
+    );
+    if (hasIdleMarkers) {
+      const activeRows = groups.active;
+      for (let index = 0; index <= Math.max(activeRowIndex, activeRows.length); index += 1) {
+        for (const name of activeMarkers.get(index) ?? []) {
+          if (name !== "active-placeholder" || activeRows.length === 0) marker(name);
+        }
+        const row = activeRows[index];
+        if (row !== undefined) projected.push(row);
+      }
+    } else {
+      section("active");
+    }
     if (
       groups.snoozed.length > 0 ||
       ((active.section !== "snoozed" || (input.snoozedThreadCount ?? 0) > 1) &&

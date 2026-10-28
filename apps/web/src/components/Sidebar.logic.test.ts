@@ -9,6 +9,7 @@ import {
   deleteSelectedThreadEntries,
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
+  groupIdleSidebarThreads,
   resolveSidebarRowThreadId,
   isSidebarThreadWorking,
   orderItemsByPreferredIds,
@@ -662,6 +663,129 @@ function makeThread(overrides: ThreadFixtureOverrides = {}): Thread {
     ...overrides,
   });
 }
+
+describe("groupIdleSidebarThreads", () => {
+  const now = Date.parse("2026-03-10T12:00:00.000Z");
+  const thread = (id: string, updatedAt: string, projectId = "project-1") =>
+    makeThread({
+      id: ThreadId.make(id),
+      projectId: ProjectId.make(projectId),
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt,
+    });
+  const projects = [
+    {
+      projectKey: "zebra",
+      displayName: "Zebra",
+      memberProjectRefs: [
+        { environmentId: localEnvironmentId, projectId: ProjectId.make("project-2") },
+      ],
+    },
+    {
+      projectKey: "alpha",
+      displayName: "Alpha",
+      memberProjectRefs: [
+        { environmentId: localEnvironmentId, projectId: ProjectId.make("project-1") },
+      ],
+    },
+  ];
+
+  it("splits at 24 hours without duplicating threads and lists recent activity first", () => {
+    const result = groupIdleSidebarThreads(
+      [
+        thread("old", "2026-03-09T11:59:59.999Z"),
+        thread("boundary", "2026-03-09T12:00:00.000Z"),
+        thread("latest", "2026-03-10T11:00:00.000Z"),
+      ],
+      projects,
+      now,
+    );
+    expect(result.recent.map((entry) => entry.id)).toEqual(["latest", "boundary"]);
+    expect(result.projectGroups.flatMap((group) => group.threads.map((entry) => entry.id))).toEqual(
+      ["old"],
+    );
+  });
+
+  it("counts a completed response even when the last user message is older", () => {
+    const result = groupIdleSidebarThreads(
+      [
+        {
+          ...thread("response", "2026-03-02T00:00:00.000Z"),
+          latestUserMessageAt: "2026-03-02T00:00:00.000Z",
+          latestRun: makeLatestRun({ completedAt: "2026-03-10T11:00:00.000Z" }),
+        },
+      ],
+      projects,
+      now,
+    );
+    expect(result.recent.map((entry) => entry.id)).toEqual(["response"]);
+  });
+
+  it("uses the project filter order and sorts each project's threads by activity", () => {
+    const result = groupIdleSidebarThreads(
+      [
+        thread("alpha-new", "2026-03-08T11:00:00.000Z"),
+        thread("zebra-old", "2026-03-07T00:00:00.000Z", "project-2"),
+        thread("alpha-old", "2026-03-06T00:00:00.000Z"),
+        thread("zebra-new", "2026-03-08T00:00:00.000Z", "project-2"),
+      ],
+      projects,
+      now,
+    );
+    expect(
+      result.projectGroups.map((group) => [
+        group.displayName,
+        group.threads.map((entry) => entry.id),
+      ]),
+    ).toEqual([
+      ["Zebra", ["zebra-new", "zebra-old"]],
+      ["Alpha", ["alpha-new", "alpha-old"]],
+    ]);
+  });
+
+  it("groups logical project members across environments without merging unrelated project IDs", () => {
+    const remote = EnvironmentId.make("remote");
+    const result = groupIdleSidebarThreads(
+      [
+        thread("local", "2026-03-08T00:00:00.000Z"),
+        { ...thread("remote", "2026-03-07T00:00:00.000Z", "project-2"), environmentId: remote },
+        { ...thread("other", "2026-03-06T00:00:00.000Z"), environmentId: remote },
+      ],
+      [
+        {
+          ...projects[1]!,
+          memberProjectRefs: [
+            ...projects[1]!.memberProjectRefs,
+            { environmentId: remote, projectId: ProjectId.make("project-2") },
+          ],
+        },
+      ],
+      now,
+    );
+    expect(result.projectGroups.map((group) => group.threads.map((entry) => entry.id))).toEqual([
+      ["local", "remote"],
+      ["other"],
+    ]);
+  });
+
+  it("moves a recent thread into its project as the clock passes the boundary", () => {
+    const threads = [thread("aging", "2026-03-09T12:00:00.000Z")];
+    expect(groupIdleSidebarThreads(threads, projects, now).recent).toHaveLength(1);
+    const result = groupIdleSidebarThreads(threads, projects, now + 60_000);
+    expect(result.recent).toEqual([]);
+    expect(result.projectGroups[0]?.threads.map((entry) => entry.id)).toEqual(["aging"]);
+  });
+
+  it("ignores invalid timestamps and keeps ties deterministic", () => {
+    const threads = [thread("b", "invalid"), thread("a", "invalid")];
+    expect(
+      groupIdleSidebarThreads(threads, projects, now).projectGroups[0]?.threads.map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["a", "b"]);
+    expect(groupIdleSidebarThreads([], projects, now)).toEqual({ recent: [], projectGroups: [] });
+  });
+});
 
 describe("getFallbackThreadIdAfterDelete", () => {
   it("skips other threads being deleted in the same action", () => {

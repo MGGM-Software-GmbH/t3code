@@ -1,4 +1,5 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode } from "react";
@@ -102,7 +103,12 @@ export function SidebarDragBoundary(props: {
 }
 
 export function SidebarSectionHeader(props: {
-  marker: "working-header" | "snoozed-header" | "settled-header";
+  marker:
+    | "working-header"
+    | "idle-recent-header"
+    | "idle-projects-header"
+    | "snoozed-header"
+    | "settled-header";
   label: string;
   /** A muted trailing count; classic shows it only while the shelf is collapsed. */
   count: number;
@@ -113,12 +119,7 @@ export function SidebarSectionHeader(props: {
   /** The first shelf at the bottom of the list hosts the undo notice just above itself. */
   hostsUndoNotice?: boolean;
 }) {
-  const shelf =
-    props.marker === "working-header"
-      ? "working"
-      : props.marker === "snoozed-header"
-        ? "snoozed"
-        : "settled";
+  const shelf = props.marker.slice(0, -"-header".length);
   const redesign = useClientSettings((s) => s.redesignEnabled);
   const collapsedCount = props.toggle.expanded ? null : props.count;
   const count = redesign ? props.count : collapsedCount;
@@ -145,6 +146,19 @@ export function SidebarSectionHeader(props: {
         {props.label}
         {!redesign && collapsedCount !== null ? ` (${collapsedCount})` : null}
       </CollapsibleSectionHeader>
+    </SortableSidebarMarker>
+  );
+}
+
+export function SidebarIdleProjectHeader(props: { projectKey: string; label: string }) {
+  return (
+    <SortableSidebarMarker marker={`idle-project:${props.projectKey}`}>
+      <div className="flex h-7 items-center px-2.5 text-xs font-medium text-sidebar-muted-foreground">
+        <Tooltip>
+          <TooltipTrigger render={<span className="truncate" />}>{props.label}</TooltipTrigger>
+          <TooltipPopup side="right">{props.label}</TooltipPopup>
+        </Tooltip>
+      </div>
     </SortableSidebarMarker>
   );
 }

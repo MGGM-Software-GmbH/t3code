@@ -130,8 +130,15 @@ This is on by default. Turn it off with **Settings → General → Working secti
 or **Settings → General → Working section** on iOS and Android. Each device keeps its own
 choice.
 
-While this is on, the active list is ordered by when each thread last came back to you, so you
-cannot drag or move threads within it. Your saved order returns when you turn it off.
+On web and desktop, idle threads with activity in the last 24 hours appear in **Idle 24h**,
+with the most recently active first. Older idle threads appear in **Idle Projects**, grouped
+in the same project order as the project filter and sorted by recent activity within each
+project. Responses and completed runs count as activity. Both sections can be collapsed;
+the currently open thread remains visible. Pinned, snoozed, and settled threads retain
+their separate sections. Idle sections use activity order rather than manual thread order.
+
+On iOS and Android, enabling Working orders the active list by when each thread last came
+back to you. Turn it off to restore your saved order there.
 
 ## Settle finished work
 

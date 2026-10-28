@@ -28,6 +28,7 @@ import {
   type ThreadSortInput,
 } from "../lib/threadSort";
 import type { SidebarThreadSummary, Thread } from "../types";
+import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import { normalizeSearchText } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
 import { observeIntersection } from "../lib/observeIntersection";
@@ -185,6 +186,9 @@ export type SidebarListMarker =
   | "settled-placeholder"
   | "pinned-divider"
   | "working-header"
+  | "idle-recent-header"
+  | "idle-projects-header"
+  | `idle-project:${string}`
   | "snoozed-header"
   | "settled-header";
 
@@ -953,6 +957,78 @@ export {
 
 export { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
 export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
+
+export function groupIdleSidebarThreads<
+  TThread extends Pick<
+    SidebarThreadSummary,
+    | "id"
+    | "environmentId"
+    | "projectId"
+    | "createdAt"
+    | "updatedAt"
+    | "latestUserMessageAt"
+    | "latestRun"
+  >,
+>(
+  threads: readonly TThread[],
+  projects: readonly Pick<
+    SidebarProjectSnapshot,
+    "projectKey" | "displayName" | "memberProjectRefs"
+  >[],
+  now: number,
+) {
+  const projectByRef = new Map<string, (typeof projects)[number]>(
+    projects.flatMap((project) =>
+      project.memberProjectRefs.map(
+        (ref) => [`${ref.environmentId}:${ref.projectId}`, project] as const,
+      ),
+    ),
+  );
+  const activity = (thread: TThread) =>
+    Math.max(
+      ...[
+        thread.createdAt,
+        thread.updatedAt,
+        thread.latestUserMessageAt,
+        thread.latestRun?.requestedAt,
+        thread.latestRun?.startedAt,
+        thread.latestRun?.completedAt,
+      ].map((timestamp) => toSortableTimestamp(timestamp ?? undefined) ?? 0),
+    );
+  const sorted = threads
+    .map((thread) => ({ thread, activity: activity(thread) }))
+    .sort(
+      (left, right) =>
+        right.activity - left.activity ||
+        left.thread.environmentId.localeCompare(right.thread.environmentId) ||
+        left.thread.id.localeCompare(right.thread.id),
+    );
+  const recent: TThread[] = [];
+  const groups = new Map<string, { projectKey: string; displayName: string; threads: TThread[] }>();
+  for (const { thread, activity: timestamp } of sorted) {
+    if (timestamp >= now - 24 * 60 * 60 * 1000) {
+      recent.push(thread);
+      continue;
+    }
+    const refKey = `${thread.environmentId}:${thread.projectId}`;
+    const project = projectByRef.get(refKey);
+    const projectKey = project?.projectKey ?? refKey;
+    let group = groups.get(projectKey);
+    if (group === undefined) {
+      group = { projectKey, displayName: project?.displayName ?? "Unknown project", threads: [] };
+      groups.set(projectKey, group);
+    }
+    group.threads.push(thread);
+  }
+  const projectRank = new Map(projects.map((project, index) => [project.projectKey, index]));
+  const projectGroups = [...groups.values()].sort(
+    (left, right) =>
+      (projectRank.get(left.projectKey) ?? Number.MAX_SAFE_INTEGER) -
+        (projectRank.get(right.projectKey) ?? Number.MAX_SAFE_INTEGER) ||
+      left.projectKey.localeCompare(right.projectKey),
+  );
+  return { recent, projectGroups };
+}
 
 const EMPTY_CONTENT_MATCH_KEYS: ReadonlySet<string> = new Set<string>();
 
