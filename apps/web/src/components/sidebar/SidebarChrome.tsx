@@ -212,6 +212,14 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               onClick={handlePullRequestsClick}
             />
           ) : null}
+          <SidebarUtilityItem
+            icon={<span aria-hidden>#</span>}
+            label="Fälle"
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/cases" });
+            }}
+          />
         </>
       )}
       <PdSecretsControl />

@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./state/fogbugz": "./src/state/fogbugz.ts",
     "./zip/bounded-zip": {
       "types": "./src/zip/boundedZip.ts",
       "default": "./src/zip/boundedZip.ts"

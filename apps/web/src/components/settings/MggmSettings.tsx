@@ -8,14 +8,20 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import { FogBugzSettings } from "./FogBugzSettings";
+import { useSettingsScope } from "./SettingsScopeContext";
 
 export function MggmSettingsPanel() {
+  const { target } = useSettingsScope();
   const settings = useScopedSettings();
   const enabled = settings.mggmThreadSidebarEnabled;
   const updateSettings = useUpdateScopedSettings();
 
   return (
     <SettingsPageContainer>
+      {target ? (
+        <FogBugzSettings key={target.environmentId} environmentId={target.environmentId} />
+      ) : null}
       <SettingsSection title="MGGM">
         <SettingsRow
           {...searchableSetting("mggm-thread-sidebar")}

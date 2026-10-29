@@ -1468,6 +1468,16 @@ function OpenCommandPaletteDialog(props: {
   if (environments.some((environment) => environment.serverConfig !== null)) {
     actionItems.push({
       kind: "action",
+      value: "action:fogbugz-cases",
+      searchTerms: ["fogbugz", "cases", "tickets", "fälle"],
+      title: "Open Fälle",
+      icon: <span aria-hidden>#</span>,
+      run: async () => {
+        await navigate({ to: "/cases" });
+      },
+    });
+    actionItems.push({
+      kind: "action",
       value: "action:pull-requests",
       searchTerms: [
         ...new Set(

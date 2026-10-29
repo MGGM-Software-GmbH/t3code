@@ -1,5 +1,15 @@
 # Settings and project overrides
 
+## FogBugz
+
+In **Settings > MGGM**, select an environment and connect your existing MGGM FogBugz account using its base URL, username and password. The environment stores the API token in its server-side secret store. Use **Test connection**, **Update connection**, or **Disconnect** to manage it. Assign one FogBugz project to each T3 project using the projects visible to your account.
+
+Open **Fälle** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. **New thread** creates a linked thread without starting an agent run. Existing threads appear as direct links; a thread can also link a case by number or remove that association.
+
+Linked threads open the case in the existing Browser panel using the selected browser profile. Browser sign-in is separate from API authentication. Changing the FogBugz server or account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. File synchronization and FogBugz comment editing are not included.
+
+## Settings scope
+
 On web and desktop, the "Applying settings for …" sentence at the top of Settings pages picks
 the project and environment a change applies to. Pages that only hold device preferences, such as
 Appearance, don't show it. They start at **All projects** and **All environments**

@@ -1,0 +1,313 @@
+import { useAtomValue } from "@effect/atom-react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { CommandId, EnvironmentId, ProjectId, type FogBugzCase } from "@t3tools/contracts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+import { fogbugzEnvironment } from "../../state/fogbugz";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import { useProjects } from "../../state/entities";
+import { environmentServerConfigsAtom } from "../../state/server";
+import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/query";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
+import { buildThreadRouteParams } from "../../threadRoutes";
+import { newThreadId } from "../../lib/utils";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { SidebarInset } from "../ui/sidebar";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+
+export function FogBugzCasesPage() {
+  const primary = usePrimaryEnvironmentId();
+  const { environments } = useEnvironments();
+  const [selected, setSelected] = useState<EnvironmentId | null>(null);
+  const environmentId = selected ?? primary;
+  return (
+    <SidebarInset className="h-dvh min-w-0">
+      <header className="flex min-h-14 flex-wrap items-center gap-3 border-b pr-4 pl-14">
+        <h1 className="text-lg font-semibold">Fälle</h1>
+        <div className="ml-auto">
+          <Select
+            value={environmentId ?? ""}
+            onValueChange={(value) => {
+              if (value) setSelected(EnvironmentId.make(value));
+            }}
+          >
+            <SelectTrigger aria-label="Environment">
+              <SelectValue>
+                {environments.find((item) => item.environmentId === environmentId)?.label ??
+                  "Select environment"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {environments.map((item) => (
+                <SelectItem key={item.environmentId} value={item.environmentId}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </div>
+      </header>
+      {environmentId ? (
+        <Cases key={environmentId} environmentId={environmentId} />
+      ) : (
+        <p className="p-4">Connect to an environment to load cases.</p>
+      )}
+    </SidebarInset>
+  );
+}
+
+function Cases({ environmentId }: { environmentId: EnvironmentId }) {
+  const navigate = useNavigate();
+  const projects = useProjects().filter((item) => item.environmentId === environmentId);
+  const configs = useAtomValue(environmentServerConfigsAtom);
+  const config = configs.get(environmentId);
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const [state, setState] = useState<"open" | "closed" | "all">("open");
+  const [assigned, setAssigned] = useState("me");
+  const [projectId, setProjectId] = useState("all");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const status = useEnvironmentQuery(fogbugzEnvironment.status({ environmentId, input: {} }));
+  const cases = useEnvironmentQuery(
+    status.data?.connection?.authenticated
+      ? fogbugzEnvironment.cases({
+          environmentId,
+          input: {
+            query: search,
+            state,
+            assignedToMe: assigned === "me",
+            ...(projectId === "all" ? {} : { projectId: ProjectId.make(projectId) }),
+          },
+        })
+      : null,
+  );
+  const create = useAtomCommand(fogbugzEnvironment.createThread);
+  const permission = useAtomValue(fogbugzEnvironment.createThread.permissionAtom(environmentId));
+  const linked = status.data?.projects ?? [];
+
+  async function createThread(item: FogBugzCase, target: ProjectId) {
+    if (!config) return;
+    const project = projects.find((candidate) => candidate.id === target);
+    const settings = resolveProjectSettings(config.settings, target, project);
+    const modelSelection =
+      settings.settings.defaultModelSelection ??
+      resolveProjectDefaultProviderModelSelection(config.providers, config.settings, target);
+    if (!modelSelection) {
+      setError("Configure a provider and default model before creating a thread.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const threadId = newThreadId();
+    const result = await create({
+      environmentId,
+      input: {
+        commandId: CommandId.make(`fogbugz-create-${threadId}`),
+        threadId,
+        projectId: target,
+        caseId: item.id,
+        modelSelection,
+      },
+    });
+    setBusy(false);
+    if (result._tag === "Failure") setError(formatEnvironmentQueryError(result.cause));
+    if (result._tag === "Success")
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(environmentId, result.value)),
+      });
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b p-4">
+        <form
+          className="flex min-w-0 flex-1 basis-full gap-2 sm:basis-64"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSearch(query);
+          }}
+        >
+          <Input
+            aria-label="Search cases"
+            value={query}
+            placeholder="Search cases"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <Button variant="outline" type="submit">
+            Search
+          </Button>
+        </form>
+        <div className="w-36">
+          <Select
+            value={state}
+            onValueChange={(value) => {
+              if (value === "open" || value === "closed" || value === "all") setState(value);
+            }}
+          >
+            <SelectTrigger aria-label="Case status">
+              <SelectValue>
+                {state === "open" ? "Open" : state === "closed" ? "Closed" : "All statuses"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="closed">Closed</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
+            </SelectPopup>
+          </Select>
+        </div>
+        <div className="w-44">
+          <Select
+            value={assigned}
+            onValueChange={(value) => {
+              if (value) setAssigned(value);
+            }}
+          >
+            <SelectTrigger aria-label="Assignee">
+              <SelectValue>{assigned === "me" ? "Assigned to me" : "All assignees"}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="me">Assigned to me</SelectItem>
+              <SelectItem value="all">All assignees</SelectItem>
+            </SelectPopup>
+          </Select>
+        </div>
+        <div className="w-48">
+          <Select
+            value={projectId}
+            onValueChange={(value) => {
+              if (value) setProjectId(value);
+            }}
+          >
+            <SelectTrigger aria-label="T3 project">
+              <SelectValue>
+                {projects.find((item) => item.id === projectId)?.title ?? "All linked projects"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="all">All linked projects</SelectItem>
+              {projects
+                .filter((item) => linked.some((link) => link.projectId === item.id))
+                .map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.title}
+                  </SelectItem>
+                ))}
+            </SelectPopup>
+          </Select>
+        </div>
+        <Button
+          variant="outline"
+          disabled={cases.isPending}
+          onClick={() => {
+            status.refresh();
+            cases.refresh();
+          }}
+        >
+          Refresh
+        </Button>
+      </div>
+      {status.error || cases.error || error ? (
+        <p role="alert" className="p-4 text-destructive">
+          {error ?? cases.error ?? status.error}
+        </p>
+      ) : null}
+      {(!status.data && status.isPending) ||
+      (status.data?.connection?.authenticated && cases.isPending) ? (
+        <p role="status" className="p-4 text-muted-foreground">
+          Loading cases…
+        </p>
+      ) : null}
+      {status.isSuccess && !status.data?.connection?.authenticated ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>Connect FogBugz</EmptyTitle>
+            <EmptyDescription>
+              <Link to="/settings/mggm">Set up your account in Settings &gt; MGGM.</Link>
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
+      {status.data?.connection?.authenticated && linked.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>Link a project</EmptyTitle>
+            <EmptyDescription>
+              <Link to="/settings/mggm">Assign a FogBugz project in Settings &gt; MGGM.</Link>
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
+      {cases.isSuccess && linked.length > 0 && cases.data?.cases.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>No matching cases</EmptyTitle>
+            <EmptyDescription>Change the search or filters, or refresh the list.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
+      <div className="min-h-0 flex-1 overflow-auto">
+        {cases.data?.cases.map((item) => (
+          <article key={item.id} className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
+            <div className="min-w-0 flex-1 basis-64">
+              <div className="flex gap-2">
+                <span className="text-muted-foreground">#{item.id}</span>
+                <h2 className="break-words font-medium">{item.title}</h2>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {item.projectName} · {item.status}
+              </p>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                {cases.data?.threads
+                  .filter((thread) => thread.caseId === item.id)
+                  .map((thread) => (
+                    <Link
+                      key={thread.threadId}
+                      className="text-sm text-primary underline"
+                      to="/$environmentId/$threadId"
+                      params={buildThreadRouteParams(
+                        scopeThreadRef(environmentId, thread.threadId),
+                      )}
+                    >
+                      {thread.title}
+                    </Link>
+                  ))}
+              </div>
+            </div>
+            {linked
+              .filter(
+                (link) =>
+                  link.fogbugzProjectId === item.projectId &&
+                  (projectId === "all" || link.projectId === projectId),
+              )
+              .map((link) => (
+                <Button
+                  key={link.projectId}
+                  variant="outline"
+                  disabled={busy || !permission}
+                  onClick={() => void createThread(item, link.projectId)}
+                >
+                  New thread
+                  {linked.filter((candidate) => candidate.fogbugzProjectId === item.projectId)
+                    .length > 1
+                    ? ` · ${projects.find((project) => project.id === link.projectId)?.title}`
+                    : ""}
+                </Button>
+              ))}
+          </article>
+        ))}
+      </div>
+      {cases.data?.truncated ? (
+        <p className="p-3 text-sm text-muted-foreground">
+          Showing the first 200 results. Narrow your search.
+        </p>
+      ) : null}
+    </div>
+  );
+}
