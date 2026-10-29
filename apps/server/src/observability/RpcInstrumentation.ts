@@ -11,6 +11,16 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
 // Trace queries and dashboards depend on these labels, including deviations from method prefixes.
 const RPC_AGGREGATES = {
+  [WS_METHODS.fogbugzStatus]: "server",
+  [WS_METHODS.fogbugzConnect]: "server",
+  [WS_METHODS.fogbugzDisconnect]: "server",
+  [WS_METHODS.fogbugzTest]: "server",
+  [WS_METHODS.fogbugzProjects]: "server",
+  [WS_METHODS.fogbugzLinkProject]: "server",
+  [WS_METHODS.fogbugzCases]: "server",
+  [WS_METHODS.fogbugzThread]: "server",
+  [WS_METHODS.fogbugzLinkThread]: "server",
+  [WS_METHODS.fogbugzCreateThread]: "server",
   [WS_METHODS.pdSecretsStatus]: "server",
   [WS_METHODS.pdSecretsLogin]: "server",
   [WS_METHODS.pdSecretsRespond]: "server",

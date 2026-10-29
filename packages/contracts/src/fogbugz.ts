@@ -1,0 +1,86 @@
+import * as Schema from "effect/Schema";
+import { CommandId, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ModelSelection } from "./modelSelection.ts";
+
+export const FogBugzId = Schema.Int.check(Schema.isGreaterThan(0));
+export const FogBugzProject = Schema.Struct({ id: FogBugzId, name: Schema.String });
+export const FogBugzConnection = Schema.Struct({
+  id: Schema.String,
+  baseUrl: Schema.String,
+  username: Schema.String,
+  personId: FogBugzId,
+  personName: Schema.String,
+  authenticated: Schema.Boolean,
+});
+export type FogBugzConnection = typeof FogBugzConnection.Type;
+export const FogBugzProjectLink = Schema.Struct({
+  projectId: ProjectId,
+  fogbugzProjectId: FogBugzId,
+});
+export const FogBugzStatus = Schema.Struct({
+  connection: Schema.NullOr(FogBugzConnection),
+  projects: Schema.Array(FogBugzProjectLink),
+});
+export const FogBugzCase = Schema.Struct({
+  id: FogBugzId,
+  title: Schema.String,
+  projectId: FogBugzId,
+  projectName: Schema.String,
+  status: Schema.String,
+  open: Schema.Boolean,
+  assignedTo: Schema.Int,
+});
+export type FogBugzCase = typeof FogBugzCase.Type;
+export const FogBugzThreadLink = Schema.Struct({
+  threadId: ThreadId,
+  projectId: ProjectId,
+  caseId: FogBugzId,
+  title: Schema.String,
+  url: Schema.String,
+});
+export const FogBugzCaseList = Schema.Struct({
+  cases: Schema.Array(FogBugzCase),
+  threads: Schema.Array(FogBugzThreadLink),
+  truncated: Schema.Boolean,
+});
+export const FogBugzConnectInput = Schema.Struct({
+  baseUrl: TrimmedNonEmptyString,
+  username: TrimmedNonEmptyString,
+  password: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)),
+});
+export const FogBugzCasesInput = Schema.Struct({
+  query: Schema.String.check(Schema.isMaxLength(200)),
+  state: Schema.Literals(["open", "closed", "all"]),
+  assignedToMe: Schema.Boolean,
+  projectId: Schema.optionalKey(ProjectId),
+});
+export const FogBugzLinkThreadInput = Schema.Struct({
+  threadId: ThreadId,
+  caseId: Schema.NullOr(FogBugzId),
+});
+export const FogBugzCreateThreadInput = Schema.Struct({
+  commandId: CommandId,
+  threadId: ThreadId,
+  projectId: ProjectId,
+  caseId: FogBugzId,
+  modelSelection: ModelSelection,
+});
+
+const messages = {
+  connection_required: "Configure FogBugz in Settings > MGGM first.",
+  authentication: "FogBugz sign-in failed or expired. Sign in again in Settings > MGGM.",
+  network: "Could not reach the FogBugz API.",
+  response: "FogBugz returned an invalid API response.",
+  access: "The FogBugz case or project is not accessible to this account.",
+  url: "Use an HTTPS base URL without credentials, a query, or a fragment. Localhost HTTP is allowed for development.",
+  storage: "Could not save or load the FogBugz integration.",
+  project: "Link this T3 project to the case's FogBugz project first.",
+  thread: "Could not create or load the T3 thread.",
+} as const;
+export class FogBugzError extends Schema.TaggedError<FogBugzError>()("FogBugzError", {
+  code: Schema.Literals(Object.keys(messages) as Array<keyof typeof messages>),
+}) {
+  override get message() {
+    return messages[this.code];
+  }
+}

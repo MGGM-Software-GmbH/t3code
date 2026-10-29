@@ -1,4 +1,7 @@
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
+import { FogBugzService } from "./fogbugz/FogBugzService.ts";
+import { FogBugzError } from "@t3tools/contracts";
+import * as FogBugzThreads from "./fogbugz/FogBugzThreads.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -271,6 +274,7 @@ import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
+const isFogBugzError = Schema.is(FogBugzError);
 
 const resolveDiscoveryForConfig = <A, E, R>(
   discovery: Effect.Effect<A, E, R>,
@@ -1329,6 +1333,7 @@ export const layerWsRpc = (
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const providerAuth = yield* ProviderAuthService.ProviderAuthService;
       const pdSecrets = yield* PdSecrets.PdSecrets;
+      const fogbugz = yield* FogBugzService;
       const providerInstallation = yield* makeProviderInstallation();
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
@@ -2454,6 +2459,31 @@ export const layerWsRpc = (
           }),
         [WS_METHODS.providerAuthStart]: (input) => providerAuth.start(input, currentSessionId),
         [WS_METHODS.pdSecretsStatus]: () => pdSecrets.status(),
+        [WS_METHODS.fogbugzStatus]: () => fogbugz.status(),
+        [WS_METHODS.fogbugzConnect]: (input) => fogbugz.connect(input),
+        [WS_METHODS.fogbugzDisconnect]: () => fogbugz.disconnect(),
+        [WS_METHODS.fogbugzTest]: () => fogbugz.test(),
+        [WS_METHODS.fogbugzProjects]: () => fogbugz.projects(),
+        [WS_METHODS.fogbugzLinkProject]: (input) => fogbugz.linkProject(input),
+        [WS_METHODS.fogbugzCases]: (input) => fogbugz.cases(input),
+        [WS_METHODS.fogbugzThread]: (input) => fogbugz.thread(input.threadId),
+        [WS_METHODS.fogbugzLinkThread]: (input) => fogbugz.linkThread(input),
+        [WS_METHODS.fogbugzCreateThread]: (input) =>
+          startup
+            .enqueueCommand(
+              FogBugzThreads.createThread(input).pipe(
+                Effect.provideService(FogBugzService, fogbugz),
+                Effect.provideService(
+                  ThreadManagementService.ThreadManagementService,
+                  threadManagement,
+                ),
+              ),
+            )
+            .pipe(
+              Effect.mapError((error) =>
+                isFogBugzError(error) ? error : new FogBugzError({ code: "thread" }),
+              ),
+            ),
         [WS_METHODS.pdSecretsLogin]: (input) => pdSecrets.login(input, currentSessionId),
         [WS_METHODS.pdSecretsRespond]: (input) => pdSecrets.respond(input, currentSessionId),
         [WS_METHODS.pdSecretsCancel]: () => pdSecrets.cancel(currentSessionId),

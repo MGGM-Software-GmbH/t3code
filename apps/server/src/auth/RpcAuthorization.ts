@@ -38,6 +38,10 @@ import type * as RpcGroup from "effect/rpc/RpcGroup";
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
 export const RPC_REQUIRED_SCOPES = {
+  [WS_METHODS.fogbugzStatus]: AuthOrchestrationReadScope,
+  [WS_METHODS.fogbugzProjects]: AuthOrchestrationReadScope,
+  [WS_METHODS.fogbugzCases]: AuthOrchestrationReadScope,
+  [WS_METHODS.fogbugzThread]: AuthOrchestrationReadScope,
   [WS_METHODS.pdSecretsStatus]: AuthOrchestrationReadScope,
   ...CLIENT_GUARDED_RPC_SCOPES,
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,

@@ -34,6 +34,20 @@ import {
   ChatGptHandoffState,
 } from "./providerSetup.ts";
 import * as Schema from "effect/Schema";
+import { ProjectId, ThreadId } from "./baseSchemas.ts";
+import {
+  FogBugzConnection,
+  FogBugzStatus,
+  FogBugzProject,
+  FogBugzCaseList,
+  FogBugzThreadLink,
+  FogBugzError,
+  FogBugzConnectInput,
+  FogBugzCasesInput,
+  FogBugzLinkThreadInput,
+  FogBugzCreateThreadInput,
+  FogBugzId,
+} from "./fogbugz.ts";
 import {
   PdSecretsStatus,
   PdSecretsLoginInput,
@@ -433,6 +447,16 @@ export const WS_METHODS = {
   providerUploadFeedback: "provider.uploadFeedback",
   providerAuthStart: "provider.auth.start",
   pdSecretsStatus: "pd-secrets.status",
+  fogbugzStatus: "fogbugz.status",
+  fogbugzConnect: "fogbugz.connect",
+  fogbugzDisconnect: "fogbugz.disconnect",
+  fogbugzTest: "fogbugz.test",
+  fogbugzProjects: "fogbugz.projects",
+  fogbugzLinkProject: "fogbugz.link-project",
+  fogbugzCases: "fogbugz.cases",
+  fogbugzThread: "fogbugz.thread",
+  fogbugzLinkThread: "fogbugz.link-thread",
+  fogbugzCreateThread: "fogbugz.create-thread",
   pdSecretsLogin: "pd-secrets.login",
   pdSecretsRespond: "pd-secrets.respond",
   pdSecretsCancel: "pd-secrets.cancel",
@@ -1969,6 +1993,56 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 ) {}
 
 export const WsRpcGroup = RpcGroup.make(
+  Rpc.make(WS_METHODS.fogbugzStatus, {
+    payload: Schema.Struct({}),
+    success: FogBugzStatus,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzConnect, {
+    payload: FogBugzConnectInput,
+    success: FogBugzConnection,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzDisconnect, {
+    payload: Schema.Struct({}),
+    success: Schema.Void,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzTest, {
+    payload: Schema.Struct({}),
+    success: FogBugzConnection,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzProjects, {
+    payload: Schema.Struct({}),
+    success: Schema.Array(FogBugzProject),
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzLinkProject, {
+    payload: Schema.Struct({ projectId: ProjectId, fogbugzProjectId: Schema.NullOr(FogBugzId) }),
+    success: Schema.Void,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzCases, {
+    payload: FogBugzCasesInput,
+    success: FogBugzCaseList,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzThread, {
+    payload: Schema.Struct({ threadId: ThreadId }),
+    success: Schema.NullOr(FogBugzThreadLink),
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzLinkThread, {
+    payload: FogBugzLinkThreadInput,
+    success: Schema.Void,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzCreateThread, {
+    payload: FogBugzCreateThreadInput,
+    success: ThreadId,
+    error: FogBugzError,
+  }),
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,

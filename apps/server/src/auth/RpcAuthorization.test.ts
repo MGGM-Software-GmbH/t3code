@@ -43,6 +43,31 @@ describe("RPC authorization scopes", () => {
     }
   });
 
+  it("guards FogBugz credentials separately from case reads and thread mutations", () => {
+    for (const method of [
+      WS_METHODS.fogbugzConnect,
+      WS_METHODS.fogbugzDisconnect,
+      WS_METHODS.fogbugzTest,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthSettingsWriteScope);
+    }
+    for (const method of [
+      WS_METHODS.fogbugzStatus,
+      WS_METHODS.fogbugzProjects,
+      WS_METHODS.fogbugzCases,
+      WS_METHODS.fogbugzThread,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
+    for (const method of [
+      WS_METHODS.fogbugzLinkProject,
+      WS_METHODS.fogbugzLinkThread,
+      WS_METHODS.fogbugzCreateThread,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+    }
+  });
+
   it("keeps triage, which seeds an agent that reads logs and the database, behind operate scope", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.serverPrepareTriage)).toBe(
       AuthOrchestrationOperateScope,
