@@ -2,6 +2,47 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { FogBugzApi, normalizeFogBugzUrl } from "./FogBugzApi.ts";
 
 describe("FogBugz API", () => {
+  it("distinguishes resolved and closed cases using the status catalog and preserves assignment events", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_url, request) => {
+      const parameters = new URLSearchParams(String(request?.body));
+      if (parameters.get("cmd") === "listStatuses")
+        return new Response(
+          "<response><statuses><status><ixStatus>9</ixStatus></status></statuses></response>",
+        );
+      if (parameters.get("cols") === "ixBug,events")
+        return new Response(
+          "<response><cases><case><ixBug>42</ixBug><events><event><ixBugEvent>1</ixBugEvent><sVerb>Opened</sVerb><ixPersonAssignedTo>0</ixPersonAssignedTo><dt>2026-10-30T12:00:00Z</dt></event><event><ixBugEvent>2</ixBugEvent><sVerb>Assigned</sVerb><ixPersonAssignedTo>7</ixPersonAssignedTo><dt>2026-10-30T12:01:00Z</dt></event></events></case></cases></response>",
+        );
+      return new Response(
+        "<response><cases><case><ixBug>42</ixBug><ixProject>12</ixProject><ixStatus>9</ixStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>2</ixBugEventLatest><dtOpened>2026-10-30T12:00:00Z</dtOpened></case><case><ixBug>43</ixBug><ixProject>12</ixProject><ixStatus>9</ixStatus><fOpen>false</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>3</ixBugEventLatest><dtOpened>2026-10-30T12:00:00Z</dtOpened></case></cases></response>",
+      );
+    });
+    const api = new FogBugzApi("https://fogbugz.example/", fetch);
+    const states = await api.caseStates("private-token", "project:=12 assignedto:me");
+    expect(states).toMatchObject([
+      { id: 42, resolved: true, open: true },
+      { id: 43, resolved: true, open: false },
+    ]);
+    expect(await api.assignmentEvents("private-token", 42)).toEqual([
+      { id: 1, verb: "Opened", assignedTo: 0, createdAt: "2026-10-30T12:00:00.000Z" },
+      { id: 2, verb: "Assigned", assignedTo: 7, createdAt: "2026-10-30T12:01:00.000Z" },
+    ]);
+    fetch.mockImplementation(async () => new Response("<response><statuses/></response>"));
+    await expect(api.caseStates("private-token", "project:=12")).rejects.toMatchObject({
+      code: "response",
+    });
+    fetch.mockImplementation(
+      async (_url, request) =>
+        new Response(
+          new URLSearchParams(String(request?.body)).get("cmd") === "listStatuses"
+            ? "<response><statuses/></response>"
+            : "<response><cases><case><ixBug>42</ixBug><ixProject>12</ixProject><ixStatus>1</ixStatus><fOpen>unknown</fOpen></case></cases></response>",
+        ),
+    );
+    await expect(api.caseStates("private-token", "project:=12")).rejects.toMatchObject({
+      code: "response",
+    });
+  });
   it("loads visible case history as text with a POST and rejects a different case", async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()
@@ -73,7 +114,7 @@ describe("FogBugz API", () => {
       )
       .mockResolvedValueOnce(
         new Response(
-          '<response><cases count="1"><case ixBug="42"><ixBug>42</ixBug><sTitle><![CDATA[Fix <title>]]></sTitle><ixProject>12</ixProject><sProject>OPS</sProject><sStatus>Active</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><sPersonAssignedTo>Test Person</sPersonAssignedTo><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>2026-10-29T08:00:00Z</dtCaseNotified><dtLastUpdated></dtLastUpdated></case></cases></response>',
+          '<response><cases count="1"><case ixBug="42"><ixBug>42</ixBug><sTitle><![CDATA[Fix <title>]]></sTitle><ixProject>12</ixProject><sProject>OPS</sProject><sStatus>Active</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><sPersonAssignedTo>Test Person</sPersonAssignedTo><ixPriority>2</ixPriority><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>2026-10-29T08:00:00Z</dtCaseNotified><dtLastUpdated></dtLastUpdated></case></cases></response>',
         ),
       );
     const api = new FogBugzApi("https://fogbugz.example/", fetch);
@@ -92,6 +133,7 @@ describe("FogBugz API", () => {
         assignedTo: 7,
         assignedToName: "Test Person",
         priority: "Normal",
+        priorityId: 2,
         categoryId: 1,
         categoryName: "Bug",
         categoryIconType: 1,

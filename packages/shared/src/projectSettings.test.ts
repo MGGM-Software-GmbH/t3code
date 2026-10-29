@@ -34,6 +34,30 @@ describe("resolveSendEnvMode", () => {
 });
 
 describe("resolveProjectSettings", () => {
+  it("inherits FogBugz automation and keeps explicit per-project opt-outs", () => {
+    const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      fogbugzAutoSettle: "resolved",
+      fogbugzAutoUnsettle: true,
+      fogbugzAutoAnalyze: "assigned",
+      projectSettingsOverrides: {
+        [projectId]: {
+          fogbugzAutoSettle: "closed",
+          fogbugzAutoUnsettle: false,
+          fogbugzAutoAnalyze: "never",
+        },
+      },
+    });
+    expect(resolveProjectSettings(settings, projectId).settings).toMatchObject({
+      fogbugzAutoSettle: "closed",
+      fogbugzAutoUnsettle: false,
+      fogbugzAutoAnalyze: "never",
+    });
+    expect(resolveProjectSettings(settings, otherProjectId).settings).toMatchObject({
+      fogbugzAutoSettle: "resolved",
+      fogbugzAutoUnsettle: true,
+      fogbugzAutoAnalyze: "assigned",
+    });
+  });
   it("ignores an override left undefined by a forward-compatible decode", () => {
     const resolved = resolveProjectSettings(
       {

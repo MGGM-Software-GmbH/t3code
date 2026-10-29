@@ -15,6 +15,12 @@ export function createFogBugzEnvironmentAtoms<R, E>(
     registry: AtomRegistry.AtomRegistry,
   ) => Effect.sync(() => registry.update(revisions(environmentId), (revision) => revision + 1));
   return {
+    threadCases: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "fogbugz:thread-cases",
+      tag: WS_METHODS.fogbugzThreadCases,
+      refreshTrigger,
+      refreshIntervalMs: 30_000,
+    }),
     caseContext: createEnvironmentRpcCommand(runtime, {
       label: "fogbugz:case-context",
       tag: WS_METHODS.fogbugzCaseContext,

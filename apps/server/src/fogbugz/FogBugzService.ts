@@ -5,6 +5,7 @@ import {
   FogBugzCaseList,
   FogBugzProject,
   FogBugzThreadLink,
+  type FogBugzThreadCase,
   type FogBugzConnectInput,
   type FogBugzCasesInput,
   type FogBugzLinkThreadInput,
@@ -23,12 +24,26 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import { FogBugzApi, normalizeFogBugzUrl } from "./FogBugzApi.ts";
+import { FogBugzApi, normalizeFogBugzUrl, type FogBugzCaseState } from "./FogBugzApi.ts";
 
 export class FogBugzService extends Context.Service<
   FogBugzService,
   {
     status: () => Effect.Effect<typeof FogBugzStatus.Type, FogBugzError>;
+    threadCases: () => Effect.Effect<ReadonlyArray<typeof FogBugzThreadCase.Type>, FogBugzError>;
+    automationSnapshot: (projectId: ProjectId) => Effect.Effect<
+      {
+        connection: FogBugzConnection;
+        mapping: string;
+        cases: ReadonlyArray<FogBugzCaseState>;
+        threads: ReadonlyArray<typeof FogBugzThreadLink.Type>;
+      },
+      FogBugzError
+    >;
+    assignmentEvents: (
+      projectId: ProjectId,
+      caseId: number,
+    ) => Effect.Effect<Awaited<ReturnType<FogBugzApi["assignmentEvents"]>>, FogBugzError>;
     connect: (
       input: typeof FogBugzConnectInput.Type,
     ) => Effect.Effect<FogBugzConnection, FogBugzError>;
@@ -205,6 +220,91 @@ export const layer = Layer.effect(
       );
     });
     return FogBugzService.of({
+      threadCases: Effect.fn("FogBugz.threadCases")(function* () {
+        const threads = yield* threadLinks();
+        if (!threads.length) return [];
+        const links = yield* resolveProjectLinks(yield* projectLinks());
+        const caseIds = [...new Set(threads.map((thread) => thread.caseId))];
+        const result: Array<typeof FogBugzThreadCase.Type> = [];
+        for (let offset = 0; offset < caseIds.length; offset += 100) {
+          const query = caseIds
+            .slice(offset, offset + 100)
+            .map((caseId) => `case:${caseId}`)
+            .join(" OR ");
+          const cases = yield* call((api, token) => api.cases(token, `(${query})`));
+          for (const item of cases) {
+            for (const thread of threads) {
+              if (
+                thread.caseId === item.id &&
+                links.some(
+                  (link) =>
+                    link.projectId === thread.projectId && link.fogbugzProjectId === item.projectId,
+                )
+              ) {
+                result.push({ threadId: thread.threadId, case: item });
+              }
+            }
+          }
+        }
+        return result;
+      }),
+      automationSnapshot: Effect.fn("FogBugz.automationSnapshot")(function* (projectId) {
+        const { current } = yield* authenticated();
+        const links = yield* resolveProjectLinks(
+          (yield* projectLinks()).filter((link) => link.projectId === projectId),
+        );
+        const threads = (yield* threadLinks()).filter((thread) => thread.projectId === projectId);
+        if (!links.length) return { connection: current, mapping: "", cases: [], threads: [] };
+        const scope = links.map((link) => `project:=${link.fogbugzProjectId}`).join(" OR ");
+        const cases: FogBugzCaseState[] = [];
+        // Page by case number, which is stable while assignments and statuses change.
+        let before = 2147483647;
+        while (true) {
+          const page = yield* call((api, token) =>
+            api.caseStates(token, `(${scope}) assignedto:me case:1..${before}`),
+          );
+          cases.push(...page.slice(0, 200));
+          if (page.length <= 200) break;
+          const next = page[199]!.id;
+          if (
+            next >= before ||
+            page.some((item, index) => index > 0 && item.id >= page[index - 1]!.id)
+          )
+            return yield* new FogBugzError({ code: "response" });
+          before = next - 1;
+        }
+        const missing = [...new Set(threads.map((thread) => thread.caseId))].filter(
+          (caseId) => !cases.some((item) => item.id === caseId),
+        );
+        for (let offset = 0; offset < missing.length; offset += 100) {
+          cases.push(
+            ...(yield* call((api, token) =>
+              api.caseStates(
+                token,
+                `(${missing
+                  .slice(offset, offset + 100)
+                  .map((caseId) => `case:${caseId}`)
+                  .join(" OR ")})`,
+              ),
+            )),
+          );
+        }
+        return {
+          connection: current,
+          mapping: links
+            .map((link) => link.fogbugzProjectId)
+            .sort((left, right) => left - right)
+            .join(","),
+          cases: cases.filter((item) =>
+            links.some((link) => link.fogbugzProjectId === item.projectId),
+          ),
+          threads,
+        };
+      }),
+      assignmentEvents: Effect.fn("FogBugz.assignmentEvents")(function* (projectId, caseId) {
+        yield* caseForProject(projectId, caseId);
+        return yield* call((api, token) => api.assignmentEvents(token, caseId));
+      }),
       caseContext: Effect.fn("FogBugz.caseContext")(function* (input) {
         let projectId: ProjectId;
         if ("threadId" in input) {
@@ -270,6 +370,7 @@ export const layer = Layer.effect(
               .withTransaction(
                 Effect.gen(function* () {
                   if (!sameIdentity) {
+                    yield* sql`DELETE FROM fogbugz_automation`;
                     yield* sql`DELETE FROM fogbugz_threads`;
                     yield* sql`DELETE FROM fogbugz_projects`;
                     yield* sql`DELETE FROM fogbugz_project_groups`;
@@ -295,6 +396,7 @@ export const layer = Layer.effect(
                   yield* sql`DELETE FROM fogbugz_projects`;
                   yield* sql`DELETE FROM fogbugz_project_groups`;
                   yield* sql`DELETE FROM fogbugz_connection`;
+                  yield* sql`DELETE FROM fogbugz_automation`;
                 }),
               )
               .pipe(Effect.mapError(storageError));
@@ -346,6 +448,7 @@ export const layer = Layer.effect(
             yield* sql
               .withTransaction(
                 Effect.gen(function* () {
+                  yield* sql`DELETE FROM fogbugz_automation WHERE project_id = ${input.projectId}`;
                   yield* sql`DELETE FROM fogbugz_threads WHERE project_id = ${input.projectId}`;
                   yield* sql`DELETE FROM fogbugz_project_groups WHERE project_id = ${input.projectId}`;
                   if (input.fogbugzProjectId === null)

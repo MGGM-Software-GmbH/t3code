@@ -43,6 +43,7 @@ import {
   FogBugzCaseContext,
   FogBugzCaseContextInput,
   FogBugzThreadLink,
+  FogBugzThreadCase,
   FogBugzError,
   FogBugzConnectInput,
   FogBugzCasesInput,
@@ -458,6 +459,7 @@ export const WS_METHODS = {
   fogbugzCases: "fogbugz.cases",
   fogbugzCaseContext: "fogbugz.case-context",
   fogbugzThread: "fogbugz.thread",
+  fogbugzThreadCases: "fogbugz.thread-cases",
   fogbugzLinkThread: "fogbugz.link-thread",
   fogbugzCreateThread: "fogbugz.create-thread",
   fogbugzOpenCase: "fogbugz.open-case",
@@ -1997,6 +1999,11 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 ) {}
 
 export const WsRpcGroup = RpcGroup.make(
+  Rpc.make(WS_METHODS.fogbugzThreadCases, {
+    payload: Schema.Struct({}),
+    success: Schema.Array(FogBugzThreadCase),
+    error: FogBugzError,
+  }),
   Rpc.make(WS_METHODS.fogbugzStatus, {
     payload: Schema.Struct({}),
     success: FogBugzStatus,

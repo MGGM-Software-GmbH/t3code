@@ -14,6 +14,23 @@ const decodeId = Schema.decodeSync(FogBugzId);
 const decodeProject = Schema.decodeSync(FogBugzProject);
 const decodeCase = Schema.decodeSync(FogBugzCase);
 const isFogBugzError = Schema.is(FogBugzError);
+const CaseState = Schema.Struct({
+  id: FogBugzId,
+  projectId: FogBugzId,
+  resolved: Schema.Boolean,
+  open: Schema.Boolean,
+  assignedTo: Schema.Int,
+  eventId: FogBugzId,
+  openedAt: Schema.NullOr(Schema.String),
+});
+const decodeCaseState = Schema.decodeSync(CaseState);
+const Assignment = Schema.Struct({
+  id: FogBugzId,
+  verb: Schema.String,
+  assignedTo: Schema.Int,
+  createdAt: Schema.NullOr(Schema.String),
+});
+const decodeAssignment = Schema.decodeSync(Assignment);
 
 function parseXml(xml: string): XmlNode {
   const document: XmlNode = { name: "document", text: "", children: [], attributes: {} };
@@ -54,6 +71,11 @@ function child(node: XmlNode, name: string): XmlNode {
 }
 const value = (node: XmlNode, name: string) => child(node, name).text;
 const id = (text: string) => decodeId(Number(text));
+function boolean(text: string): boolean {
+  if (text === "1" || text.toLowerCase() === "true") return true;
+  if (text === "0" || text.toLowerCase() === "false") return false;
+  throw new FogBugzError({ code: "response" });
+}
 
 export function normalizeFogBugzUrl(input: string): string {
   try {
@@ -183,7 +205,7 @@ export class FogBugzApi {
         q: query,
         max: "201",
         includeReadNotifications: "1",
-        cols: "ixBug,sTitle,ixProject,sProject,sStatus,fOpen,ixPersonAssignedTo,sPersonAssignedTo,sPriority,ixCategory,sCategory,dtCaseNotified,dtLastUpdated",
+        cols: "ixBug,sTitle,ixProject,sProject,sStatus,fOpen,ixPersonAssignedTo,sPersonAssignedTo,ixPriority,sPriority,ixCategory,sCategory,dtCaseNotified,dtLastUpdated",
       }),
       "cases",
     );
@@ -196,10 +218,11 @@ export class FogBugzApi {
           projectId: id(value(item, "ixProject")),
           projectName: value(item, "sProject"),
           status: value(item, "sStatus"),
-          open: value(item, "fOpen").toLowerCase() === "true" || value(item, "fOpen") === "1",
+          open: boolean(value(item, "fOpen")),
           assignedTo: Number(value(item, "ixPersonAssignedTo")),
           assignedToName: value(item, "sPersonAssignedTo"),
           priority: value(item, "sPriority"),
+          priorityId: id(value(item, "ixPriority")),
           categoryId: id(value(item, "ixCategory")),
           categoryName: value(item, "sCategory"),
           categoryIconType: Number(
@@ -237,7 +260,67 @@ export class FogBugzApi {
         text: value(event, "s"),
       }));
   }
+
+  async caseStates(token: string, query: string) {
+    const statuses = child(
+      await this.request({ cmd: "listStatuses", token, fResolved: "1" }),
+      "statuses",
+    );
+    const resolved = new Set(statuses.children.map((status) => id(value(status, "ixStatus"))));
+    const cases = child(
+      await this.request({
+        cmd: "search",
+        token,
+        q: query,
+        max: "201",
+        cols: "ixBug,ixProject,ixStatus,fOpen,ixPersonAssignedTo,ixBugEventLatest,dtOpened",
+      }),
+      "cases",
+    );
+    return cases.children
+      .filter((node) => node.name === "case")
+      .map((item) =>
+        decodeCaseState({
+          id: id(value(item, "ixBug")),
+          projectId: id(value(item, "ixProject")),
+          resolved: resolved.has(id(value(item, "ixStatus"))),
+          open: boolean(value(item, "fOpen")),
+          assignedTo: Number(value(item, "ixPersonAssignedTo")),
+          eventId: id(value(item, "ixBugEventLatest")),
+          openedAt: timestamp(value(item, "dtOpened")),
+        }),
+      );
+  }
+
+  async assignmentEvents(token: string, caseId: number) {
+    const cases = child(
+      await this.request({
+        cmd: "search",
+        token,
+        q: String(caseId),
+        cols: "ixBug,events",
+        max: "1",
+        eventsOrder: "asc",
+        eventsLimit: "0",
+      }),
+      "cases",
+    );
+    const item = cases.children.find((node) => id(value(node, "ixBug")) === caseId);
+    if (!item) throw new FogBugzError({ code: "access" });
+    return child(item, "events")
+      .children.filter((node) => node.name === "event")
+      .map((event) =>
+        decodeAssignment({
+          id: id(value(event, "ixBugEvent")),
+          verb: value(event, "sVerb"),
+          assignedTo: Number(value(event, "ixPersonAssignedTo")),
+          createdAt: timestamp(value(event, "dt")),
+        }),
+      );
+  }
 }
+
+export type FogBugzCaseState = Awaited<ReturnType<FogBugzApi["caseStates"]>>[number];
 
 function childCategory(categories: XmlNode, categoryId: string): XmlNode {
   const category = categories.children.find((item) => value(item, "ixCategory") === categoryId);

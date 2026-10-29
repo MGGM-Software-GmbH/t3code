@@ -37,6 +37,7 @@ export const FogBugzCase = Schema.Struct({
   assignedTo: Schema.Int,
   assignedToName: Schema.String,
   priority: Schema.String,
+  priorityId: Schema.optionalKey(FogBugzId),
   categoryId: Schema.Int,
   categoryName: Schema.String,
   categoryIconType: Schema.Int,
@@ -66,6 +67,10 @@ export const FogBugzThreadLink = Schema.Struct({
   caseId: FogBugzId,
   title: Schema.String,
   url: Schema.String,
+});
+export const FogBugzThreadCase = Schema.Struct({
+  threadId: ThreadId,
+  case: FogBugzCase,
 });
 export const FogBugzCaseList = Schema.Struct({
   cases: Schema.Array(FogBugzCase),

@@ -59,6 +59,7 @@ describe("RPC authorization scopes", () => {
       WS_METHODS.fogbugzCases,
       WS_METHODS.fogbugzCaseContext,
       WS_METHODS.fogbugzThread,
+      WS_METHODS.fogbugzThreadCases,
     ]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
     }

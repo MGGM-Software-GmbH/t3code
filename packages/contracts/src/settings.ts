@@ -1029,6 +1029,9 @@ export const WorktreeCleanup = Schema.NullOr(
 export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
+  "fogbugzAutoSettle",
+  "fogbugzAutoUnsettle",
+  "fogbugzAutoAnalyze",
   "worktreeCleanup",
   "defaultModelSelection",
   "defaultRuntimeMode",
@@ -1066,6 +1069,9 @@ export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOver
 /** Absent keys inherit; null is a value for nullable settings.
  * providerInstances overrides fields per instance; other keys replace the whole setting. */
 export const ProjectSettingsOverrides = Schema.Struct({
+  fogbugzAutoSettle: Schema.optionalKey(Schema.Literals(["never", "resolved", "closed"])),
+  fogbugzAutoUnsettle: Schema.optionalKey(Schema.Boolean),
+  fogbugzAutoAnalyze: Schema.optionalKey(Schema.Literals(["never", "initial", "assigned"])),
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
@@ -1286,6 +1292,13 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  fogbugzAutoSettle: Schema.Literals(["never", "resolved", "closed"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("never")),
+  ),
+  fogbugzAutoUnsettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  fogbugzAutoAnalyze: Schema.Literals(["never", "initial", "assigned"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("never")),
+  ),
   backgroundActivity: BackgroundActivitySettings,
 
   automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
@@ -1654,6 +1667,9 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
+  fogbugzAutoSettle: Schema.optionalKey(Schema.Literals(["never", "resolved", "closed"])),
+  fogbugzAutoUnsettle: Schema.optionalKey(Schema.Boolean),
+  fogbugzAutoAnalyze: Schema.optionalKey(Schema.Literals(["never", "initial", "assigned"])),
   modelCapacityRetryDelayMinutes: Schema.optionalKey(
     Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   ),
@@ -1735,9 +1751,25 @@ export function requiredScopesForServerSettingsPatch(
       changesSettings = true;
     }
   }
+  const enablesAutomation = [patch, ...Object.values(patch.projectSettingsOverrides ?? {})].some(
+    (settings) =>
+      settings &&
+      ((settings.fogbugzAutoAnalyze !== undefined && settings.fogbugzAutoAnalyze !== "never") ||
+        (settings.fogbugzAutoSettle !== undefined && settings.fogbugzAutoSettle !== "never") ||
+        settings.fogbugzAutoUnsettle === true),
+  );
+  // Replacing an override can enable automation inherited from the environment.
+  const inheritsAutomation = Object.values(patch.projectSettingsOverrides ?? {}).some(
+    (settings) =>
+      settings === null ||
+      settings.fogbugzAutoAnalyze === undefined ||
+      settings.fogbugzAutoSettle === undefined ||
+      settings.fogbugzAutoUnsettle === undefined,
+  );
   return [
     ...(changesSettings || !changesProviders ? [AuthSettingsWriteScope] : []),
     ...(changesProviders ? [AuthProvidersManageScope] : []),
+    ...(enablesAutomation || inheritsAutomation ? [AuthOrchestrationOperateScope] : []),
   ];
 }
 

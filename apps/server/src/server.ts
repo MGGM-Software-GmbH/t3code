@@ -39,6 +39,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as PdSecrets from "./environment/PdSecrets.ts";
 import * as FogBugz from "./fogbugz/FogBugzService.ts";
+import * as FogBugzAutomation from "./fogbugz/FogBugzAutomation.ts";
 import * as PullRequestHttp from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -585,6 +586,9 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
+  Layer.effectDiscard(
+    Effect.flatMap(FogBugzAutomation.FogBugzAutomation, (service) => service.start()),
+  ).pipe(Layer.provide(FogBugzAutomation.layer)),
   AgentAwarenessRelay.layer,
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,

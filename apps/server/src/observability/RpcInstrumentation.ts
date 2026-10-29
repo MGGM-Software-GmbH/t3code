@@ -20,6 +20,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.fogbugzCases]: "server",
   [WS_METHODS.fogbugzCaseContext]: "server",
   [WS_METHODS.fogbugzThread]: "server",
+  [WS_METHODS.fogbugzThreadCases]: "server",
   [WS_METHODS.fogbugzLinkThread]: "server",
   [WS_METHODS.fogbugzCreateThread]: "server",
   [WS_METHODS.fogbugzOpenCase]: "server",

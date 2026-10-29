@@ -137,6 +137,15 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           modelCapacityRetryDelayMinutes: 0,
           enableProviderUpdateChecks: true,
           sidebarAutoSettleAfterDays: 7,
+          fogbugzAutoSettle: "resolved",
+          fogbugzAutoUnsettle: true,
+          fogbugzAutoAnalyze: "assigned",
+          projectSettingsOverrides: {
+            [ProjectId.make("fogbugz-project")]: {
+              fogbugzAutoAnalyze: "initial",
+              fogbugzAutoSettle: "closed",
+            },
+          },
           pullRequestMergeMethod: null,
         });
         const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
@@ -151,6 +160,15 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           modelCapacityRetryDelayMinutes: 0,
           enableProviderUpdateChecks: true,
           sidebarAutoSettleAfterDays: 7,
+          fogbugzAutoSettle: "resolved",
+          fogbugzAutoUnsettle: true,
+          fogbugzAutoAnalyze: "assigned",
+          projectSettingsOverrides: {
+            [ProjectId.make("fogbugz-project")]: {
+              fogbugzAutoAnalyze: "initial",
+              fogbugzAutoSettle: "closed",
+            },
+          },
           pullRequestMergeMethod: null,
         });
       }).pipe(Effect.provide(layerServerSettings())),

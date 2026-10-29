@@ -27,7 +27,7 @@ const caseXml = (
   notified = "",
   updated = "2026-01-01T00:00:00Z",
 ) =>
-  `<case ixBug="${id}"><ixBug>${id}</ixBug><sTitle>Case ${id}</sTitle><ixProject>${project}</ixProject><sProject>Project ${project}</sProject><sStatus>1 ToDo</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>${assigned}</ixPersonAssignedTo><sPersonAssignedTo>Person ${assigned}</sPersonAssignedTo><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>${notified}</dtCaseNotified><dtLastUpdated>${updated}</dtLastUpdated></case>`;
+  `<case ixBug="${id}"><ixBug>${id}</ixBug><sTitle>Case ${id}</sTitle><ixProject>${project}</ixProject><sProject>Project ${project}</sProject><sStatus>1 ToDo</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>${assigned}</ixPersonAssignedTo><sPersonAssignedTo>Person ${assigned}</sPersonAssignedTo><ixPriority>2</ixPriority><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>${notified}</dtCaseNotified><dtLastUpdated>${updated}</dtLastUpdated></case>`;
 
 function fixture() {
   const secrets = new Map<string, Uint8Array>();
@@ -82,6 +82,71 @@ const seed = Effect.gen(function* () {
 });
 
 describe("FogBugz integration persistence and access", () => {
+  it.effect("pages automation candidates without truncating at 200 cases", () => {
+    const test = fixture();
+    const queries: string[] = [];
+    return Effect.gen(function* () {
+      using _fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const parameters = new URLSearchParams(String(init?.body));
+        if (parameters.get("cmd") === "listStatuses")
+          return new Response(
+            "<response><statuses><status><ixStatus>9</ixStatus></status></statuses></response>",
+          );
+        if (parameters.get("cols")?.includes("ixBugEventLatest")) {
+          const query = parameters.get("q")!;
+          queries.push(query);
+          const ids = query.includes("case:1..300")
+            ? [300]
+            : Array.from({ length: 201 }, (_, index) => 500 - index);
+          return new Response(
+            `<response><cases>${ids.map((id) => `<case><ixBug>${id}</ixBug><ixProject>12</ixProject><ixStatus>1</ixStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>${id}</ixBugEventLatest><dtOpened>2026-10-30T12:00:00Z</dtOpened></case>`).join("")}</cases></response>`,
+          );
+        }
+        return test.fetch(url, init);
+      });
+      yield* seed;
+      const service = yield* FogBugzService;
+      yield* service.connect(credentials);
+      yield* service.linkProject({ projectId, fogbugzProjectId: 12 });
+      const snapshot = yield* service.automationSnapshot(projectId);
+      expect(snapshot.cases).toHaveLength(201);
+      expect(new Set(snapshot.cases.map((item) => item.id)).size).toBe(201);
+      expect(queries).toEqual([
+        "(project:=12) assignedto:me case:1..2147483647",
+        "(project:=12) assignedto:me case:1..300",
+      ]);
+    }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
+  });
+  it.effect("batches linked case metadata and excludes a moved or inaccessible case", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      using fetch = vi.spyOn(globalThis, "fetch").mockImplementation(test.fetch);
+      yield* seed;
+      const service = yield* FogBugzService;
+      expect(yield* service.threadCases()).toEqual([]);
+      yield* service.connect(credentials);
+      yield* service.linkProject({ projectId, fogbugzProjectId: 12 });
+      yield* service.linkThread({ threadId, caseId: 42 });
+      expect(yield* service.threadCases()).toMatchObject([
+        {
+          threadId,
+          case: { id: 42, projectName: "Project 12", priorityId: 2, categoryIconType: 1 },
+        },
+      ]);
+      expect(test.requests.at(-1)?.get("q")).toBe("(case:42)");
+      fetch.mockImplementation(async (_url, init) => {
+        const parameters = new URLSearchParams(String(init?.body));
+        return parameters.get("cmd") === "search"
+          ? new Response(`<response><cases>${caseXml(42, 99)}</cases></response>`)
+          : test.fetch(_url, init);
+      });
+      expect(yield* service.threadCases()).toEqual([]);
+      fetch.mockResolvedValueOnce(
+        new Response('<response><error code="3">Expired</error></response>'),
+      );
+      expect((yield* Effect.flip(service.threadCases())).code).toBe("authentication");
+    }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
+  });
   it.effect(
     "loads context only for a case in the thread's linked project without changing its association",
     () => {

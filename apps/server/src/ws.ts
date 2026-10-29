@@ -2461,6 +2461,7 @@ export const layerWsRpc = (
         [WS_METHODS.providerAuthStart]: (input) => providerAuth.start(input, currentSessionId),
         [WS_METHODS.pdSecretsStatus]: () => pdSecrets.status(),
         [WS_METHODS.fogbugzStatus]: () => fogbugz.status(),
+        [WS_METHODS.fogbugzThreadCases]: () => fogbugz.threadCases(),
         [WS_METHODS.fogbugzOpenCase]: (input) =>
           FogBugzBrowser.openCase(input).pipe(
             Effect.provideService(FogBugzService, fogbugz),

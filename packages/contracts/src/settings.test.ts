@@ -13,6 +13,7 @@ import {
   globalIdleCompaction,
   idleCompactionPatch,
   requiredScopesForProjectMutation,
+  requiredScopesForServerSettingsPatch,
   resolveIdleCompaction,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -99,6 +100,40 @@ describe("pd-secrets post-login script", () => {
 });
 
 describe("MGGM defaults", () => {
+  it("defaults FogBugz automation off and validates its guarded choices", () => {
+    expect(decodeServerSettings({})).toMatchObject({
+      fogbugzAutoSettle: "never",
+      fogbugzAutoUnsettle: false,
+      fogbugzAutoAnalyze: "never",
+    });
+    expect(
+      decodeServerSettingsPatch({ fogbugzAutoSettle: "closed", fogbugzAutoAnalyze: "initial" }),
+    ).toMatchObject({ fogbugzAutoSettle: "closed", fogbugzAutoAnalyze: "initial" });
+    expect(() => decodeServerSettingsPatch({ fogbugzAutoAnalyze: "always" })).toThrow();
+    expect(requiredScopesForServerSettingsPatch({ fogbugzAutoAnalyze: "assigned" })).toContain(
+      "orchestration:operate",
+    );
+    expect(
+      requiredScopesForServerSettingsPatch({
+        projectSettingsOverrides: {
+          [ProjectId.make("project")]: { fogbugzAutoAnalyze: "initial" },
+        },
+      }),
+    ).toContain("orchestration:operate");
+    expect(
+      requiredScopesForServerSettingsPatch({
+        projectSettingsOverrides: { [ProjectId.make("project")]: null },
+      }),
+    ).toContain("orchestration:operate");
+    expect(requiredScopesForServerSettingsPatch({ fogbugzAutoAnalyze: "never" })).toEqual([
+      "settings:write",
+    ]);
+    expect(
+      requiredScopesForServerSettingsPatch({
+        projectSettingsOverrides: { [ProjectId.make("project")]: {} },
+      }),
+    ).toContain("orchestration:operate");
+  });
   it("starts with one Codex account and an adjustable Standard model selection", () => {
     const settings = decodeServerSettings({});
     expect(settings.defaultModelSelection).toEqual({
