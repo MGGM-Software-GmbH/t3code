@@ -3,6 +3,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { CommandId, EnvironmentId, ProjectId, type FogBugzCase } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { fogbugzEnvironment } from "../../state/fogbugz";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
@@ -331,21 +332,29 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
                     link.fogbugzProjectId === item.projectId &&
                     (projectId === "all" || link.projectId === projectId),
                 )
-                .map((link) => (
-                  <Button
-                    key={link.projectId}
-                    variant="outline"
-                    disabled={busy || !permission}
-                    onClick={() => void createThread(item, link.projectId)}
-                  >
-                    New thread
-                    {(cases.data?.projects.filter(
-                      (candidate) => candidate.fogbugzProjectId === item.projectId,
-                    ).length ?? 0) > 1
-                      ? ` · ${projects.find((project) => project.id === link.projectId)?.title}`
-                      : ""}
-                  </Button>
-                ))}
+                .map((link) => {
+                  const project = projects.find((candidate) => candidate.id === link.projectId);
+                  if (!project) return null;
+                  const label = `New Thread in ${project.workspaceRoot}`;
+                  return (
+                    <Tooltip key={link.projectId}>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            aria-label={label}
+                            disabled={busy || !permission}
+                            onClick={() => void createThread(item, link.projectId)}
+                          >
+                            <PlusIcon aria-hidden="true" />
+                          </Button>
+                        }
+                      />
+                      <TooltipPopup>{label}</TooltipPopup>
+                    </Tooltip>
+                  );
+                })}
             </article>
           ))}
         </WorkspacePageContainer>
