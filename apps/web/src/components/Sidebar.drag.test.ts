@@ -32,6 +32,7 @@ function layout(
   over: string,
   scale = 1,
   cardHeight = 82,
+  pinnedHeaderHeight = 0,
 ) {
   let top = 100;
   const rects = items.map((item) => {
@@ -40,9 +41,11 @@ function layout(
         ? (item.section === "pinned" || item.section === "active" || item.section === "working"
             ? cardHeight
             : 36) * scale
-        : item.marker === "pinned-header" || item.marker === "pinned-divider"
-          ? 0
-          : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
+        : item.marker === "pinned-header"
+          ? pinnedHeaderHeight * scale
+          : item.marker === "pinned-divider"
+            ? 0
+            : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
     const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
     top += height + 1;
     return rect;
@@ -62,9 +65,10 @@ function preview(
   active: string,
   over: string,
   scale = 1,
+  pinnedHeaderHeight = 0,
 ) {
   const strategy = createSidebarSortingStrategy(input);
-  const args = layout(input.items, active, over, scale);
+  const args = layout(input.items, active, over, scale, 82, pinnedHeaderHeight);
   return new Map(
     input.items.map((item, index) => [sidebarListItemId(item), strategy({ ...args, index })]),
   );
@@ -401,29 +405,35 @@ describe("sidebar drag projection", () => {
     },
   );
 
-  it("opens label space below each pinned boundary while dragging", () => {
-    const items = [
-      pinnedHeader,
-      thread("p", "pinned"),
-      divider,
-      thread("a1", "active"),
-      thread("a2", "active"),
-      settledHeader,
-      thread("s", "settled"),
-    ];
-    const result = preview(
-      { items, settledOrder: [], settledExpanded: true, boundaryLabelHeight: 16 },
-      "a2",
-      "a1",
-    );
-    expect(result.get(sidebarMarkerId("pinned-header"))).toEqual(stationary);
-    expect(result.get("p")?.y).toBe(16);
-    expect(result.get(sidebarMarkerId("pinned-divider"))?.y).toBe(16);
-    expect(result.get("a2")).toEqual(stationary);
-    expect(result.get("a1")?.y).toBe(32 + 83);
-    expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(32);
-    expect(result.get("s")?.y).toBe(32);
-  });
+  it.each([0, 32])(
+    "preserves a %ipx pinned heading while opening drag label space",
+    (headingHeight) => {
+      const items = [
+        pinnedHeader,
+        thread("p", "pinned"),
+        divider,
+        thread("a1", "active"),
+        thread("a2", "active"),
+        settledHeader,
+        thread("s", "settled"),
+      ];
+      const result = preview(
+        { items, settledOrder: [], settledExpanded: true, boundaryLabelHeight: 16 },
+        "a2",
+        "a1",
+        1,
+        headingHeight,
+      );
+      const headingClearance = Math.max(16 - headingHeight, 0);
+      expect(result.get(sidebarMarkerId("pinned-header"))).toEqual(stationary);
+      expect(result.get("p")?.y).toBe(headingClearance);
+      expect(result.get(sidebarMarkerId("pinned-divider"))?.y).toBe(headingClearance);
+      expect(result.get("a2")).toEqual(stationary);
+      expect(result.get("a1")?.y).toBe(headingClearance + 16 + 83);
+      expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(headingClearance + 16);
+      expect(result.get("s")?.y).toBe(headingClearance + 16);
+    },
+  );
 
   it.each(["s1", "missing-target"])(
     "keeps label clearance when a settled drag is over %s",

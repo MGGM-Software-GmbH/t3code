@@ -3481,6 +3481,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key="pinned-header"
                                 marker="pinned-header"
                                 label="Pinned"
+                                showHeading={pinnedThreads.length > 0}
                                 visible={from !== null}
                                 isDropTarget={dragTargetSection === "pinned"}
                               />,

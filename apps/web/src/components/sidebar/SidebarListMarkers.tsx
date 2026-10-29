@@ -79,14 +79,24 @@ export function SidebarDragBoundary(props: {
   label: string;
   visible: boolean;
   isDropTarget: boolean;
+  showHeading?: boolean;
 }) {
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className="pointer-events-none relative mx-0.5 -mb-px h-0"
+      className={cn(
+        "pointer-events-none relative mx-0.5",
+        props.showHeading
+          ? "h-8 before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-border"
+          : "-mb-px h-0",
+      )}
     >
-      {props.visible ? (
+      {props.showHeading ? (
+        <h3 className="flex h-8 items-center px-2 text-xs font-medium text-info-foreground">
+          {props.label}
+        </h3>
+      ) : props.visible ? (
         <div className="sidebar-drag-boundary-label absolute inset-x-2 top-1 flex h-4 items-center gap-2">
           <span
             className={cn(
