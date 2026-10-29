@@ -268,31 +268,45 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
                 <div className="flex gap-2">
                   <FogBugzCategoryIcon item={item} />
                   <span className="text-muted-foreground">#{item.id}</span>
-                  <h2 className="min-w-0 flex-1 break-words font-medium">{item.title}</h2>
+                  <h2 className="min-w-0 flex-1 break-words font-medium text-foreground/80">
+                    {item.title}
+                  </h2>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                   <span>{item.projectName}</span>
-                  <span>{item.status.replace(/^\d+\s*[.:-]?\s*/, "")}</span>
-                  <Tooltip>
-                    <TooltipTrigger render={<span />}>{item.priority}</TooltipTrigger>
-                    <TooltipPopup>Priority</TooltipPopup>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger render={<span />}>{item.assignedToName}</TooltipTrigger>
-                    <TooltipPopup>Assigned to</TooltipPopup>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger render={<span />}>
-                      {item.notifiedAt ? (
-                        <time dateTime={item.notifiedAt}>
-                          {new Date(item.notifiedAt).toLocaleString()}
-                        </time>
-                      ) : (
-                        "No notification"
-                      )}
-                    </TooltipTrigger>
-                    <TooltipPopup>Your latest notification</TooltipPopup>
-                  </Tooltip>
+                  <span className="inline-flex items-center gap-3">
+                    <span aria-hidden="true">|</span>
+                    <span>{item.status.replace(/^\d+\s*[.:-]?\s*/, "")}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-3">
+                    <span aria-hidden="true">|</span>
+                    <Tooltip>
+                      <TooltipTrigger render={<span />}>{item.priority}</TooltipTrigger>
+                      <TooltipPopup>Priority</TooltipPopup>
+                    </Tooltip>
+                  </span>
+                  <span className="inline-flex items-center gap-3">
+                    <span aria-hidden="true">|</span>
+                    <Tooltip>
+                      <TooltipTrigger render={<span />}>{item.assignedToName}</TooltipTrigger>
+                      <TooltipPopup>Assigned to</TooltipPopup>
+                    </Tooltip>
+                  </span>
+                  <span className="inline-flex items-center gap-3">
+                    <span aria-hidden="true">|</span>
+                    <Tooltip>
+                      <TooltipTrigger render={<span />}>
+                        {item.notifiedAt ? (
+                          <time dateTime={item.notifiedAt}>
+                            {new Date(item.notifiedAt).toLocaleString()}
+                          </time>
+                        ) : (
+                          "No notification"
+                        )}
+                      </TooltipTrigger>
+                      <TooltipPopup>Your latest notification</TooltipPopup>
+                    </Tooltip>
+                  </span>
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                   {cases.data?.threads
