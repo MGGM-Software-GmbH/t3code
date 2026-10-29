@@ -269,7 +269,7 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
                   .map((thread) => (
                     <Link
                       key={thread.threadId}
-                      className="text-sm text-primary underline"
+                      className="text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground"
                       to="/$environmentId/$threadId"
                       params={buildThreadRouteParams(
                         scopeThreadRef(environmentId, thread.threadId),
