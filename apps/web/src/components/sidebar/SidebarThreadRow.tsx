@@ -68,6 +68,9 @@ import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironmentQuery } from "../../state/query";
+import { fogbugzEnvironment } from "../../state/fogbugz";
+import { FogBugzCategoryIcon } from "../fogbugz/FogBugzCategoryIcon";
+import { FogBugzThreadMetadata } from "../fogbugz/FogBugzThreadMetadata";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { formatRelativeTimeLabel, parseTimestampDate } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
@@ -661,6 +664,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   } = props;
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
+  const fogbugzCases = useEnvironmentQuery(
+    fogbugzEnvironment.threadCases({ environmentId: thread.environmentId, input: {} }),
+  );
+  const fogbugzCase = fogbugzCases.data?.find((item) => item.threadId === thread.id)?.case;
+  const fogbugzMeta = fogbugzCase ? <FogBugzThreadMetadata item={fogbugzCase} /> : null;
   const activityTimestamp = useThreadTimeTimestamp(thread);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const { leaseLiveStatus, rowRef: leaseRowRef } = useSidebarRowSubscriptionLease(props.isActive);
@@ -1199,8 +1207,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const inProjectGroup = variant === "project-card";
   if (variant !== "card" && !inProjectGroup) {
-    const multiline = variant === "folder-multiline";
-    const inFolder = variant === "folder" || multiline;
+    const multiline = variant === "folder-multiline" || fogbugzCase !== undefined;
+    const inFolder = variant === "folder" || variant === "folder-multiline";
     return (
       <li
         data-thread-item={threadKey}
@@ -1243,7 +1251,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             {/* `contents` keeps one-line rows a single flex row. */}
             <div className={multiline ? "flex h-6 min-w-0 items-center gap-2.5" : "contents"}>
               {accessibleTitle}
-              {inFolder ? null : (
+              {inFolder && !fogbugzCase ? null : (
                 <span
                   className={cn(
                     "flex shrink-0 items-center transition-opacity",
@@ -1251,7 +1259,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
                   )}
                 >
-                  {props.project ? (
+                  {fogbugzCase ? (
+                    <FogBugzCategoryIcon item={fogbugzCase} />
+                  ) : props.project ? (
                     <ProjectFavicon project={props.project} className="size-4" />
                   ) : null}
                 </span>
@@ -1380,6 +1390,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
+            {fogbugzCase ? (
+              <span className="mt-0.5 truncate text-xs text-secondary-label">
+                {fogbugzCase.projectName}
+              </span>
+            ) : null}
+            {fogbugzMeta}
             {multiline ? metaLine : null}
             {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
           </TooltipTrigger>
@@ -1396,7 +1412,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {...(fileDropHandlers ?? {})}
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
-        (metaLineEmpty || inProjectGroup) && "[contain-intrinsic-size:auto_58px]",
+        (metaLineEmpty || inProjectGroup) && !fogbugzCase && "[contain-intrinsic-size:auto_58px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1425,28 +1441,30 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           <div
             className={cn(
               "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
-              (metaLineEmpty || inProjectGroup) && "h-auto",
-              inProjectGroup && "grid grid-cols-[minmax(0,1fr)_auto] gap-y-1",
+              (metaLineEmpty || inProjectGroup || fogbugzCase) && "h-auto",
+              inProjectGroup && !fogbugzCase && "grid grid-cols-[minmax(0,1fr)_auto] gap-y-1",
             )}
           >
             <div
               className={cn(
                 "flex h-5 min-w-0 items-center gap-1.5",
-                inProjectGroup && "col-start-2 row-start-2",
+                inProjectGroup && !fogbugzCase && "col-start-2 row-start-2",
               )}
             >
               {inProjectGroup ? null : draftIndicator}
-              {!inProjectGroup && props.project ? (
+              {fogbugzCase ? (
+                <FogBugzCategoryIcon item={fogbugzCase} />
+              ) : !inProjectGroup && props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
               {inProjectGroup ? null : pinIndicator}
-              {!inProjectGroup && props.projectDisplayName ? (
+              {fogbugzCase || (!inProjectGroup && props.projectDisplayName) ? (
                 <span
                   className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
                 >
-                  {props.projectDisplayName}
+                  {fogbugzCase?.projectName ?? props.projectDisplayName}
                 </span>
               ) : (
                 <span className="flex-1" />
@@ -1580,7 +1598,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <div
               className={cn(
                 "flex min-w-0 items-center gap-1.5",
-                inProjectGroup ? "col-span-2 row-start-1" : "mt-1",
+                inProjectGroup && !fogbugzCase ? "col-span-2 row-start-1" : "mt-1",
               )}
             >
               {inProjectGroup ? draftIndicator : null}
@@ -1593,7 +1611,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ) : null}
               {titleLineProviderStack}
             </div>
-            {inProjectGroup ? (
+            {fogbugzMeta}
+            {inProjectGroup && !fogbugzCase ? (
               <div className="col-start-1 row-start-2 min-w-0 pr-1">{metaLine}</div>
             ) : (
               metaLine
@@ -1642,6 +1661,10 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
 }) {
   const thread =
     useThreadShell(scopeThreadRef(props.thread.environmentId, props.thread.id)) ?? props.thread;
+  const fogbugzCases = useEnvironmentQuery(
+    fogbugzEnvironment.threadCases({ environmentId: thread.environmentId, input: {} }),
+  );
+  const fogbugzCase = fogbugzCases.data?.find((item) => item.threadId === thread.id)?.case;
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
     statusLabel: null,
@@ -1730,7 +1753,9 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
             />
           }
         >
-          {props.project ? (
+          {fogbugzCase ? (
+            <FogBugzCategoryIcon item={fogbugzCase} />
+          ) : props.project ? (
             <ProjectFavicon
               project={props.project}
               className={cn(
@@ -1768,6 +1793,14 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                 <RelativeTimeLabel timestamp={activityTimestamp} />
               </span>
             </span>
+            {fogbugzCase ? (
+              <>
+                <span className="truncate text-xs text-secondary-label">
+                  {fogbugzCase.projectName}
+                </span>
+                <FogBugzThreadMetadata item={fogbugzCase} />
+              </>
+            ) : null}
             {props.searchMatch ? (
               <ThreadSearchMatchExcerpt
                 match={{

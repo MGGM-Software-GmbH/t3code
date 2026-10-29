@@ -14,6 +14,12 @@ In either list, **Add to Context** adds a case reference to the composer without
 
 Cases show category, status, priority, assignee and your latest notification time. The list sorts by that notification time, then by the last case update.
 
+Linked threads show the case category icon and FogBugz project name in the thread list, with priority and status below the title.
+
+Configure **Auto-Settle on**, **Auto-Unsettle On reactivate**, and **Auto-Analyze New Cases** in **Settings > MGGM**, or override them for a project in **Settings > Projects**. All three start disabled. The server checks linked projects every 30 seconds, even when the client is closed. Settling waits for active agent work to finish; reactivation shows the thread again without starting a turn.
+
+**Only initial event** analyzes new cases whose first two events are **Opened**, then **Assigned** to you. **Any assigned to me** also handles later assignments to you. Enabling analysis establishes a baseline on the next check; existing assignments do not start work. Each new assignment starts a separate linked thread using the project's default model and an analysis-only request through the FogBugz MCP. This can incur provider costs. Automatic analysis does not request implementation, file changes, or FogBugz comments. A missing default model prevents the run.
+
 Click a case number to open it in a new browser tab using your existing FogBugz browser session. This link does not pass an API token.
 
 Linked threads open the case in the existing Browser panel using the selected browser profile. T3 exchanges the stored API token for a browser session without another password prompt. This requires the MGGM FogBugz browser-session API. Changing the FogBugz server or account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. File synchronization and FogBugz comment editing are not included.

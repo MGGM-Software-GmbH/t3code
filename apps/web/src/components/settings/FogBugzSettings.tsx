@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { SecretInput } from "./SecretInput";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { FogBugzAutomationSettings } from "./FogBugzAutomationSettings";
 
 export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const status = useEnvironmentQuery(fogbugzEnvironment.status({ environmentId, input: {} }));
@@ -150,6 +151,9 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
           </SettingsSection>
         </fieldset>
       </form>
+      <SettingsSection title="FogBugz automation">
+        <FogBugzAutomationSettings />
+      </SettingsSection>
     </>
   );
 }

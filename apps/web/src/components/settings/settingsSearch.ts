@@ -409,6 +409,27 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar idle 24h projects groups pinned compact activity separators"],
   },
   {
+    id: "fogbugz-auto-settle",
+    title: "Auto-Settle on",
+    to: "/settings/mggm",
+    scope: "environment-defaults",
+    searchTerms: ["fogbugz cases resolved closed never"],
+  },
+  {
+    id: "fogbugz-auto-unsettle",
+    title: "Auto-Unsettle On reactivate",
+    to: "/settings/mggm",
+    scope: "environment-defaults",
+    searchTerms: ["fogbugz cases reopen status"],
+  },
+  {
+    id: "fogbugz-auto-analyze",
+    title: "Auto-Analyze New Cases",
+    to: "/settings/mggm",
+    scope: "environment-defaults",
+    searchTerms: ["fogbugz cases assigned initial analysis agent"],
+  },
+  {
     id: "snooze-options",
     title: "Snooze options",
     to: "/settings/threads",

@@ -11,6 +11,8 @@ import {
   type FogBugzCaseContextInput,
   type FogBugzCreateThreadInput,
   ThreadId,
+  DEFAULT_SERVER_SETTINGS,
+  type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import { scopeThreadRef, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
@@ -26,13 +28,25 @@ import { useRightPanelStore } from "~/rightPanelStore";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import {
   ENVIRONMENT_ID,
-  installFakeEnvironment,
+  installFakeEnvironment as installEnvironment,
   threadWithHistory,
   projectionOf,
   type FakeDriver,
 } from "../../../test/fakeEnvironment";
 import { render } from "../../../test/render";
 import { fogbugzCasePrompt } from "./fogbugzCaseActions";
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { buildSidebarProjectSnapshots } from "~/sidebarProjectGrouping";
+import { readProjects } from "~/state/entities";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { fogbugzEnvironment } from "~/state/fogbugz";
+
+function installFakeEnvironment(...args: Parameters<typeof installEnvironment>) {
+  const fixture = installEnvironment(...args);
+  // The shared registry outlives a render; each fixture owns its connection state.
+  appAtomRegistry.refresh(fogbugzEnvironment.status({ environmentId: ENVIRONMENT_ID, input: {} }));
+  return fixture;
+}
 
 vi.mock(
   "../../../../../packages/client-runtime/src/connection/driver.ts",
@@ -49,6 +63,145 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   ...(await original()),
   trackRpcRequestSent: () => {},
 }));
+
+it("shows case metadata in the sidebar on wide and narrow screens", async () => {
+  const thread = {
+    ...threadWithHistory("linked-case-sidebar", 1),
+    title: "#42 Analyze notification handling",
+  };
+  const item: FogBugzCase = {
+    id: 42,
+    title: "Analyze notification handling",
+    projectId: 12,
+    projectName: "OPS MGGM",
+    status: "1 ToDo",
+    open: true,
+    assignedTo: 7,
+    assignedToName: "Test User",
+    priority: "High",
+    priorityId: 1,
+    categoryId: 1,
+    categoryName: "Bug",
+    categoryIconType: 1,
+    notifiedAt: null,
+    updatedAt: null,
+  };
+  using _environment = installFakeEnvironment([thread], {
+    [WS_METHODS.fogbugzThreadCases]: () => Effect.succeed([{ threadId: thread.id, case: item }]),
+    [WS_METHODS.fogbugzThread]: () => Effect.succeed(null),
+    [WS_METHODS.fogbugzStatus]: () => Effect.succeed({ connection: null, projects: [] }),
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    mggmThreadSidebarEnabled: true,
+    panelAnimationDurationMs: 0,
+  });
+  await page.viewport(1400, 900);
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  const container = document.createElement("div");
+  container.className = "h-[900px] w-[1400px]";
+  // AppRoot owns the router in this integrated client scenario.
+  await using screen = await render(<AppRoot router={router} />, { container, router: false });
+  await expect.element(screen.getByText("OPS MGGM", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Prio 1", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("ToDo", { exact: true })).toBeVisible();
+  await expect.element(screen.getByLabelText("Bug", { exact: true })).toBeVisible();
+  await page.screenshot({ path: ".t3/fogbugz-thread-wide.png" });
+  await page.viewport(390, 900);
+  screen.container.className = "h-[900px] w-[390px]";
+  await userEvent.click(page.getByRole("button", { name: "Toggle main sidebar", exact: true }));
+  await expect.element(page.getByText("Prio 1", { exact: true })).toBeVisible();
+  await expect.element(page.getByRole("dialog")).toHaveStyle({ opacity: "1" });
+  await page.screenshot({ path: ".t3/fogbugz-thread-narrow.png" });
+});
+
+it("saves global and project FogBugz automation choices", async () => {
+  const patches: ServerSettingsPatch[] = [];
+  using _environment = installFakeEnvironment([], {
+    [WS_METHODS.fogbugzStatus]: () => Effect.succeed({ connection: null, projects: [] }),
+    [WS_METHODS.serverUpdateSettings]: ({ patch }: { patch: ServerSettingsPatch }) =>
+      Effect.sync(() => {
+        patches.push(patch);
+        return applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, patch);
+      }),
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    panelAnimationDurationMs: 0,
+  });
+  await page.viewport(1400, 900);
+  const router = getRouter(
+    createMemoryHistory({
+      initialEntries: [`/settings/mggm?machine=${ENVIRONMENT_ID}`],
+    }),
+  );
+  await router.load();
+  const container = document.createElement("div");
+  container.className = "h-[900px] w-[1400px]";
+  // AppRoot owns the router in this integrated client scenario.
+  await using screen = await render(<AppRoot router={router} />, { container, router: false });
+  await expect.element(page.getByRole("combobox", { name: "Auto-Settle on" })).toBeVisible();
+  await expect
+    .element(page.getByRole("combobox", { name: "Auto-Analyze New Cases" }))
+    .toBeVisible();
+  await userEvent.click(page.getByRole("combobox", { name: "Auto-Analyze New Cases" }));
+  await userEvent.click(page.getByRole("option", { name: "Only initial event", exact: true }));
+  await vi.waitFor(() =>
+    expect(patches).toContainEqual(expect.objectContaining({ fogbugzAutoAnalyze: "initial" })),
+  );
+  await page.screenshot({ path: ".t3/fogbugz-settings-wide.png" });
+  await page.viewport(390, 900);
+  screen.container.className = "h-[900px] w-[390px]";
+  await expect
+    .element(page.getByRole("combobox", { name: "Auto-Analyze New Cases" }))
+    .toBeVisible();
+  page.getByRole("combobox", { name: "Auto-Analyze New Cases" }).element().scrollIntoView();
+  await page.screenshot({ path: ".t3/fogbugz-settings-narrow.png" });
+  const projectKey = buildSidebarProjectSnapshots({
+    projects: readProjects(),
+    settings: DEFAULT_CLIENT_SETTINGS,
+    primaryEnvironmentId: ENVIRONMENT_ID,
+    resolveEnvironmentLabel: () => "Test",
+  })[0]!.projectKey;
+  await router.navigate({
+    to: "/settings/projects",
+    search: { machine: ENVIRONMENT_ID, project: projectKey },
+  });
+  await expect.element(page.getByRole("combobox", { name: "Auto-Settle on" })).toBeVisible();
+  page.getByRole("combobox", { name: "Auto-Settle on" }).element().scrollIntoView();
+  await userEvent.click(page.getByRole("combobox", { name: "Auto-Settle on" }));
+  await userEvent.click(page.getByRole("option", { name: "On closed", exact: true }));
+  await vi.waitFor(() =>
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        projectSettingsOverrides: expect.objectContaining({
+          [ProjectId.make("project-render")]: expect.objectContaining({
+            fogbugzAutoSettle: "closed",
+          }),
+        }),
+      }),
+    ),
+  );
+  page
+    .getByRole("combobox", { name: "Auto-Settle on" })
+    .element()
+    .closest("section")
+    ?.scrollIntoView();
+  await page.screenshot({ path: ".t3/fogbugz-project-settings-narrow.png" });
+  await page.viewport(1400, 900);
+  screen.container.className = "h-[900px] w-[1400px]";
+  page
+    .getByRole("combobox", { name: "Auto-Settle on" })
+    .element()
+    .closest("section")
+    ?.scrollIntoView();
+  await page.screenshot({ path: ".t3/fogbugz-project-settings-wide.png" });
+});
 
 it.each(["saved", "draft"])("processes sidepanel cases in a %s thread", async (kind) => {
   const thread = threadWithHistory("fogbugz-actions", 1);

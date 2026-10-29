@@ -56,6 +56,9 @@ describe("searchSettings", () => {
   it("finds MGGM thread layout and places its page directly below General", () => {
     const results = searchSettings("MGGM idle projects");
     expect(results.find((item) => item.id === "mggm-thread-sidebar")?.to).toBe("/settings/mggm");
+    expect(
+      searchSettings("FogBugz analysis").some((item) => item.id === "fogbugz-auto-analyze"),
+    ).toBe(true);
     expect(SETTINGS_NAV_GROUPS[0]?.paths.slice(0, 2)).toEqual([
       "/settings/general",
       "/settings/mggm",
@@ -263,6 +266,7 @@ describe("auto-settlement search availability", () => {
       hasThreadAutoSettlement: availability.eligibleEnvironmentIds.length > 0,
     });
     expect(searchSettings("auto-settle", items).map((item) => item.id)).toEqual([
+      "fogbugz-auto-settle",
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
       "days-before-auto-settle",
