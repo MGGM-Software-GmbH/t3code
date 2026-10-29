@@ -1,5 +1,7 @@
 import { FogBugzCase, FogBugzError, FogBugzId, FogBugzProject } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
 import { SaxesParser } from "saxes";
 
 type XmlNode = {
@@ -79,7 +81,10 @@ export class FogBugzApi {
     this.fetch = fetch;
   }
 
-  private async request(parameters: Record<string, string>): Promise<XmlNode> {
+  private async request(
+    parameters: Record<string, string>,
+    receiveHeaders?: (headers: Headers) => void,
+  ): Promise<XmlNode> {
     let response: Response;
     try {
       response = await this.fetch(new URL("api.asp", this.baseUrl), {
@@ -95,6 +100,7 @@ export class FogBugzApi {
     if (response.status === 401 || response.status === 403)
       throw new FogBugzError({ code: "authentication" });
     if (!response.ok) throw new FogBugzError({ code: "network" });
+    receiveHeaders?.(response.headers);
     try {
       // Bound untrusted responses before parsing or retaining case text.
       const reader = response.body?.getReader();
@@ -129,31 +135,55 @@ export class FogBugzApi {
     await this.request({ cmd: "logoff", token });
   }
 
+  async browserSession(token: string, personId: number) {
+    let sessionCookie: string | undefined;
+    const response = await this.request({ cmd: "browserSession", token }, (headers) => {
+      sessionCookie = headers
+        .getSetCookie()
+        .find((cookie) => cookie.startsWith("fbToken="))
+        ?.split(";", 1)[0]
+        ?.slice("fbToken=".length);
+    });
+    if (id(value(child(response, "session"), "ixPerson")) !== personId || !sessionCookie)
+      throw new FogBugzError({ code: "authentication" });
+    return sessionCookie;
+  }
+
   async person(token: string) {
     const person = child(await this.request({ cmd: "viewPerson", token }), "person");
     return { id: id(value(person, "ixPerson")), name: value(person, "sFullName") };
   }
 
   async projects(token: string) {
-    const projects = child(await this.request({ cmd: "listProjects", token }), "projects");
+    const response = await this.request({ cmd: "listProjects", token, includeProjectGroups: "1" });
+    const projects = child(response, "projects");
+    const memberships = child(response, "projectGroups").children;
     return projects.children
       .filter((node) => node.name === "project")
       .map((project) =>
         decodeProject({
           id: id(value(project, "ixProject")),
           name: value(project, "sProject"),
+          groups: memberships
+            .filter((item) => id(value(item, "ixProject")) === id(value(project, "ixProject")))
+            .map((item) => ({
+              id: id(value(item, "ixProjectGroup")),
+              name: value(item, "sProjectGroup"),
+            })),
         }),
       );
   }
 
   async cases(token: string, query: string) {
+    const categories = child(await this.request({ cmd: "listCategories", token }), "categories");
     const cases = child(
       await this.request({
         cmd: "search",
         token,
         q: query,
         max: "201",
-        cols: "ixBug,sTitle,ixProject,sProject,sStatus,fOpen,ixPersonAssignedTo",
+        includeReadNotifications: "1",
+        cols: "ixBug,sTitle,ixProject,sProject,sStatus,fOpen,ixPersonAssignedTo,sPersonAssignedTo,sPriority,ixCategory,sCategory,dtCaseNotified,dtLastUpdated",
       }),
       "cases",
     );
@@ -168,7 +198,29 @@ export class FogBugzApi {
           status: value(item, "sStatus"),
           open: value(item, "fOpen").toLowerCase() === "true" || value(item, "fOpen") === "1",
           assignedTo: Number(value(item, "ixPersonAssignedTo")),
+          assignedToName: value(item, "sPersonAssignedTo"),
+          priority: value(item, "sPriority"),
+          categoryId: id(value(item, "ixCategory")),
+          categoryName: value(item, "sCategory"),
+          categoryIconType: Number(
+            value(childCategory(categories, value(item, "ixCategory")), "nIconType"),
+          ),
+          notifiedAt: timestamp(value(item, "dtCaseNotified")),
+          updatedAt: timestamp(value(item, "dtLastUpdated")),
         }),
       );
   }
+}
+
+function childCategory(categories: XmlNode, categoryId: string): XmlNode {
+  const category = categories.children.find((item) => value(item, "ixCategory") === categoryId);
+  if (!category) throw new FogBugzError({ code: "response" });
+  return category;
+}
+
+function timestamp(value: string): string | null {
+  if (!value) return null;
+  const date = DateTime.make(value);
+  if (Option.isNone(date)) throw new FogBugzError({ code: "response" });
+  return DateTime.formatIso(date.value);
 }

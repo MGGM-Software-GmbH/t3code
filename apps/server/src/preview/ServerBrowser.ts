@@ -38,6 +38,8 @@ import {
   type PreviewEvent,
   type PreviewNavStatus,
   type PreviewSessionSnapshot,
+  type PreviewOpenInput,
+  type PreviewError,
   type PreviewViewportSetting,
   ThreadId,
   SERVER_BROWSER_AUTOMATION_CLIENT_ID,
@@ -240,6 +242,11 @@ export class ServerBrowser extends Context.Service<
     }) => Effect.Effect<Option.Option<{ readonly path: string; readonly fileName: string }>>;
 
     readonly clearProfile: (profileId: string) => Effect.Effect<void, PreviewClearProfileError>;
+
+    readonly openAuthenticated: (
+      input: PreviewOpenInput,
+      session: { readonly baseUrl: string; readonly cookie: string },
+    ) => Effect.Effect<PreviewSessionSnapshot, PreviewError>;
 
     readonly reportProfiles: (input: PreviewReportProfilesInput) => Effect.Effect<void>;
   }
@@ -462,6 +469,10 @@ const make = Effect.gen(function* () {
   const setupCommand = yield* resolveRootCliCommand(PreviewBrowserHost.SETUP_SUBCOMMAND);
 
   const tabs = new Map<string, ServerTab>();
+  const authenticatedTabs = new Map<
+    string,
+    { readonly baseUrl: string; readonly cookie: string }
+  >();
   const pendingTabs = new Map<string, Promise<ServerTab>>();
 
   const closedPendingTabs = new Set<string>();
@@ -738,6 +749,24 @@ const make = Effect.gen(function* () {
     if (adopted?.page.isClosed()) throw new Error("The popup closed before it opened.");
     if (!desktop) await prepareContext(context);
     const page = adopted?.page ?? desktop?.page ?? (await context.newPage());
+    const session = authenticatedTabs.get(tabKey(snapshot.threadId, snapshot.tabId));
+    authenticatedTabs.delete(tabKey(snapshot.threadId, snapshot.tabId));
+    if (session) {
+      await context
+        .addCookies([
+          {
+            name: "fbToken",
+            value: session.cookie,
+            url: session.baseUrl,
+            httpOnly: true,
+            secure: new URL(session.baseUrl).protocol === "https:",
+            sameSite: "Lax",
+          },
+        ])
+        .catch(() => {
+          throw new Error("Could not install the browser session.");
+        });
+    }
     const cdp = await context.newCDPSession(page);
     await installPdfDocumentNavigation(cdp);
     // The desktop's page is already a normal browser. A popup's first request
@@ -894,11 +923,11 @@ const make = Effect.gen(function* () {
     // Existing desktop and popup PDFs can start loading before interception attaches.
     if (
       snapshot.navStatus._tag === "Loading" &&
-      ((!adopted && !desktop) || isPdfAssetUrl(snapshot.navStatus.url))
+      ((!adopted && !desktop) || session !== undefined || isPdfAssetUrl(snapshot.navStatus.url))
     ) {
       const options = { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS } as const;
       tab.initialNavigation = (
-        (desktop || adopted) && page.url() === snapshot.navStatus.url
+        !session && (desktop || adopted) && page.url() === snapshot.navStatus.url
           ? page.reload(options)
           : page.goto(snapshot.navStatus.url, options)
       ).then(constVoid, (cause: unknown) => {
@@ -1236,6 +1265,7 @@ const make = Effect.gen(function* () {
         throw cause;
       })
       .finally(() => {
+        authenticatedTabs.delete(key);
         pendingTabs.delete(key);
         closedPendingTabs.delete(key);
       });
@@ -2059,6 +2089,7 @@ const make = Effect.gen(function* () {
         return;
       }
       const key = tabKey(event.threadId, event.tabId);
+      if (event.type === "closed") authenticatedTabs.delete(key);
       const tab = tabs.get(key);
       if (event.type === "closed" && !tab && pendingTabs.has(key)) closedPendingTabs.add(key);
       if (!tab) return;
@@ -2531,6 +2562,16 @@ const make = Effect.gen(function* () {
     });
 
   return ServerBrowser.of({
+    openAuthenticated: Effect.fn("ServerBrowser.openAuthenticated")(function (input, session) {
+      // Cookie installation requires the server-controlled browser, including its desktop CDP surface.
+      return manager.open({
+        ...input,
+        runtime: "server",
+        beforePublish: (snapshot) => {
+          authenticatedTabs.set(tabKey(snapshot.threadId, snapshot.tabId), session);
+        },
+      });
+    }),
     attachViewer,
     clearProfile,
     reportProfiles,

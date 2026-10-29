@@ -21,6 +21,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.fogbugzThread]: "server",
   [WS_METHODS.fogbugzLinkThread]: "server",
   [WS_METHODS.fogbugzCreateThread]: "server",
+  [WS_METHODS.fogbugzOpenCase]: "server",
   [WS_METHODS.pdSecretsStatus]: "server",
   [WS_METHODS.pdSecretsLogin]: "server",
   [WS_METHODS.pdSecretsRespond]: "server",

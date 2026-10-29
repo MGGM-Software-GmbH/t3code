@@ -2,8 +2,9 @@ import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { openUrlInPreview } from "../../browser/openFileInPreview";
+import { useBrowserDefaults } from "../../browser/browserDefaults";
+import { useRenderedAppearance } from "../../hooks/useTheme";
 import { fogbugzEnvironment } from "../../state/fogbugz";
-import { previewEnvironment } from "../../state/preview";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -16,25 +17,38 @@ export function FogBugzThreadContext({ threadRef }: { threadRef: ScopedThreadRef
     fogbugzEnvironment.thread({ environmentId, input: { threadId } }),
   );
   const link = useAtomCommand(fogbugzEnvironment.linkThread);
-  const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  const openPreview = useAtomCommand(fogbugzEnvironment.openCase, { reportFailure: false });
   const permission = useAtomValue(fogbugzEnvironment.linkThread.permissionAtom(environmentId));
-  const browserPermission = useAtomValue(previewEnvironment.open.permissionAtom(environmentId));
+  const browserPermission = useAtomValue(fogbugzEnvironment.openCase.permissionAtom(environmentId));
   const [caseId, setCaseId] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const opened = useRef<string | null>(null);
+  const browserDefaults = useBrowserDefaults();
+  const appearance = useRenderedAppearance();
   async function openCase() {
     if (!linked.data) return;
-    const result = await openUrlInPreview({ threadRef, url: linked.data.url, openPreview });
-    if (result._tag === "Failure")
-      setError(
-        "The case could not be opened in the Browser panel. Check Browser settings and permissions.",
-      );
+    const result = await openUrlInPreview({
+      threadRef,
+      url: linked.data.url,
+      openPreview: (parameters) =>
+        openPreview({
+          ...parameters,
+          input: {
+            ...parameters.input,
+            // A remote headless browser cannot resolve the client's system appearance.
+            colorScheme:
+              browserDefaults.appearance === "system" ? appearance : browserDefaults.appearance,
+          },
+        }),
+    });
+    if (result._tag === "Failure") setError(formatEnvironmentQueryError(result.cause));
   }
   const openOnArrival = useEffectEvent(openCase);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Synchronizes the persisted case link with the external Browser panel once on arrival.
   useEffect(() => {
+    if (!linked.data) opened.current = null;
     if (linked.data && browserPermission && opened.current !== linked.data.url) {
       opened.current = linked.data.url;
       void openOnArrival();

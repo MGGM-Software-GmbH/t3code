@@ -20,8 +20,14 @@ const credentials = {
   username: "test@example.test",
   password: "private-password",
 };
-const caseXml = (id: number, project: number, assigned = 7) =>
-  `<case ixBug="${id}"><ixBug>${id}</ixBug><sTitle>Case ${id}</sTitle><ixProject>${project}</ixProject><sProject>Project ${project}</sProject><sStatus>Active</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>${assigned}</ixPersonAssignedTo></case>`;
+const caseXml = (
+  id: number,
+  project: number,
+  assigned = 7,
+  notified = "",
+  updated = "2026-01-01T00:00:00Z",
+) =>
+  `<case ixBug="${id}"><ixBug>${id}</ixBug><sTitle>Case ${id}</sTitle><ixProject>${project}</ixProject><sProject>Project ${project}</sProject><sStatus>1 ToDo</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>${assigned}</ixPersonAssignedTo><sPersonAssignedTo>Person ${assigned}</sPersonAssignedTo><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>${notified}</dtCaseNotified><dtLastUpdated>${updated}</dtLastUpdated></case>`;
 
 function fixture() {
   const secrets = new Map<string, Uint8Array>();
@@ -47,10 +53,12 @@ function fixture() {
         : command === "viewPerson"
           ? "<person><ixPerson>7</ixPerson><sFullName>Test Person</sFullName></person>"
           : command === "listProjects"
-            ? "<projects><project><ixProject>12</ixProject><sProject>Project 12</sProject></project></projects>"
-            : command === "search"
-              ? `<cases>${params.get("q") === "42" ? caseXml(42, 12) : caseXml(42, 12) + caseXml(43, 99) + caseXml(44, 12, 8)}</cases>`
-              : "";
+            ? "<projects><project><ixProject>12</ixProject><sProject>Project 12</sProject></project></projects><projectGroups><membership><ixProject>12</ixProject><ixProjectGroup>3</ixProjectGroup><sProjectGroup>MGGM</sProjectGroup></membership></projectGroups>"
+            : command === "listCategories"
+              ? "<categories><category><ixCategory>1</ixCategory><nIconType>1</nIconType></category></categories>"
+              : command === "search"
+                ? `<cases>${params.get("q") === "42" ? caseXml(42, 12) : caseXml(42, 12) + caseXml(43, 99) + caseXml(44, 12, 8)}</cases>`
+                : "";
     return new Response(`<response>${content}</response>`);
   });
   const dependencies = Layer.merge(Sqlite.layerMemory, secretLayer).pipe(
@@ -72,6 +80,54 @@ const seed = Effect.gen(function* () {
 });
 
 describe("FogBugz integration persistence and access", () => {
+  it.effect(
+    "resolves current readable group members and sorts personal notifications before modification dates",
+    () => {
+      const test = fixture();
+      return Effect.gen(function* () {
+        using _fetch = vi.spyOn(globalThis, "fetch").mockImplementation(test.fetch);
+        yield* seed;
+        const service = yield* FogBugzService;
+        yield* service.connect(credentials);
+        yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
+        expect((yield* service.status()).projects).toEqual([
+          { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 },
+        ]);
+        expect(
+          (yield* Effect.flip(
+            service.linkProject({ projectId, fogbugzProjectId: 12, fogbugzProjectGroupId: 3 }),
+          )).code,
+        ).toBe("project");
+        expect(
+          (yield* Effect.flip(
+            service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 99 }),
+          )).code,
+        ).toBe("access");
+        const originalFetch = test.fetch.getMockImplementation()!;
+        test.fetch.mockImplementation(async (url, init) => {
+          const params = new URLSearchParams(String(init?.body));
+          if (params.get("cmd") === "listProjects")
+            return new Response(
+              "<response><projects><project><ixProject>12</ixProject><sProject>Project 12</sProject></project><project><ixProject>13</ixProject><sProject>New project</sProject></project></projects><projectGroups><membership><ixProject>13</ixProject><ixProjectGroup>3</ixProjectGroup><sProjectGroup>MGGM</sProjectGroup></membership></projectGroups></response>",
+            );
+          if (params.get("cmd") === "search")
+            return new Response(
+              `<response><cases>${caseXml(40, 13, 7, "", "2026-10-28T00:00:00Z")}${caseXml(41, 13, 7, "2026-10-20T00:00:00Z", "2026-10-28T00:00:00Z")}${caseXml(42, 13, 7, "2026-10-21T00:00:00Z", "2026-10-20T00:00:00Z")}${caseXml(43, 13, 7, "2026-10-21T00:00:00Z", "2026-10-22T00:00:00Z")}${caseXml(44, 12)}</cases></response>`,
+            );
+          return originalFetch(url, init);
+        });
+        const result = yield* service.cases({ query: "", state: "open", assignedToMe: true });
+        expect(result.projects).toEqual([{ projectId, fogbugzProjectId: 13 }]);
+        expect(result.cases.map((item) => item.id)).toEqual([43, 42, 41, 40]);
+        yield* service.linkThread({ threadId, caseId: 43 });
+        yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
+        expect((yield* service.thread(threadId))?.caseId).toBe(43);
+        yield* service.linkProject({ projectId, fogbugzProjectId: null });
+        expect((yield* service.status()).projects).toEqual([]);
+        expect(yield* service.thread(threadId)).toBeNull();
+      }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
+    },
+  );
   it.effect(
     "keeps tokens out of metadata, filters projects and assignees, and persists links across service reconstruction",
     () => {

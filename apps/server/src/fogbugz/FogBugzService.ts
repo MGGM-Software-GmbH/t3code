@@ -32,10 +32,14 @@ export class FogBugzService extends Context.Service<
     ) => Effect.Effect<FogBugzConnection, FogBugzError>;
     disconnect: () => Effect.Effect<void, FogBugzError>;
     test: () => Effect.Effect<FogBugzConnection, FogBugzError>;
+    browserSession: (
+      threadId: ThreadId,
+    ) => Effect.Effect<{ url: string; baseUrl: string; cookie: string }, FogBugzError>;
     projects: () => Effect.Effect<ReadonlyArray<typeof FogBugzProject.Type>, FogBugzError>;
     linkProject: (input: {
       projectId: ProjectId;
       fogbugzProjectId: number | null;
+      fogbugzProjectGroupId?: number | null;
     }) => Effect.Effect<void, FogBugzError>;
     cases: (
       input: typeof FogBugzCasesInput.Type,
@@ -109,10 +113,28 @@ export const layer = Layer.effect(
     const projectLinks = () =>
       sql<{
         projectId: ProjectId;
-        fogbugzProjectId: number;
-      }>`SELECT links.project_id AS "projectId", links.fogbugz_project_id AS "fogbugzProjectId" FROM fogbugz_projects links JOIN projection_projects project ON project.project_id = links.project_id WHERE project.deleted_at IS NULL`.pipe(
+        fogbugzProjectId: number | null;
+        fogbugzProjectGroupId: number | null;
+      }>`SELECT links.project_id AS "projectId", links.fogbugz_project_id AS "fogbugzProjectId", NULL AS "fogbugzProjectGroupId" FROM fogbugz_projects links JOIN projection_projects project ON project.project_id = links.project_id WHERE project.deleted_at IS NULL
+      UNION ALL SELECT links.project_id AS "projectId", NULL AS "fogbugzProjectId", links.fogbugz_project_group_id AS "fogbugzProjectGroupId" FROM fogbugz_project_groups links JOIN projection_projects project ON project.project_id = links.project_id WHERE project.deleted_at IS NULL`.pipe(
         Effect.mapError(storageError),
       );
+    const resolveProjectLinks = Effect.fn("FogBugz.resolveProjectLinks")(function* (
+      links: ReadonlyArray<(typeof FogBugzStatus.Type.projects)[number]>,
+    ) {
+      const projects = links.some((link) => link.fogbugzProjectGroupId !== null)
+        ? yield* call((api, token) => api.projects(token))
+        : [];
+      return links.flatMap((link) =>
+        link.fogbugzProjectId !== null
+          ? [{ projectId: link.projectId, fogbugzProjectId: link.fogbugzProjectId }]
+          : projects
+              .filter((project) =>
+                project.groups.some((group) => group.id === link.fogbugzProjectGroupId),
+              )
+              .map((project) => ({ projectId: link.projectId, fogbugzProjectId: project.id })),
+      );
+    });
     const threadLinks = Effect.fn("FogBugz.threadLinks")(function* () {
       const current = yield* connection();
       if (!current) return [];
@@ -134,13 +156,14 @@ export const layer = Layer.effect(
       projectId: ProjectId,
       caseId: number,
     ) {
-      const links = yield* projectLinks();
-      const link = links.find((item) => item.projectId === projectId);
-      if (!link) return yield* new FogBugzError({ code: "project" });
+      const links = yield* resolveProjectLinks(
+        (yield* projectLinks()).filter((item) => item.projectId === projectId),
+      );
+      if (links.length === 0) return yield* new FogBugzError({ code: "project" });
       const cases = yield* call((api, token) => api.cases(token, String(caseId)));
       const item = cases.find((candidate) => candidate.id === caseId);
       if (!item) return yield* new FogBugzError({ code: "access" });
-      if (item.projectId !== link.fogbugzProjectId)
+      if (!links.some((link) => item.projectId === link.fogbugzProjectId))
         return yield* new FogBugzError({ code: "project" });
       return item;
     });
@@ -222,6 +245,7 @@ export const layer = Layer.effect(
                   if (!sameIdentity) {
                     yield* sql`DELETE FROM fogbugz_threads`;
                     yield* sql`DELETE FROM fogbugz_projects`;
+                    yield* sql`DELETE FROM fogbugz_project_groups`;
                   }
                   yield* saveConnection(next);
                 }),
@@ -242,6 +266,7 @@ export const layer = Layer.effect(
                 Effect.gen(function* () {
                   yield* sql`DELETE FROM fogbugz_threads`;
                   yield* sql`DELETE FROM fogbugz_projects`;
+                  yield* sql`DELETE FROM fogbugz_project_groups`;
                   yield* sql`DELETE FROM fogbugz_connection`;
                 }),
               )
@@ -266,10 +291,24 @@ export const layer = Layer.effect(
             const previous = (yield* projectLinks()).find(
               (item) => item.projectId === input.projectId,
             );
-            if (previous?.fogbugzProjectId === input.fogbugzProjectId) return;
-            if (input.fogbugzProjectId !== null) {
+            const groupId = input.fogbugzProjectGroupId ?? null;
+            if (input.fogbugzProjectId !== null && groupId !== null)
+              return yield* new FogBugzError({ code: "project" });
+            if (
+              previous &&
+              previous.fogbugzProjectId === input.fogbugzProjectId &&
+              previous.fogbugzProjectGroupId === groupId
+            )
+              return;
+            if (input.fogbugzProjectId !== null || groupId !== null) {
               const projects = yield* call((api, token) => api.projects(token));
-              if (!projects.some((project) => project.id === input.fogbugzProjectId))
+              if (
+                !projects.some((project) =>
+                  groupId !== null
+                    ? project.groups.some((group) => group.id === groupId)
+                    : project.id === input.fogbugzProjectId,
+                )
+              )
                 return yield* new FogBugzError({ code: "access" });
               const local =
                 yield* sql`SELECT project_id FROM projection_projects WHERE project_id = ${input.projectId} AND deleted_at IS NULL`.pipe(
@@ -281,10 +320,13 @@ export const layer = Layer.effect(
               .withTransaction(
                 Effect.gen(function* () {
                   yield* sql`DELETE FROM fogbugz_threads WHERE project_id = ${input.projectId}`;
+                  yield* sql`DELETE FROM fogbugz_project_groups WHERE project_id = ${input.projectId}`;
                   if (input.fogbugzProjectId === null)
                     yield* sql`DELETE FROM fogbugz_projects WHERE project_id = ${input.projectId}`;
                   else
                     yield* sql`INSERT INTO fogbugz_projects (project_id, fogbugz_project_id) VALUES (${input.projectId}, ${input.fogbugzProjectId}) ON CONFLICT(project_id) DO UPDATE SET fogbugz_project_id = excluded.fogbugz_project_id`;
+                  if (groupId !== null)
+                    yield* sql`INSERT INTO fogbugz_project_groups (project_id, fogbugz_project_group_id) VALUES (${input.projectId}, ${groupId})`;
                 }),
               )
               .pipe(Effect.mapError(storageError));
@@ -292,12 +334,14 @@ export const layer = Layer.effect(
         );
       }),
       cases: Effect.fn("FogBugz.cases")(function* (input) {
-        const links = (yield* projectLinks()).filter(
-          (link) => !input.projectId || link.projectId === input.projectId,
+        const links = yield* resolveProjectLinks(
+          (yield* projectLinks()).filter(
+            (link) => !input.projectId || link.projectId === input.projectId,
+          ),
         );
         if (links.length === 0) {
           yield* authenticated();
-          return { cases: [], threads: [], truncated: false };
+          return { cases: [], threads: [], truncated: false, projects: links };
         }
         const current = yield* authenticated();
         const scope = `(${[...new Set(links.map((link) => link.fogbugzProjectId))].map((id) => `project:=${id}`).join(" OR ")})`;
@@ -308,6 +352,7 @@ export const layer = Layer.effect(
               input.state === "all" ? "" : `status:${input.state}`,
               input.assignedToMe ? "assignedto:me" : "",
               input.query ? `(${input.query})` : "",
+              'orderby:"-notified,-lastedited"',
             ]
               .filter(Boolean)
               .join(" ");
@@ -321,7 +366,18 @@ export const layer = Layer.effect(
         const threads = (yield* threadLinks()).filter((thread) =>
           visible.some((item) => item.id === thread.caseId),
         );
-        return { cases: visible.slice(0, 200), threads, truncated: cases.length > 200 };
+        visible.sort(
+          (left, right) =>
+            (right.notifiedAt ?? "").localeCompare(left.notifiedAt ?? "") ||
+            (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "") ||
+            right.id - left.id,
+        );
+        return {
+          cases: visible.slice(0, 200),
+          threads,
+          truncated: cases.length > 200,
+          projects: links,
+        };
       }),
       thread: Effect.fn("FogBugz.thread")(function* (threadId) {
         const linked = (yield* threadLinks()).find((item) => item.threadId === threadId);
@@ -334,6 +390,20 @@ export const layer = Layer.effect(
         return rows[0] ? { ...linked, title: rows[0].title } : null;
       }),
       prepareThread,
+      browserSession: Effect.fn("FogBugz.browserSession")(function* (threadId) {
+        return yield* lock.withPermit(
+          Effect.gen(function* () {
+            const linked = (yield* threadLinks()).find((item) => item.threadId === threadId);
+            if (!linked) return yield* new FogBugzError({ code: "thread" });
+            yield* caseForProject(linked.projectId, linked.caseId);
+            return yield* call(async (api, token, current) => ({
+              url: linked.url,
+              baseUrl: current.baseUrl,
+              cookie: await api.browserSession(token, current.personId),
+            }));
+          }),
+        );
+      }),
       linkThread: Effect.fn("FogBugz.linkThread")(function* (input) {
         return yield* lock.withPermit(
           Effect.gen(function* () {

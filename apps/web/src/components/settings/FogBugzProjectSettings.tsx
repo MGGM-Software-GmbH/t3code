@@ -27,14 +27,22 @@ export function FogBugzProjectSettings({
   const link = useAtomCommand(fogbugzEnvironment.linkProject);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const selected = status.data?.projects.find(
-    (item) => item.projectId === projectId,
-  )?.fogbugzProjectId;
+  const selected = status.data?.projects.find((item) => item.projectId === projectId);
+  const selectedValue = selected?.fogbugzProjectGroupId
+    ? `group:${selected.fogbugzProjectGroupId}`
+    : selected?.fogbugzProjectId
+      ? `project:${selected.fogbugzProjectId}`
+      : "none";
+  const groups = [
+    ...new Map(
+      projects.data?.flatMap((project) => project.groups).map((group) => [group.id, group]),
+    ).values(),
+  ];
   const failure = error ?? status.error ?? projects.error;
 
   return (
     <SettingsRow
-      title="FogBugz project"
+      title="FogBugz project or group"
       description={label}
       status={
         failure ? (
@@ -50,13 +58,19 @@ export function FogBugzProjectSettings({
       control={
         connected ? (
           <Select
-            value={selected ? String(selected) : "none"}
+            value={selectedValue}
             disabled={busy || !permission || projects.isPending || !!projects.error}
             onValueChange={async (value) => {
               setBusy(true);
               const result = await link({
                 environmentId,
-                input: { projectId, fogbugzProjectId: value === "none" ? null : Number(value) },
+                input: {
+                  projectId,
+                  fogbugzProjectId: value?.startsWith("project:") ? Number(value.slice(8)) : null,
+                  fogbugzProjectGroupId: value?.startsWith("group:")
+                    ? Number(value.slice(6))
+                    : null,
+                },
               });
               setBusy(false);
               setError(
@@ -69,13 +83,21 @@ export function FogBugzProjectSettings({
               <SelectValue>
                 {projects.isPending
                   ? "Loading projects…"
-                  : (projects.data?.find((item) => item.id === selected)?.name ?? "Not linked")}
+                  : selected?.fogbugzProjectGroupId
+                    ? `Group: ${groups.find((group) => group.id === selected.fogbugzProjectGroupId)?.name ?? selected.fogbugzProjectGroupId}`
+                    : (projects.data?.find((item) => item.id === selected?.fogbugzProjectId)
+                        ?.name ?? "Not linked")}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
               <SelectItem value="none">Not linked</SelectItem>
+              {groups.map((group) => (
+                <SelectItem key={`group:${group.id}`} value={`group:${group.id}`}>
+                  Group: {group.name}
+                </SelectItem>
+              ))}
               {projects.data?.map((item) => (
-                <SelectItem key={item.id} value={String(item.id)}>
+                <SelectItem key={item.id} value={`project:${item.id}`}>
                   {item.name}
                 </SelectItem>
               ))}

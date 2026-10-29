@@ -18,6 +18,9 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarInset } from "../ui/sidebar";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { WorkspacePageContainer } from "../WorkspacePageContainer";
+import { FogBugzCategoryIcon } from "./FogBugzCategoryIcon";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 
 export function FogBugzCasesPage() {
   const primary = usePrimaryEnvironmentId();
@@ -125,7 +128,10 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b p-4">
+      <WorkspacePageContainer
+        width="expanded"
+        className="flex-row flex-wrap items-center gap-2 py-4"
+      >
         <form
           className="flex min-w-0 flex-1 basis-full gap-2 sm:basis-64"
           onSubmit={(event) => {
@@ -212,7 +218,7 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
         >
           Refresh
         </Button>
-      </div>
+      </WorkspacePageContainer>
       {status.error || cases.error || error ? (
         <p role="alert" className="p-4 text-destructive">
           {error ?? cases.error ?? status.error}
@@ -239,7 +245,9 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
           <EmptyHeader>
             <EmptyTitle>Link a project</EmptyTitle>
             <EmptyDescription>
-              <Link to="/settings/mggm">Assign a FogBugz project in Settings &gt; MGGM.</Link>
+              <Link to="/settings/projects">
+                Assign a FogBugz project or group in Settings &gt; Projects.
+              </Link>
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -253,55 +261,80 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
         </Empty>
       ) : null}
       <div className="min-h-0 flex-1 overflow-auto">
-        {cases.data?.cases.map((item) => (
-          <article key={item.id} className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
-            <div className="min-w-0 flex-1 basis-64">
-              <div className="flex gap-2">
-                <span className="text-muted-foreground">#{item.id}</span>
-                <h2 className="break-words font-medium">{item.title}</h2>
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {item.projectName} · {item.status}
-              </p>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                {cases.data?.threads
-                  .filter((thread) => thread.caseId === item.id)
-                  .map((thread) => (
-                    <Link
-                      key={thread.threadId}
-                      className="text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground"
-                      to="/$environmentId/$threadId"
-                      params={buildThreadRouteParams(
-                        scopeThreadRef(environmentId, thread.threadId),
+        <WorkspacePageContainer width="expanded" className="gap-0 pt-0">
+          {cases.data?.cases.map((item) => (
+            <article key={item.id} className="flex flex-wrap items-center gap-3 border-b py-3">
+              <div className="min-w-0 flex-1 basis-64">
+                <div className="flex gap-2">
+                  <FogBugzCategoryIcon item={item} />
+                  <span className="text-muted-foreground">#{item.id}</span>
+                  <h2 className="min-w-0 flex-1 break-words font-medium">{item.title}</h2>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                  <span>{item.projectName}</span>
+                  <span>{item.status.replace(/^\d+\s*[.:-]?\s*/, "")}</span>
+                  <Tooltip>
+                    <TooltipTrigger render={<span />}>{item.priority}</TooltipTrigger>
+                    <TooltipPopup>Priority</TooltipPopup>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger render={<span />}>{item.assignedToName}</TooltipTrigger>
+                    <TooltipPopup>Assigned to</TooltipPopup>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger render={<span />}>
+                      {item.notifiedAt ? (
+                        <time dateTime={item.notifiedAt}>
+                          {new Date(item.notifiedAt).toLocaleString()}
+                        </time>
+                      ) : (
+                        "No notification"
                       )}
-                    >
-                      {thread.title}
-                    </Link>
-                  ))}
+                    </TooltipTrigger>
+                    <TooltipPopup>Your latest notification</TooltipPopup>
+                  </Tooltip>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  {cases.data?.threads
+                    .filter((thread) => thread.caseId === item.id)
+                    .map((thread) => (
+                      <Link
+                        key={thread.threadId}
+                        className="text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground"
+                        to="/$environmentId/$threadId"
+                        params={buildThreadRouteParams(
+                          scopeThreadRef(environmentId, thread.threadId),
+                        )}
+                      >
+                        {thread.title}
+                      </Link>
+                    ))}
+                </div>
               </div>
-            </div>
-            {linked
-              .filter(
-                (link) =>
-                  link.fogbugzProjectId === item.projectId &&
-                  (projectId === "all" || link.projectId === projectId),
-              )
-              .map((link) => (
-                <Button
-                  key={link.projectId}
-                  variant="outline"
-                  disabled={busy || !permission}
-                  onClick={() => void createThread(item, link.projectId)}
-                >
-                  New thread
-                  {linked.filter((candidate) => candidate.fogbugzProjectId === item.projectId)
-                    .length > 1
-                    ? ` · ${projects.find((project) => project.id === link.projectId)?.title}`
-                    : ""}
-                </Button>
-              ))}
-          </article>
-        ))}
+              {cases.data?.projects
+                .filter(
+                  (link) =>
+                    link.fogbugzProjectId === item.projectId &&
+                    (projectId === "all" || link.projectId === projectId),
+                )
+                .map((link) => (
+                  <Button
+                    key={link.projectId}
+                    variant="outline"
+                    disabled={busy || !permission}
+                    onClick={() => void createThread(item, link.projectId)}
+                  >
+                    New thread
+                    {(cases.data?.projects.filter(
+                      (candidate) => candidate.fogbugzProjectId === item.projectId,
+                    ).length ?? 0) > 1
+                      ? ` · ${projects.find((project) => project.id === link.projectId)?.title}`
+                      : ""}
+                  </Button>
+                ))}
+            </article>
+          ))}
+        </WorkspacePageContainer>
       </div>
       {cases.data?.truncated ? (
         <p className="p-3 text-sm text-muted-foreground">

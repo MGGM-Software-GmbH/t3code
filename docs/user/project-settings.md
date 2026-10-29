@@ -4,11 +4,13 @@
 
 In **Settings > MGGM**, select an environment and connect your existing MGGM FogBugz account using its base URL, email and password. The environment stores the API token in its server-side secret store. Use **Test connection**, **Update connection**, or **Disconnect** to manage it.
 
-In **Settings > Projects**, select a T3 project and choose its **FogBugz project** from the projects visible to your account. Each T3 project has its own assignment. Choose **Not linked** to remove it.
+In **Settings > Projects**, select a T3 project and choose a **FogBugz project or group** visible to your account. A group includes all its currently accessible projects, including later membership changes. Each T3 project has its own assignment. Choose **Not linked** to remove it.
 
 Open **Fälle** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. **New thread** creates a linked thread without starting an agent run. Existing threads appear as direct links; a thread can also link a case by number or remove that association.
 
-Linked threads open the case in the existing Browser panel using the selected browser profile. Browser sign-in is separate from API authentication. Changing the FogBugz server or account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. File synchronization and FogBugz comment editing are not included.
+Cases show category, status, priority, assignee and your latest notification time. The list sorts by that notification time, then by the last case update.
+
+Linked threads open the case in the existing Browser panel using the selected browser profile. T3 exchanges the stored API token for a browser session without another password prompt. This requires the MGGM FogBugz browser-session API. Changing the FogBugz server or account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. File synchronization and FogBugz comment editing are not included.
 
 ## Settings scope
 

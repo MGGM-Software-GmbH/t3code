@@ -2,6 +2,7 @@ import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import { FogBugzService } from "./fogbugz/FogBugzService.ts";
 import { FogBugzError } from "@t3tools/contracts";
 import * as FogBugzThreads from "./fogbugz/FogBugzThreads.ts";
+import * as FogBugzBrowser from "./fogbugz/FogBugzBrowser.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -2460,6 +2461,11 @@ export const layerWsRpc = (
         [WS_METHODS.providerAuthStart]: (input) => providerAuth.start(input, currentSessionId),
         [WS_METHODS.pdSecretsStatus]: () => pdSecrets.status(),
         [WS_METHODS.fogbugzStatus]: () => fogbugz.status(),
+        [WS_METHODS.fogbugzOpenCase]: (input) =>
+          FogBugzBrowser.openCase(input).pipe(
+            Effect.provideService(FogBugzService, fogbugz),
+            Effect.provideService(ServerBrowser.ServerBrowser, serverBrowser),
+          ),
         [WS_METHODS.fogbugzConnect]: (input) => fogbugz.connect(input),
         [WS_METHODS.fogbugzDisconnect]: () => fogbugz.disconnect(),
         [WS_METHODS.fogbugzTest]: () => fogbugz.test(),

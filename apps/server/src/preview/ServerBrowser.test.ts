@@ -197,6 +197,7 @@ function makeContext(onClose?: (context: BrowserContext) => void) {
   const context = {
     page,
     sessions,
+    addCookies: vi.fn(async () => {}),
     newPage: async () => page as unknown as Page,
     grantPermissions: vi.fn(async () => {}),
     newCDPSession: async (target: unknown) => {
@@ -404,6 +405,44 @@ it.live("tells the desktop once per thread when its agent turns start and end", 
     expect(yield* Queue.take(turns)).toEqual([threadId, false]);
     expect(yield* Queue.size(turns)).toBe(0);
   }).pipe(Effect.scoped, Effect.provide(layer)),
+);
+
+it.live.each([false, true])(
+  "installs an authenticated session before navigating the browser (desktop: %s)",
+  (desktop) =>
+    Effect.gen(function* () {
+      const browser = yield* ServerBrowser.ServerBrowser;
+      desktopRendersNext = desktop;
+      const snapshot = yield* browser.openAuthenticated(
+        {
+          threadId: scope.thread.threadId,
+          url: "https://fogbugz.example/default.asp?ixBug=42",
+          profileId: "incognito",
+          colorScheme: "dark",
+        },
+        { baseUrl: "https://fogbugz.example/", cookie: "fixture-session" },
+      );
+      yield* browser.attachViewer(viewerInput(PreviewTabId.make(snapshot.tabId), true));
+      const context = desktop ? desktopConnections[0]!.context : contexts[0]!;
+      expect(context.addCookies).toHaveBeenCalledWith([
+        {
+          name: "fbToken",
+          value: "fixture-session",
+          url: "https://fogbugz.example/",
+          httpOnly: true,
+          secure: true,
+          sameSite: "Lax",
+        },
+      ]);
+      expect(context.addCookies.mock.invocationCallOrder[0]).toBeLessThan(
+        context.page.goto.mock.invocationCallOrder[0]!,
+      );
+      expect(context.page.emulateMedia).toHaveBeenCalledWith({ colorScheme: "dark" });
+      expect(context.page.emulateMedia.mock.invocationCallOrder[0]).toBeLessThan(
+        context.page.goto.mock.invocationCallOrder[0]!,
+      );
+      expect(JSON.stringify(snapshot)).not.toContain("fixture-session");
+    }).pipe(Effect.scoped, Effect.provide(layer)),
 );
 
 it.live("preview_open reports its navigation timeout instead of the request budget", () =>

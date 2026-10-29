@@ -15,6 +15,10 @@ export function createFogBugzEnvironmentAtoms<R, E>(
     registry: AtomRegistry.AtomRegistry,
   ) => Effect.sync(() => registry.update(revisions(environmentId), (revision) => revision + 1));
   return {
+    openCase: createEnvironmentRpcCommand(runtime, {
+      label: "fogbugz:open-case",
+      tag: WS_METHODS.fogbugzOpenCase,
+    }),
     status: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "fogbugz:status",
       tag: WS_METHODS.fogbugzStatus,

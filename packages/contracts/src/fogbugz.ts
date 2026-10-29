@@ -3,7 +3,12 @@ import { CommandId, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSch
 import { ModelSelection } from "./modelSelection.ts";
 
 export const FogBugzId = Schema.Int.check(Schema.isGreaterThan(0));
-export const FogBugzProject = Schema.Struct({ id: FogBugzId, name: Schema.String });
+export const FogBugzProjectGroup = Schema.Struct({ id: FogBugzId, name: Schema.String });
+export const FogBugzProject = Schema.Struct({
+  id: FogBugzId,
+  name: Schema.String,
+  groups: Schema.Array(FogBugzProjectGroup),
+});
 export const FogBugzConnection = Schema.Struct({
   id: Schema.String,
   baseUrl: Schema.String,
@@ -15,7 +20,8 @@ export const FogBugzConnection = Schema.Struct({
 export type FogBugzConnection = typeof FogBugzConnection.Type;
 export const FogBugzProjectLink = Schema.Struct({
   projectId: ProjectId,
-  fogbugzProjectId: FogBugzId,
+  fogbugzProjectId: Schema.NullOr(FogBugzId),
+  fogbugzProjectGroupId: Schema.NullOr(FogBugzId),
 });
 export const FogBugzStatus = Schema.Struct({
   connection: Schema.NullOr(FogBugzConnection),
@@ -29,6 +35,13 @@ export const FogBugzCase = Schema.Struct({
   status: Schema.String,
   open: Schema.Boolean,
   assignedTo: Schema.Int,
+  assignedToName: Schema.String,
+  priority: Schema.String,
+  categoryId: Schema.Int,
+  categoryName: Schema.String,
+  categoryIconType: Schema.Int,
+  notifiedAt: Schema.NullOr(Schema.String),
+  updatedAt: Schema.NullOr(Schema.String),
 });
 export type FogBugzCase = typeof FogBugzCase.Type;
 export const FogBugzThreadLink = Schema.Struct({
@@ -42,6 +55,7 @@ export const FogBugzCaseList = Schema.Struct({
   cases: Schema.Array(FogBugzCase),
   threads: Schema.Array(FogBugzThreadLink),
   truncated: Schema.Boolean,
+  projects: Schema.Array(Schema.Struct({ projectId: ProjectId, fogbugzProjectId: FogBugzId })),
 });
 export const FogBugzConnectInput = Schema.Struct({
   baseUrl: TrimmedNonEmptyString,

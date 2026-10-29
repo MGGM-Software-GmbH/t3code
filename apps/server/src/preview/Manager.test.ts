@@ -64,8 +64,9 @@ it.layer(layer)("PreviewManager", (it) => {
       const threadId = freshThreadId();
       const manager = yield* PreviewManager.PreviewManager;
 
-      const opened = yield* manager.open({ threadId, profileId: "work" });
+      const opened = yield* manager.open({ threadId, profileId: "work", colorScheme: "dark" });
       expect(opened.profileId).toBe("work");
+      expect(opened.colorScheme).toBe("dark");
 
       yield* manager.reportStatus({
         threadId,
@@ -76,6 +77,7 @@ it.layer(layer)("PreviewManager", (it) => {
       });
       const listed = yield* manager.list({ threadId });
       expect(listed.sessions.find((s) => s.tabId === opened.tabId)?.profileId).toBe("work");
+      expect(listed.sessions.find((s) => s.tabId === opened.tabId)?.colorScheme).toBe("dark");
     }),
   );
 

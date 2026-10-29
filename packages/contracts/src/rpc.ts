@@ -457,6 +457,7 @@ export const WS_METHODS = {
   fogbugzThread: "fogbugz.thread",
   fogbugzLinkThread: "fogbugz.link-thread",
   fogbugzCreateThread: "fogbugz.create-thread",
+  fogbugzOpenCase: "fogbugz.open-case",
   pdSecretsLogin: "pd-secrets.login",
   pdSecretsRespond: "pd-secrets.respond",
   pdSecretsCancel: "pd-secrets.cancel",
@@ -1998,6 +1999,11 @@ export const WsRpcGroup = RpcGroup.make(
     success: FogBugzStatus,
     error: FogBugzError,
   }),
+  Rpc.make(WS_METHODS.fogbugzOpenCase, {
+    payload: PreviewOpenInput,
+    success: PreviewSessionSnapshot,
+    error: Schema.Union([FogBugzError, PreviewError]),
+  }),
   Rpc.make(WS_METHODS.fogbugzConnect, {
     payload: FogBugzConnectInput,
     success: FogBugzConnection,
@@ -2019,7 +2025,11 @@ export const WsRpcGroup = RpcGroup.make(
     error: FogBugzError,
   }),
   Rpc.make(WS_METHODS.fogbugzLinkProject, {
-    payload: Schema.Struct({ projectId: ProjectId, fogbugzProjectId: Schema.NullOr(FogBugzId) }),
+    payload: Schema.Struct({
+      projectId: ProjectId,
+      fogbugzProjectId: Schema.NullOr(FogBugzId),
+      fogbugzProjectGroupId: Schema.optionalKey(Schema.NullOr(FogBugzId)),
+    }),
     success: Schema.Void,
     error: FogBugzError,
   }),

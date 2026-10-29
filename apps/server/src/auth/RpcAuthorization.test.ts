@@ -9,6 +9,7 @@ import {
   ThreadId,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
+  AuthPreviewOperateScope,
   AuthSourceControlWriteScope,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
@@ -44,6 +45,7 @@ describe("RPC authorization scopes", () => {
   });
 
   it("guards FogBugz credentials separately from case reads and thread mutations", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzOpenCase)).toBe(AuthPreviewOperateScope);
     for (const method of [
       WS_METHODS.fogbugzConnect,
       WS_METHODS.fogbugzDisconnect,
