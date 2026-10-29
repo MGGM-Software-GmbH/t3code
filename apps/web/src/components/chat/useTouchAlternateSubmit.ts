@@ -18,11 +18,11 @@ export function useTouchAlternateSubmit(enabled: boolean, onAlternate: (() => vo
     press.current = null;
   });
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- A disabled action must cancel an outstanding pointer timer.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- A disabled action must cancel an outstanding pointer timer.
   useEffect(() => {
     if (!enabled) cancel();
   }, [enabled, cancel]);
-  // oxlint-disable-next-line t3code/react-effect-budget -- Browser visibility and focus changes must cancel the pointer gesture and its timer.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Browser visibility and focus changes must cancel the pointer gesture and its timer.
   useEffect(() => {
     window.addEventListener("blur", cancel);
     document.addEventListener("visibilitychange", cancel);

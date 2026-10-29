@@ -682,7 +682,7 @@ function EditableFileSurface({
   const [draft, setDraft] = useState<ReviewCommentContext | null>(null);
   const [draftText, setDraftText] = useState("");
   const previousContentsRef = useRef<{ path: string; contents: string } | null>(null);
-  // oxlint-disable-next-line t3code/react-effect-budget -- External file updates must remap persisted comments and the open editor draft.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- External file updates must remap persisted comments and the open editor draft.
   useEffect(() => {
     const previous =
       previousContentsRef.current?.path === relativePath

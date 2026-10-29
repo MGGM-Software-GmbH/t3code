@@ -560,10 +560,9 @@ function useSidebarThreads(input: {
   const orderedThreads = [
     ...pinnedThreads,
     ...(projectFolders === null
-      ? activeThreads
+      ? visibleActiveThreads
       : projectFolders.flatMap((folder) => folder.threads)),
     ...visibleWorkingThreads,
-    ...visibleActiveThreads,
     ...visibleSnoozedThreads,
     ...renderedSettledThreads,
   ];
@@ -1931,12 +1930,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
     items.push({ kind: "marker", marker: "pinned-divider" });
     items.push({ kind: "marker", marker: "active-placeholder" });
-    items.push(...rowsOf(inlineWorkingThreads, "active"));
-    if (idle.recent.length > 0) {
+    items.push(...rowsOf(projectFolders === null ? inlineWorkingThreads : activeThreads, "active"));
+    if (projectFolders === null && idle.recent.length > 0) {
       items.push({ kind: "marker", marker: "idle-recent-header" });
       items.push(...rowsOf(visibleIdleRecent, "active"));
     }
-    if (idle.projectGroups.length > 0) {
+    if (projectFolders === null && idle.projectGroups.length > 0) {
       items.push({ kind: "marker", marker: "idle-projects-header" });
       for (const group of visibleIdleProjects) {
         if (group.visibleThreads.length === 0) continue;

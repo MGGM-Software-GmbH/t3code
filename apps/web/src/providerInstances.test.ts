@@ -16,7 +16,7 @@ import {
   resolveDefaultProviderModelSelection,
   resolveSelectableProviderInstance,
   shouldShowInstanceBadge,
-  sortProviderInstanceEntries,
+  providerInstanceEntriesFor,
 } from "./providerInstances";
 
 function provider(input: {
@@ -69,7 +69,11 @@ describe("isProviderInstancePickerReady", () => {
         displayName: "GitHub Copilot",
       }),
     ]);
-    const sorted = sortProviderInstanceEntries(entries);
+    const sorted = providerInstanceEntriesFor(
+      entries.map((entry) => entry.snapshot),
+      { providerInstances: {}, projectSettingsOverrides: {} },
+      null,
+    );
     expect(sorted.map((entry) => entry.instanceId)).toEqual(["githubCopilot", "custom_agent"]);
     expect(sorted[0]?.isDefault).toBe(true);
     expect(sorted[0]?.displayName).toBe("GitHub Copilot");

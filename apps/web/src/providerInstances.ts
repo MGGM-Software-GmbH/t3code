@@ -49,8 +49,6 @@ export interface ProviderInstanceEntry {
   readonly models: ReadonlyArray<ServerProviderModel>;
 }
 
-export type ProviderCatalogAvailability = "loading" | "ready" | "unavailable" | "unconfigured";
-
 /** Shipped presets share the default instances' ordering and reset behavior. */
 export function isDefaultProviderInstance(
   instanceId: ProviderInstanceId,
@@ -60,17 +58,6 @@ export function isDefaultProviderInstance(
     instanceId === defaultInstanceIdForDriver(driverKind) ||
     DEFAULT_PROVIDER_INSTANCE_CONFIGS[instanceId]?.driver === driverKind
   );
-}
-
-/** Initial null config is still loading; treating it as empty would strand recoverable threads. */
-export function resolveProviderCatalogAvailability(input: {
-  readonly catalogLoaded: boolean;
-  readonly entries: ReadonlyArray<ProviderInstanceEntry>;
-  readonly selectedEntry: ProviderInstanceEntry | undefined;
-}): ProviderCatalogAvailability {
-  if (!input.catalogLoaded) return "loading";
-  if (input.selectedEntry !== undefined) return "ready";
-  return input.entries.length === 0 ? "unconfigured" : "unavailable";
 }
 
 /** Disabled instances may retain ready status until reconciliation. */

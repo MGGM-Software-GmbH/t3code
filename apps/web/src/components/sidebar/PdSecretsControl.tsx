@@ -83,7 +83,7 @@ function usePrivateCredentialSubmit(enabled: boolean, onSubmit: () => void) {
     input.value = "";
     onSubmit();
   });
-  // oxlint-disable-next-line t3code/react-effect-budget -- Window capture must precede the Password Depot extension's document listeners.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Window capture must precede the Password Depot extension's document listeners.
   useEffect(() => {
     if (!enabled) return;
     for (const type of ["keydown", "click", "submit"]) window.addEventListener(type, handle, true);
@@ -137,7 +137,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
     reportDefect: false,
   });
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Server status streams trigger automatic sign-in without a local user event.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Server status streams trigger automatic sign-in without a local user event.
   useEffect(() => {
     for (const id of dismissed.current) {
       const snapshot = snapshots.find((item) => item.environmentId === id);
@@ -155,14 +155,14 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
   }, [snapshots, target, pending]);
 
   // Unmounting or losing the environment closes only this browser's owned login process.
-  // oxlint-disable-next-line t3code/react-effect-budget -- Cancel the owned server process when its dialog target unmounts.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Cancel the owned server process when its dialog target unmounts.
   useEffect(() => {
     if (!target) return;
     return () => {
       void cancel({ environmentId: target.environmentId, input: {} });
     };
   }, [cancel, target]);
-  // oxlint-disable-next-line t3code/react-effect-budget -- Environment removal and interrupted RPCs invalidate the owned login flow.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Environment removal and interrupted RPCs invalidate the owned login flow.
   useEffect(() => {
     // Mobile browsers reconnect after backgrounding. Keep unsubmitted input in
     // memory while the environment is offline; only an in-flight RPC is lost.

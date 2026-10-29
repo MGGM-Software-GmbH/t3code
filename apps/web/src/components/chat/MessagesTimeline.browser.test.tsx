@@ -1178,7 +1178,7 @@ it("keeps concurrent approvals actionable outside collapsed work and restores se
   await expect
     .element(screen.getByRole("button", { name: "Open the current tab", exact: true }))
     .toBeVisible();
-  });
+});
 
 const tallEntries = Array.from({ length: 12 }, (_, index) =>
   message(

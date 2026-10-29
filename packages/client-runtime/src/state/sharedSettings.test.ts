@@ -5,11 +5,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
-import {
-  filterSharedServerPatch,
-  splitSharedServerPatch,
-} from "./sharedSettings.ts";
-
+import { filterSharedServerPatch, splitSharedServerPatch } from "./sharedSettings.ts";
 
 describe("splitSharedServerPatch", () => {
   it.each([
@@ -25,18 +21,8 @@ describe("splitSharedServerPatch", () => {
     },
     DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
   ])("shares the text generation model and options, including reset (%j)", (selection) => {
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        [ProviderInstanceId.make("claudeAgent")]: {
-          driver: ProviderDriverKind.make("claudeAgent"),
-          enabled: true,
-        },
-      },
-    };
     const patch = { textGenerationModelSelection: selection };
     expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
-    expect(splitSharedServerPatch({ ...settings, ...patch }).sharedPatch).toMatchObject(patch);
   });
 
   it("routes preference keys to the shared patch and machine keys to the local patch", () => {
@@ -60,25 +46,6 @@ describe("splitSharedServerPatch", () => {
       enableAgentBrowserAccess: false,
       defaultThreadEnvMode: "worktree",
     });
-  });
-});
-
-describe("shared server setting keys", () => {
-  it("returns only the shared keys", () => {
-    expect(
-      Object.keys(splitSharedServerPatch(DEFAULT_SERVER_SETTINGS).sharedPatch).sort(),
-    ).toEqual([
-      "autoResumeLimitedThreads",
-      "continueThreadsAfterServerUpdate",
-      "modelCapacityRetryDelayMinutes",
-      "newWorktreesStartFromOrigin",
-      "sidebarAutoSettleAfterDays",
-      "sidebarAutoSettleOnMerge",
-      "snoozeLimitedThreads",
-      "snoozePresets",
-      "sourceControlWritingStyle",
-      "textGenerationModelSelection",
-    ]);
   });
 });
 

@@ -1,7 +1,7 @@
 import { hydratePartialDiff } from "@pierre/diffs";
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import { describe, expect, it } from "vite-plus/test";
-import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
+import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import { reviewCommentContextRecord } from "./lib/composerContextRecords";
 
 import {
@@ -41,11 +41,11 @@ describe("file comment snapshot anchors", () => {
     expect(updated.slice(0, 2).map((entry) => entry.rangeLabel)).toEqual(["L4", "L4"]);
     expect(updated[2]).toBe(diffComment);
     expect(
-      serializeLegacyContextMessage({
-        text: "Review",
+      projectComposerContextForProvider({
+        text: `Review [comment](t3-context://v1/review-comment/${reviewCommentContextRecord(updated[0]!).contextId})`,
         records: updated.map(reviewCommentContextRecord),
       }),
-    ).toContain('rangeLabel="L4"');
+    ).toContain("range: L4 (3-3)");
   });
 
   it("does not format stale current references when the authoritative read fails", async () => {

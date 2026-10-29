@@ -134,7 +134,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       hasSendableContent &&
       !isSendDisabled &&
       !isSendBusy &&
-      !isConnecting &&
       !isEnvironmentUnavailable,
     onSubmitAlternateMessage,
   );
@@ -312,7 +311,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     (compactsBeforeSend
       ? `Summarize ${compactTokens} tokens of history, then send`
       : isRunning && !isEditingQueuedMessage && canSteer
-        ? `Tap to ${followUpBehavior}, long press or Ctrl/⌘-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
+        ? `Tap to ${followUpBehavior}, long press or ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel);
 
   const sendButton = (

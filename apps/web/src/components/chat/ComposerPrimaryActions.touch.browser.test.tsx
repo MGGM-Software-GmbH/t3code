@@ -146,7 +146,6 @@ async function setup() {
     promptHasText: true,
     isSendBusy: false,
     sendDisabledReason: null,
-    isConnecting: false,
     isEnvironmentUnavailable: false,
     isPreparingWorktree: false,
     hasSendableContent: true,

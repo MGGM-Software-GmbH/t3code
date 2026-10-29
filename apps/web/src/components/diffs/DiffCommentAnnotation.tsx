@@ -82,7 +82,7 @@ export function DiffCommentAnnotation({
     return () => window.cancelAnimationFrame(frame);
   }, [focusOnMount, isForm]);
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Resize observations keep the active comment form inside its scroll viewport.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Resize observations keep the active comment form inside its scroll viewport.
   useLayoutEffect(() => {
     const form = formRef.current;
     const textarea = textareaRef.current;

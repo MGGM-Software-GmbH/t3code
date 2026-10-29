@@ -700,6 +700,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const loadEarlier = Effect.fn("EnvironmentThreadState.loadEarlier")(function* (
     throughEntryId?: string,
     workAnchorId?: string,
+    pendingQuestionOnly = false,
   ): Effect.fn.Return<ThreadHistoryController.ThreadHistoryLoadEarlierResult> {
     const workCursor = (latest: EnvironmentThreadState) =>
       Option.getOrNull(latest.data)?.visibleTurnItems.find(
@@ -783,6 +784,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           const page = pageResult.success;
           const complete = view !== "conversation";
           const keepPaging =
+            !pendingQuestionOnly &&
             complete &&
             (workAnchorId !== undefined
               ? page.nextCursor !== null
@@ -791,7 +793,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                 !page.items.some(
                   ({ item }) => item.type === "user_message" && item.createdBy === "user",
                 ));
-          if (keepPaging && (page.nextCursor === null || page.nextCursor === requestCursor))
+          if (
+            complete &&
+            (workAnchorId === undefined ? page.hasMoreHistory : keepPaging) &&
+            (page.nextCursor === null || page.nextCursor === requestCursor)
+          )
             return yield* failLoad(
               workAnchorId === undefined
                 ? "History did not advance."
@@ -829,7 +835,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                         : latest.status,
                     history:
                       workAnchorId === undefined && complete
-                        ? { ...applyHistoryPageMeta(latest.history, page), loading: keepPaging }
+                        ? {
+                            ...applyHistoryPageMeta(latest.history, page, threadId),
+                            loading: keepPaging,
+                          }
                         : { ...latest.history, expanded: true },
                   },
                 ];
@@ -959,7 +968,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               current.history.oldestLoadedTurnOrdinal <= question.ordinal)
           )
             return;
-          yield* loadEarlier();
+          // Recheck pending requests after each page; an answer may arrive during the fetch.
+          yield* loadEarlier(undefined, undefined, true);
         }),
       ),
       Effect.forkScoped,
