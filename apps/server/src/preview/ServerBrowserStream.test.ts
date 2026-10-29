@@ -145,7 +145,7 @@ it.effect.each([
         tabId: "tab",
         maxWidth: 1280,
         maxHeight: 800,
-        quality: 70,
+        quality: 90,
         canOperate,
       },
     ]);
