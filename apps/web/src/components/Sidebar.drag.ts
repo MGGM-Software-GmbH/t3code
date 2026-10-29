@@ -37,6 +37,7 @@ export function createSidebarCollisionDetection(
   options: {
     items?: readonly SidebarListItem[];
     activationY?: number | null;
+    pinningOnly?: boolean;
   } = {},
 ): CollisionDetection {
   const validity = new Map<string, boolean>();
@@ -48,10 +49,12 @@ export function createSidebarCollisionDetection(
     const pointer = args.pointerCoordinates;
     const items = options.items;
     const source = items?.find((item) => item.kind === "thread" && item.key === args.active.id);
-    const boundary = args.droppableContainers
-      .find((container) => container.id === sidebarMarkerId("pinned-divider"))
-      ?.node.current?.querySelector(".sidebar-drag-boundary-label")
-      ?.getBoundingClientRect();
+    const divider = args.droppableContainers.find(
+      (container) => container.id === sidebarMarkerId("pinned-divider"),
+    )?.node.current;
+    const boundary = options.pinningOnly
+      ? divider?.getBoundingClientRect()
+      : divider?.querySelector(".sidebar-drag-boundary-label")?.getBoundingClientRect();
     if (items && boundary && source?.kind === "thread" && pointer) {
       boundarySection ??= source.section === "pinned" ? "pinned" : "active";
       // Only pointer movement changes sections; opening the destination moves rows under stationary gestures.
@@ -96,6 +99,7 @@ export function createSidebarCollisionDetection(
 export function createSidebarSortingStrategy(input: {
   items: readonly SidebarListItem[];
   enabled?: boolean;
+  pinningOnly?: boolean;
   settledOrder: readonly string[];
   activeOrder?: readonly string[];
   settledExpanded: boolean;
@@ -116,8 +120,14 @@ export function createSidebarSortingStrategy(input: {
     const active = items[activeIndex];
     const over = items[overIndex] ?? active;
     if (active?.kind !== "thread" || !over || !rects[0]) return [];
-    const target = resolveSidebarDropTarget(items, active.key, sidebarListItemId(over));
+    const target = resolveSidebarDropTarget(
+      items,
+      active.key,
+      sidebarListItemId(over),
+      input.pinningOnly,
+    );
     if (!target) return [];
+    if (input.pinningOnly && target.section !== "pinned") return [];
     const groups: Record<SidebarSection, ThreadItem[]> = {
       pinned: [],
       active: [],

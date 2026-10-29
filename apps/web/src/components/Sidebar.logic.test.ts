@@ -1308,6 +1308,65 @@ describe("Working shelf (beta)", () => {
       row("s1", "settled"),
     ];
 
+    it.each([
+      ["active", "active", "none"],
+      ["active", "settled", "none"],
+      ["pinned", "settled", "none"],
+      ["settled", "active", "none"],
+      ["snoozed", "active", "none"],
+      ["active", "pinned", "pin"],
+      ["working", "pinned", "pin"],
+      ["snoozed", "pinned", "pin"],
+      ["settled", "pinned", "pin"],
+      ["pinned", "pinned", "reorder-pinned"],
+      ["pinned", "active", "move-active"],
+    ] as const)("limits MGGM drops from %s to %s to %s", (from, to, kind) => {
+      const sourceKey = from === "pinned" ? "p1" : "source";
+      const target = {
+        section: to,
+        pinnedOrder: ["p2", sourceKey],
+        activeOrder: ["a2", sourceKey],
+      };
+      const plan = planSidebarThreadDrop({
+        activeKey: sourceKey,
+        activeSection: from,
+        target,
+        pinnedOrder: ["p1", "p2"],
+        pinnedKeysById: new Map([
+          ["p1", "f"],
+          ["p2", "t"],
+        ]),
+        activeOrder: ["a1", "a2"],
+        activeKeysById: new Map(),
+        pinningOnly: true,
+      });
+      expect(plan.kind).toBe(kind);
+      if (plan.kind === "move-active") {
+        expect(plan).toEqual({
+          kind: "move-active",
+          order: null,
+          assignments: [],
+          unpin: true,
+          unsettle: false,
+          unsnooze: false,
+        });
+      }
+      const sourceItems: readonly SidebarListItem[] = [
+        marker("pinned-header"),
+        row("p2", "pinned"),
+        ...(from === "pinned" ? [row(sourceKey, from)] : []),
+        marker("pinned-divider"),
+        ...(from !== "pinned" ? [row(sourceKey, from)] : []),
+        row("a2", "active"),
+        marker("settled-header"),
+        row("s2", "settled"),
+      ];
+      const overKey = to === "pinned" ? "p2" : to === "active" ? "a2" : "s2";
+      expect(resolveSidebarDropTarget(sourceItems, sourceKey, overKey, true)?.section ?? null).toBe(
+        kind === "none" ? null : to,
+      );
+    });
+
     it("never drops into the Working shelf, and keeps it out of the inbox order", () => {
       expect(resolveSidebarDropTarget(items, "a1", "w1")).toBeNull();
       expect(resolveSidebarDropTarget(items, "p1", "a2")).toEqual({

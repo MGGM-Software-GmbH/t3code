@@ -70,7 +70,12 @@ scroll position instead of following the thread to its new place in the list.
 
 Pinning does not prevent automatic settlement. Settling a thread removes its pin.
 
-On web and desktop, drag a thread between sections to change its state. Drag a thread up into
+With **MGGM thread layout** enabled on web and desktop, drag threads to pin or unpin
+them, or to arrange pinned threads. Automatically sorted sections do not accept manual
+reordering or other state changes by drag and drop. Use the thread's actions to snooze,
+wake, settle, or un-settle it.
+
+With **MGGM thread layout** disabled on web and desktop, drag a thread between sections to change its state. Drag a thread up into
 the pinned section to pin it at the spot you drop it; drag a pinned thread down into the active
 list to unpin it. Dragging a thread onto the **Settled** header settles it, and dragging a settled
 thread into the active list un-settles it. A snoozed thread can be dragged out of the snoozed

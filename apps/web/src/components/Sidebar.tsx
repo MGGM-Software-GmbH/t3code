@@ -1737,7 +1737,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     };
   };
 
-  const isContextDrag = dragState?.contextDrag === true || dragState?.activeSection === "working";
+  const isContextDrag =
+    dragState?.contextDrag === true ||
+    (!mggmThreadSidebarEnabled && dragState?.activeSection === "working");
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null;
@@ -2033,7 +2035,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   }, [listMotionPass]);
   const handleThreadDragOver = (event: DragOverEvent) => {
     const target = event.over
-      ? resolveSidebarDropTarget(sidebarListItems, String(event.active.id), String(event.over.id))
+      ? resolveSidebarDropTarget(
+          sidebarListItems,
+          String(event.active.id),
+          String(event.over.id),
+          mggmThreadSidebarEnabled,
+        )
       : null;
     setDragState((current) =>
       current === null || current.activeKey !== String(event.active.id)
@@ -2056,7 +2063,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
     enabled: !isContextDrag,
-    boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
+    pinningOnly: mggmThreadSidebarEnabled,
+    boundaryLabelHeight: mggmThreadSidebarEnabled ? 0 : SIDEBAR_DRAG_LABEL_HEIGHT,
     settledOrder: draggedSettledOrder,
     ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
     settledExpanded: settledShelfExpanded,
@@ -2074,7 +2082,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (source === undefined) return createSidebarCollisionDetection(() => false);
     return createSidebarCollisionDetection(
       (id) => {
-        const target = resolveSidebarDropTarget(sidebarListItems, draggedThreadKey, id);
+        const target = resolveSidebarDropTarget(
+          sidebarListItems,
+          draggedThreadKey,
+          id,
+          mggmThreadSidebarEnabled,
+        );
         if (target === null) return false;
         return (
           planSidebarThreadDrop({
@@ -2091,12 +2104,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
             activeTimeOrdered: true,
+            pinningOnly: mggmThreadSidebarEnabled,
           }).kind !== "none"
         );
       },
       {
         items: sidebarListItems,
         activationY: dragActivationY ?? null,
+        pinningOnly: mggmThreadSidebarEnabled,
       },
     );
   })();
@@ -2106,7 +2121,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const target =
       event.over === null
         ? null
-        : resolveSidebarDropTarget(sidebarListItems, activeKey, String(event.over.id));
+        : resolveSidebarDropTarget(
+            sidebarListItems,
+            activeKey,
+            String(event.over.id),
+            mggmThreadSidebarEnabled,
+          );
     const activeThread = threadByKey.get(activeKey);
     if (activeSection === undefined || target === null || activeThread === undefined) return;
     const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
@@ -2124,6 +2144,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeKeysById,
       activeReorderableKeys: activeReorderableThreadKeys,
       activeTimeOrdered: true,
+      pinningOnly: mggmThreadSidebarEnabled,
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
@@ -3503,7 +3524,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key="pinned-header"
                                 marker="pinned-header"
                                 label="Pinned"
-                                showHeading={mggmThreadSidebarEnabled && pinnedThreads.length > 0}
+                                showHeading={
+                                  mggmThreadSidebarEnabled &&
+                                  (pinnedThreads.length > 0 || from !== null)
+                                }
                                 visible={from !== null}
                                 isDropTarget={dragTargetSection === "pinned"}
                               />,
@@ -3515,7 +3539,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key="pinned-divider"
                                 marker="pinned-divider"
                                 label="Active"
-                                visible={from !== null}
+                                visible={from !== null && !mggmThreadSidebarEnabled}
                                 isDropTarget={dragTargetSection === "active"}
                               />,
                             );
@@ -3528,6 +3552,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 label="Active"
                                 showHint={
                                   from !== null &&
+                                  (!mggmThreadSidebarEnabled || from === "pinned") &&
                                   (activeThreads.length === 0 ||
                                     (from === "active" &&
                                       activeThreads.length === 1 &&
@@ -3597,6 +3622,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 label="Settled"
                                 showHint={
                                   from !== null &&
+                                  !mggmThreadSidebarEnabled &&
                                   (renderedSettledThreads.length === 0 ||
                                     (from === "settled" &&
                                       renderedSettledThreads.length === 1 &&

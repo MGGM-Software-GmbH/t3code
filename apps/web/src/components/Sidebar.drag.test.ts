@@ -125,14 +125,23 @@ describe("sidebar collision detection", () => {
     },
   );
 
-  it.each([
-    { sourceSection: "active", pins: 0 },
-    { sourceSection: "active", pins: 1 },
-    { sourceSection: "pinned", pins: 1 },
-    { sourceSection: "settled", pins: 1 },
-  ] as const)(
-    "switches on crossing the divider row from $sourceSection with $pins pins",
-    ({ sourceSection, pins }) => {
+  it.each(
+    [
+      { sourceSection: "active", pins: 0 },
+      { sourceSection: "active", pins: 1 },
+      { sourceSection: "pinned", pins: 1 },
+      { sourceSection: "settled", pins: 1 },
+    ].flatMap((entry) => [
+      { ...entry, pinningOnly: false },
+      { ...entry, pinningOnly: true },
+    ]) as ReadonlyArray<{
+      sourceSection: "active" | "pinned" | "settled";
+      pins: number;
+      pinningOnly: boolean;
+    }>,
+  )(
+    "switches on crossing the divider row from $sourceSection with $pins pins (pinning only: $pinningOnly)",
+    ({ sourceSection, pins, pinningOnly }) => {
       const items = [
         pinnedHeader,
         ...(pins ? [thread("p", "pinned")] : []),
@@ -146,19 +155,20 @@ describe("sidebar collision detection", () => {
       const { rects, activeIndex } = layout(items, "source", "a");
       const sourceRect = rects[activeIndex]!;
       let boundaryTop = 300;
+      const boundaryRect = () => ({
+        top: boundaryTop,
+        bottom: boundaryTop + 16,
+        left: 0,
+        right: 260,
+      });
       const boundaryNode = {
-        querySelector: () => ({
-          getBoundingClientRect: () => ({
-            top: boundaryTop,
-            bottom: boundaryTop + 16,
-            left: 0,
-            right: 260,
-          }),
-        }),
+        getBoundingClientRect: boundaryRect,
+        querySelector: () => (pinningOnly ? null : { getBoundingClientRect: boundaryRect }),
       } as unknown as HTMLElement;
       const detector = createSidebarCollisionDetection(() => true, {
         items,
         activationY: sourceSection === "pinned" ? 200 : 600,
+        pinningOnly,
       });
       const at = (center: number) => {
         const collisionRect = {
@@ -348,17 +358,35 @@ describe("sidebar drag projection", () => {
     thread("s1", "settled"),
   ];
 
-  it("keeps the pinned header above the gap when a lower pin moves to the top", () => {
+  it.each([
+    ["a1", "a2"],
+    ["a1", sidebarMarkerId("settled-header")],
+    ["p1", "a2"],
+    ["s1", "a2"],
+  ])("keeps automatic rows stationary during a pin-only drag from %s over %s", (active, over) => {
+    const items = [...pinned.slice(0, 5), thread("a2", "active"), ...pinned.slice(5)];
     const result = preview(
-      { items: pinned, settledOrder: [], settledExpanded: true },
-      "p2",
-      sidebarMarkerId("pinned-header"),
+      { items, settledOrder: ["s1"], settledExpanded: true, pinningOnly: true },
+      active,
+      over,
     );
-    expect(result.get(sidebarMarkerId("pinned-header"))).toEqual(stationary);
-    expect(result.get("p1")).toEqual({ ...stationary, y: 83 });
-    expect(result.get(sidebarMarkerId("pinned-divider"))).toEqual(stationary);
-    expect(result.get("a1")).toEqual(stationary);
+    for (const transform of result.values()) expect(transform).toEqual(stationary);
   });
+
+  it.each([false, true])(
+    "keeps the pinned header above the gap when a lower pin moves to the top (pinning only: %s)",
+    (pinningOnly) => {
+      const result = preview(
+        { items: pinned, settledOrder: [], settledExpanded: true, pinningOnly },
+        "p2",
+        sidebarMarkerId("pinned-header"),
+      );
+      expect(result.get(sidebarMarkerId("pinned-header"))).toEqual(stationary);
+      expect(result.get("p1")).toEqual({ ...stationary, y: 83 });
+      expect(result.get(sidebarMarkerId("pinned-divider"))).toEqual(stationary);
+      expect(result.get("a1")).toEqual(stationary);
+    },
+  );
 
   it("preserves settled order while opening the zero-height Active target", () => {
     const items = [

@@ -226,10 +226,15 @@ type SidebarDropTarget = {
   readonly activeOrder: readonly string[];
 };
 
+function isPinningDrop(from: SidebarSection, to: SidebarDropTarget["section"]): boolean {
+  return to === "pinned" || (from === "pinned" && to === "active");
+}
+
 export function resolveSidebarDropTarget(
   items: readonly SidebarListItem[],
   activeKey: string,
   overId: string,
+  pinningOnly = false,
 ): SidebarDropTarget | null {
   const activeIndex = items.findIndex((item) => sidebarListItemId(item) === activeKey);
   const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
@@ -238,6 +243,9 @@ export function resolveSidebarDropTarget(
   moved.splice(overIndex, 0, items[activeIndex]!);
   const section = sectionAtSidebarSlot(moved, overIndex);
   if (section === "working" || section === "snoozed") return null;
+  const source = items[activeIndex];
+  if (pinningOnly && source?.kind === "thread" && !isPinningDrop(source.section, section))
+    return null;
   const pinnedOrder: string[] = [];
   const activeOrder: string[] = [];
   let currentSection: SidebarSection = "pinned";
@@ -326,6 +334,7 @@ export function planSidebarThreadDrop(input: {
   readonly activeKeysById: ReadonlyMap<string, string | null | undefined>;
   readonly activeReorderableKeys?: ReadonlySet<string>;
   readonly activeTimeOrdered?: boolean;
+  readonly pinningOnly?: boolean;
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -340,7 +349,9 @@ export function planSidebarThreadDrop(input: {
     activeKeysById,
     activeReorderableKeys,
   } = input;
-  if (activeSection === "working") return { kind: "none" };
+  if (input.pinningOnly) {
+    if (!isPinningDrop(activeSection, target.section)) return { kind: "none" };
+  } else if (activeSection === "working") return { kind: "none" };
   if (input.supportsSettlement === false && (target.section === "settled" || activeSettled)) {
     return { kind: "none" };
   }
@@ -360,7 +371,7 @@ export function planSidebarThreadDrop(input: {
   };
   switch (target.section) {
     case "active": {
-      if (input.activeTimeOrdered) {
+      if (input.activeTimeOrdered || input.pinningOnly) {
         return activeSection === "active"
           ? { kind: "none" }
           : {
