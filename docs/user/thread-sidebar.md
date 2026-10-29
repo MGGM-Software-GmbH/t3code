@@ -136,7 +136,9 @@ This is on by default. Turn it off with **Settings → General → Working secti
 or **Settings → General → Working section** on iOS and Android. Each device keeps its own
 choice.
 
-On web and desktop, idle threads with activity in the last 24 hours appear in **Idle 24h**,
+On web and desktop, **Settings → MGGM → MGGM thread layout** enables the grouped sidebar
+by default. Turn it off to use the standard thread list.
+With the MGGM layout enabled, idle threads with activity in the last 24 hours appear in **Idle 24h**,
 with the most recently active first. Older idle threads appear in **Idle Projects**, grouped
 in the same project order as the project filter and sorted by recent activity within each
 project. Messages and run activity determine both the order and the displayed age;

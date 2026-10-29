@@ -6,6 +6,7 @@ import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
+  StoredClientSettingsSchema,
   ClaudeSettings,
   CodexSettings,
   DEFAULT_SERVER_SETTINGS,
@@ -22,7 +23,22 @@ import {
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
+const decodeStoredClientSettings = Schema.decodeUnknownSync(StoredClientSettingsSchema);
 const encodeClientSettings = Schema.encodeSync(ClientSettingsSchema);
+
+describe("MGGM thread sidebar settings", () => {
+  it("enables the layout for new and stored settings and preserves an explicit opt-out", () => {
+    expect(decodeClientSettings({}).mggmThreadSidebarEnabled).toBe(true);
+    expect(decodeStoredClientSettings({}).mggmThreadSidebarEnabled).toBe(true);
+    const patch = decodeClientSettingsPatch({ mggmThreadSidebarEnabled: false });
+    expect(patch.mggmThreadSidebarEnabled).toBe(false);
+    const disabled = decodeClientSettings(patch);
+    expect(
+      decodeStoredClientSettings(encodeClientSettings(disabled)).mggmThreadSidebarEnabled,
+    ).toBe(false);
+    expect(() => decodeClientSettingsPatch({ mggmThreadSidebarEnabled: "true" })).toThrow();
+  });
+});
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);

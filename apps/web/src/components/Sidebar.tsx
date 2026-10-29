@@ -425,6 +425,9 @@ function useSidebarThreads(input: {
   // Folders already separate the work, so boring mode has no Working shelf.
   const workingShelfEnabled =
     useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null;
+  const mggmThreadSidebarEnabled = useClientSettings(
+    (settings) => settings.mggmThreadSidebarEnabled,
+  );
   const inboxReturnsVersion = useSyncExternalStore(
     inboxReturns.subscribe,
     inboxReturns.getSnapshot,
@@ -492,9 +495,11 @@ function useSidebarThreads(input: {
     ? EMPTY_THREADS
     : activeThreads.filter(isThreadWorking);
   const idle = groupIdleSidebarThreads(
-    workingShelfEnabled
-      ? activeThreads
-      : activeThreads.filter((thread) => !isThreadWorking(thread)),
+    mggmThreadSidebarEnabled
+      ? workingShelfEnabled
+        ? activeThreads
+        : activeThreads.filter((thread) => !isThreadWorking(thread))
+      : EMPTY_THREADS,
     input.projectGroups,
     Date.parse(`${nowMinute}Z`),
   );
@@ -509,11 +514,13 @@ function useSidebarThreads(input: {
         ? group.threads
         : routeThreadOnly(group.threads, routeRowThreadKey),
   }));
-  const visibleActiveThreads = [
-    ...inlineWorkingThreads,
-    ...visibleIdleRecent,
-    ...visibleIdleProjects.flatMap((group) => group.visibleThreads),
-  ];
+  const visibleActiveThreads = mggmThreadSidebarEnabled
+    ? [
+        ...inlineWorkingThreads,
+        ...visibleIdleRecent,
+        ...visibleIdleProjects.flatMap((group) => group.visibleThreads),
+      ]
+    : activeThreads;
   const idleParentByThreadKey = new Map([
     ...visibleIdleRecent.map((thread) => [threadShellKey(thread), "shelf:idle-recent"] as const),
     ...visibleIdleProjects.flatMap((group) =>
@@ -597,6 +604,7 @@ function useSidebarThreads(input: {
     ...partition,
     threads,
     workingShelfEnabled,
+    mggmThreadSidebarEnabled,
     idle,
     inlineWorkingThreads,
     visibleIdleRecent,
@@ -1309,6 +1317,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     activeReorderableThreadKeys,
     activeThreads,
     workingThreads,
+    mggmThreadSidebarEnabled,
     idle,
     inlineWorkingThreads,
     visibleIdleRecent,
@@ -1955,7 +1964,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
     items.push({ kind: "marker", marker: "pinned-divider" });
     items.push({ kind: "marker", marker: "active-placeholder" });
-    items.push(...rowsOf(projectFolders === null ? inlineWorkingThreads : activeThreads, "active"));
+    items.push(
+      ...rowsOf(
+        projectFolders === null && mggmThreadSidebarEnabled ? inlineWorkingThreads : activeThreads,
+        "active",
+      ),
+    );
     if (projectFolders === null && idle.recent.length > 0) {
       items.push({ kind: "marker", marker: "idle-recent-header" });
       items.push(...rowsOf(visibleIdleRecent, "active"));
@@ -3246,7 +3260,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     ref={attachTreeRef}
                     className={cn(
                       "relative flex flex-col gap-px",
-                      "[&>[data-thread-item]]:relative [&>[data-thread-item]+[data-thread-item]]:before:pointer-events-none [&>[data-thread-item]+[data-thread-item]]:before:absolute [&>[data-thread-item]+[data-thread-item]]:before:inset-x-2.5 [&>[data-thread-item]+[data-thread-item]]:before:top-0 [&>[data-thread-item]+[data-thread-item]]:before:border-t [&>[data-thread-item]+[data-thread-item]]:before:border-dashed [&>[data-thread-item]+[data-thread-item]]:before:border-sidebar-border/70",
+                      mggmThreadSidebarEnabled &&
+                        "[&>[data-thread-item]]:relative [&>[data-thread-item]+[data-thread-item]]:before:pointer-events-none [&>[data-thread-item]+[data-thread-item]]:before:absolute [&>[data-thread-item]+[data-thread-item]]:before:inset-x-2.5 [&>[data-thread-item]+[data-thread-item]]:before:top-0 [&>[data-thread-item]+[data-thread-item]]:before:border-t [&>[data-thread-item]+[data-thread-item]]:before:border-dashed [&>[data-thread-item]+[data-thread-item]]:before:border-sidebar-border/70",
                       sidebarListItems.length > 0 && "flex-1",
                       actionSweep !== null && "**:pointer-events-none",
                     )}
@@ -3488,7 +3503,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key="pinned-header"
                                 marker="pinned-header"
                                 label="Pinned"
-                                showHeading={pinnedThreads.length > 0}
+                                showHeading={mggmThreadSidebarEnabled && pinnedThreads.length > 0}
                                 visible={from !== null}
                                 isDropTarget={dragTargetSection === "pinned"}
                               />,

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { act, render } from "../../../test/render";
 import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
+import "~/index.css";
 
 const state = vi.hoisted(() => ({
   settings: null as UnifiedSettings | null,
@@ -36,6 +37,7 @@ vi.mock(import("../../localApi"), async (original) => ({
 }));
 
 import { useSettingsRestore } from "./SettingsPanels";
+import { MggmSettingsPanel } from "./MggmSettings";
 
 async function renderRestore() {
   let restore!: ReturnType<typeof useSettingsRestore>;
@@ -61,6 +63,20 @@ function setup() {
 }
 
 describe("restoring V2 settings", () => {
+  it("toggles the MGGM layout and restores its enabled default", async () => {
+    setup();
+    await using screen = await render(<MggmSettingsPanel />);
+    const toggle = screen.getByRole("switch", { name: "MGGM thread layout" });
+    await expect.element(toggle).toBeChecked();
+    await toggle.click();
+    expect(state.update).toHaveBeenLastCalledWith({ mggmThreadSidebarEnabled: false });
+
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, mggmThreadSidebarEnabled: false };
+    await screen.rerender(<MggmSettingsPanel />);
+    await expect.element(toggle).not.toBeChecked();
+    await screen.getByRole("button", { name: "Reset MGGM thread layout to default" }).click();
+    expect(state.update).toHaveBeenLastCalledWith({ mggmThreadSidebarEnabled: true });
+  });
   it("restores model capacity retries after disabling them", async () => {
     setup();
     state.settings = { ...DEFAULT_UNIFIED_SETTINGS, modelCapacityRetryDelayMinutes: 0 };

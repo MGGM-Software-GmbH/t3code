@@ -12,6 +12,7 @@ import {
 import { RelativeTimeLabel, SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { useClientSettings } from "../../hooks/useSettings";
 
 function SortableSidebarMarker(props: {
   marker: SidebarListMarker;
@@ -138,12 +139,17 @@ export function SidebarSectionHeader(props: {
   hostsUndoNotice?: boolean;
 }) {
   const shelf = props.marker.slice(0, -"-header".length);
+  const mggmThreadSidebarEnabled = useClientSettings(
+    (settings) => settings.mggmThreadSidebarEnabled,
+  );
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
       className={cn(
-        "relative mx-0.5 h-8 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-border",
+        "relative mx-0.5 h-8",
+        mggmThreadSidebarEnabled &&
+          "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-border",
         props.className,
       )}
     >
@@ -156,7 +162,15 @@ export function SidebarSectionHeader(props: {
         data-sidebar-row={`shelf:${shelf}`}
         onClick={props.toggle.onToggle}
         expanded={props.toggle.expanded}
-        tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "info"}
+        tone={
+          props.isDropTarget
+            ? "accent"
+            : props.dragging
+              ? "emphasized"
+              : mggmThreadSidebarEnabled
+                ? "info"
+                : "muted"
+        }
         data-testid={`sidebar-${shelf}-shelf-toggle`}
         accessory={<span className="font-normal tabular-nums">{props.count}</span>}
       >

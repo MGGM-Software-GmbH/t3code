@@ -15,6 +15,7 @@ import {
   movedSettingsPath,
   searchSettings,
   SETTINGS_SEARCH_ITEMS,
+  SETTINGS_NAV_GROUPS,
   sourceControlHostSearchItems,
   sourceControlHostSettingsSearchId,
   type SettingsSearchItem,
@@ -52,6 +53,14 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it("finds MGGM thread layout and places its page directly below General", () => {
+    const results = searchSettings("MGGM idle projects");
+    expect(results.find((item) => item.id === "mggm-thread-sidebar")?.to).toBe("/settings/mggm");
+    expect(SETTINGS_NAV_GROUPS[0]?.paths.slice(0, 2)).toEqual([
+      "/settings/general",
+      "/settings/mggm",
+    ]);
+  });
   it.each(["model capacity", "same model", "capacity retry minutes"])(
     "finds the capacity retry setting for %s",
     (query) => {
