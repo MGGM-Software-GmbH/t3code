@@ -149,8 +149,9 @@ in the same project order as the project filter and sorted by recent activity wi
 project. Messages and run activity determine both the order and the displayed age;
 visiting or changing thread metadata does not make an old conversation recent.
 Each project group shows its thread count and last activity and can be collapsed
-independently. Section and project collapse states are saved locally, and the currently
-open thread remains visible. Pinned, snoozed, and settled threads retain
+independently. Section and project collapse states are saved locally. Collapsing Working
+hides all its threads, including the currently open thread; other collapsed groups keep
+the open thread visible. Pinned, snoozed, and settled threads retain
 their separate sections. Idle sections use activity order rather than manual thread order.
 
 On iOS and Android, enabling Working orders the active list by when each thread last came
