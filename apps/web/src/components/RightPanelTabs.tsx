@@ -33,6 +33,7 @@ import {
   FileDiff,
   Files,
   Globe2,
+  Hash,
   Plus,
   TerminalSquare,
 } from "lucide-react";
@@ -128,6 +129,7 @@ export interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
+  onAddFogBugzCases?: () => void;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -135,6 +137,7 @@ export interface RightPanelTabsProps {
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
+  fogbugzCasesAvailable?: boolean;
   deviceAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   children: ReactNode;
@@ -293,7 +296,7 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-function RightPanelEmptyState(props: {
+export function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
@@ -302,6 +305,7 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
+  onAddFogBugzCases?: (() => void) | undefined;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -309,6 +313,7 @@ function RightPanelEmptyState(props: {
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
+  fogbugzCasesAvailable?: boolean | undefined;
   deviceAvailable: boolean;
 }) {
   const [highlight, setHighlight] = useState(-1);
@@ -371,6 +376,18 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
       onClick: props.onAddDevice,
     },
+    ...(props.fogbugzCasesAvailable && props.onAddFogBugzCases
+      ? [
+          {
+            label: "Fogbugz-Cases",
+            icon: Hash,
+            shortcut: "C",
+            available: true,
+            disabledReason: "Link this project to FogBugz to browse cases.",
+            onClick: props.onAddFogBugzCases,
+          },
+        ]
+      : []),
   ] as const;
 
   type SurfaceAction = (typeof actions)[number];
@@ -554,6 +571,8 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
+    case "fogbugz-cases":
+      return "Fogbugz-Cases";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
@@ -644,6 +663,8 @@ function SurfaceIcon({
       );
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
+    case "fogbugz-cases":
+      return <Hash className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -1065,6 +1086,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.device,
       onClick: props.onAddDevice,
     },
+    ...(props.fogbugzCasesAvailable && props.onAddFogBugzCases
+      ? [
+          {
+            label: "Fogbugz-Cases",
+            icon: Hash,
+            shortcut: "C",
+            available: true,
+            disabledReason: "Link this project to FogBugz to browse cases.",
+            onClick: props.onAddFogBugzCases,
+          },
+        ]
+      : []),
   ] as const;
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1438,6 +1471,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
             onAddPullRequests={props.onAddPullRequests}
+            onAddFogBugzCases={props.onAddFogBugzCases}
             onAddDevice={props.onAddDevice}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
@@ -1445,6 +1479,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
             pullRequestsAvailable={props.pullRequestsAvailable}
+            fogbugzCasesAvailable={props.fogbugzCasesAvailable}
             deviceAvailable={props.deviceAvailable}
           />
         ) : (

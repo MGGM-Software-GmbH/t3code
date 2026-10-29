@@ -39,6 +39,41 @@ async function reloadRightPanelStore() {
 }
 
 describe("rightPanelStore", () => {
+  it("persists, closes, and reopens one FogBugz surface per scoped thread", async () => {
+    const store = useRightPanelStore.getState();
+    const remoteRef = scopeThreadRef("env-2" as EnvironmentId, refA.threadId);
+    store.open(refA, "fogbugz-cases");
+    store.open(refA, "fogbugz-cases");
+    store.open(remoteRef, "files");
+    await reloadRightPanelStore();
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toEqual([{ id: "fogbugz-cases", kind: "fogbugz-cases" }]);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, remoteRef)).toBe(
+      "files",
+    );
+    useRightPanelStore.getState().closeSurface(refA, "fogbugz-cases");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+    const closed = useClosedViewStore.getState().entries[0]!;
+    const { storage, name } = useClosedViewStore.persist.getOptions();
+    const persisted = await storage!.getItem(name!);
+    useClosedViewStore.setState({ entries: [] });
+    await storage!.setItem(name!, persisted!);
+    await useClosedViewStore.persist.rehydrate();
+    expect(useClosedViewStore.getState().entries[0]).toEqual(closed);
+    expect(
+      await reopenClosedView(closed, {
+        openPreview: async () => {
+          throw new Error("Unexpected browser launch");
+        },
+        workspaceAvailable: true,
+      }),
+    ).toBe(true);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe(
+      "fogbugz-cases",
+    );
+  });
+
   it("records single and bulk tab closes, newest first", () => {
     const store = useRightPanelStore.getState();
     const pr = pullRequestSurface({

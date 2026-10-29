@@ -6,7 +6,9 @@ In **Settings > MGGM**, select an environment and connect your existing MGGM Fog
 
 In **Settings > Projects**, select a T3 project and choose a **FogBugz project or group** visible to your account. A group includes all its currently accessible projects, including later membership changes. Each T3 project has its own assignment. Choose **Not linked** to remove it.
 
-Open **Fogbugz Fälle** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. Use the **+** button with the destination project name to create a linked thread without starting an agent run; its tooltip identifies the project path. Existing threads appear as direct links; a thread can also link a case by number or remove that association.
+Open **Fogbugz Cases** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. Use the **+** button with the destination project name to create a linked thread without starting an agent run; its tooltip identifies the project path. Existing threads appear as direct links; a thread can also link a case by number or remove that association.
+
+Within a thread in a linked project, open the **Fogbugz-Cases** surface from the side panel. Its case list stays scoped to that thread's T3 project, including all accessible FogBugz projects in a linked group.
 
 Cases show category, status, priority, assignee and your latest notification time. The list sorts by that notification time, then by the last case update.
 

@@ -31,7 +31,7 @@ export function FogBugzCasesPage() {
   return (
     <SidebarInset className="h-dvh min-w-0">
       <header className="flex min-h-14 flex-wrap items-center gap-3 border-b pr-4 pl-14">
-        <h1 className="text-lg font-semibold">Fogbugz Fälle</h1>
+        <h1 className="text-lg font-semibold">Fogbugz Cases</h1>
         <div className="ml-auto">
           <Select
             value={environmentId ?? ""}
@@ -56,7 +56,7 @@ export function FogBugzCasesPage() {
         </div>
       </header>
       {environmentId ? (
-        <Cases key={environmentId} environmentId={environmentId} />
+        <FogBugzCases key={environmentId} environmentId={environmentId} />
       ) : (
         <p className="p-4">Connect to an environment to load cases.</p>
       )}
@@ -64,7 +64,13 @@ export function FogBugzCasesPage() {
   );
 }
 
-function Cases({ environmentId }: { environmentId: EnvironmentId }) {
+export function FogBugzCases({
+  environmentId,
+  projectId: scopedProjectId,
+}: {
+  environmentId: EnvironmentId;
+  projectId?: ProjectId;
+}) {
   const navigate = useNavigate();
   const projects = useProjects().filter((item) => item.environmentId === environmentId);
   const configs = useAtomValue(environmentServerConfigsAtom);
@@ -73,12 +79,16 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
   const [search, setSearch] = useState("");
   const [state, setState] = useState<"open" | "closed" | "all">("open");
   const [assigned, setAssigned] = useState("me");
-  const [projectId, setProjectId] = useState("all");
+  const [selectedProjectId, setProjectId] = useState("all");
+  const projectId = scopedProjectId ?? selectedProjectId;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const status = useEnvironmentQuery(fogbugzEnvironment.status({ environmentId, input: {} }));
+  const linked = (status.data?.projects ?? []).filter(
+    (link) => scopedProjectId === undefined || link.projectId === scopedProjectId,
+  );
   const cases = useEnvironmentQuery(
-    status.data?.connection?.authenticated
+    status.data?.connection?.authenticated && linked.length > 0
       ? fogbugzEnvironment.cases({
           environmentId,
           input: {
@@ -92,7 +102,6 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
   );
   const create = useAtomCommand(fogbugzEnvironment.createThread);
   const permission = useAtomValue(fogbugzEnvironment.createThread.permissionAtom(environmentId));
-  const linked = status.data?.projects ?? [];
 
   async function createThread(item: FogBugzCase, target: ProjectId) {
     if (!config) return;
@@ -128,7 +137,7 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       <WorkspacePageContainer
         width="expanded"
         className="flex-row flex-wrap items-center gap-2 py-4"
@@ -185,30 +194,32 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
             </SelectPopup>
           </Select>
         </div>
-        <div className="w-48">
-          <Select
-            value={projectId}
-            onValueChange={(value) => {
-              if (value) setProjectId(value);
-            }}
-          >
-            <SelectTrigger aria-label="T3 project">
-              <SelectValue>
-                {projects.find((item) => item.id === projectId)?.title ?? "All linked projects"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectItem value="all">All linked projects</SelectItem>
-              {projects
-                .filter((item) => linked.some((link) => link.projectId === item.id))
-                .map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.title}
-                  </SelectItem>
-                ))}
-            </SelectPopup>
-          </Select>
-        </div>
+        {scopedProjectId === undefined ? (
+          <div className="w-48">
+            <Select
+              value={projectId}
+              onValueChange={(value) => {
+                if (value) setProjectId(value);
+              }}
+            >
+              <SelectTrigger aria-label="T3 project">
+                <SelectValue>
+                  {projects.find((item) => item.id === projectId)?.title ?? "All linked projects"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="all">All linked projects</SelectItem>
+                {projects
+                  .filter((item) => linked.some((link) => link.projectId === item.id))
+                  .map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.title}
+                    </SelectItem>
+                  ))}
+              </SelectPopup>
+            </Select>
+          </div>
+        ) : null}
         <Button
           variant="outline"
           disabled={cases.isPending}
@@ -226,7 +237,7 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
         </p>
       ) : null}
       {(!status.data && status.isPending) ||
-      (status.data?.connection?.authenticated && cases.isPending) ? (
+      (status.data?.connection?.authenticated && linked.length > 0 && cases.isPending) ? (
         <p role="status" className="p-4 text-muted-foreground">
           Loading cases…
         </p>

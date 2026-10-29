@@ -55,6 +55,7 @@ interface RightPanelActionsInput {
   readonly rightPanelMaximized: boolean;
   readonly supportsPullRequests: boolean;
   readonly pullRequestsSurfaceAvailable: boolean;
+  readonly fogbugzCasesAvailable: boolean;
   readonly gitCwd: string | null;
   readonly activeProjectCwd: string | null;
   readonly explicitDiffOpenRef: { current: ScopedThreadRef | null };
@@ -88,6 +89,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     rightPanelMaximized,
     supportsPullRequests,
     pullRequestsSurfaceAvailable,
+    fogbugzCasesAvailable,
     gitCwd,
     activeProjectCwd,
     explicitDiffOpenRef,
@@ -149,6 +151,11 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
   };
   const addPullRequestsSurfaceStable = useStableCallback(addPullRequestsSurface);
+  const addFogBugzCasesSurface = () => {
+    if (!activeThreadRef || !fogbugzCasesAvailable) return;
+    useRightPanelStore.getState().open(activeThreadRef, "fogbugz-cases");
+  };
+  const addFogBugzCasesSurfaceStable = useStableCallback(addFogBugzCasesSurface);
   const addDeviceSurface = () => {
     if (!activeThreadRef) return;
     if (!deviceState.onboardingCompleted || deviceState.hostStatus === "disabled") {
@@ -343,6 +350,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     addFilesSurfaceStable,
     addPullRequestSurfaceStable,
     addPullRequestsSurfaceStable,
+    addFogBugzCasesSurfaceStable,
     closePreviewPanelStable,
     copyRightPanelFilePathStable,
     createBrowserSurface,

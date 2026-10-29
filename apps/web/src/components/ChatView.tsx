@@ -114,6 +114,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { FogBugzThreadContext } from "./fogbugz/FogBugzThreadContext";
+import { fogbugzEnvironment } from "../state/fogbugz";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -1080,6 +1081,14 @@ export default function ChatView(props: ChatViewProps) {
       ? scopeProjectRef(activeThreadEnvironmentId, activeThreadProjectId)
       : null;
   const activeProject = useProject(activeProjectRef);
+  const fogbugzStatus = useEnvironmentQuery(
+    activeProject
+      ? fogbugzEnvironment.status({ environmentId: activeProject.environmentId, input: {} })
+      : null,
+  );
+  const fogbugzCasesAvailable =
+    isServerThread &&
+    fogbugzStatus.data?.projects.some((link) => link.projectId === activeProject?.id) === true;
   const activeProjectSettings = resolveProjectSettings(
     settings,
     activeProject?.id ?? null,
@@ -2312,6 +2321,7 @@ export default function ChatView(props: ChatViewProps) {
     addFilesSurfaceStable,
     addPullRequestSurfaceStable,
     addPullRequestsSurfaceStable,
+    addFogBugzCasesSurfaceStable,
     closePreviewPanelStable,
     copyRightPanelFilePathStable,
     createBrowserSurface,
@@ -2345,6 +2355,7 @@ export default function ChatView(props: ChatViewProps) {
     rightPanelMaximized,
     supportsPullRequests,
     pullRequestsSurfaceAvailable,
+    fogbugzCasesAvailable,
     gitCwd,
     activeProjectCwd,
     explicitDiffOpenRef,
@@ -3114,6 +3125,7 @@ export default function ChatView(props: ChatViewProps) {
       activeSurfaceId={activeRightPanelSurface?.id ?? null}
       threadRef={activeThreadRef}
       environmentId={activeThread.environmentId}
+      projectId={activeThread.projectId}
       visible={rightPanelOpen}
       composerDraftTarget={composerDraftTarget}
       keybindings={keybindings}
@@ -3862,6 +3874,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddFiles={addFilesSurfaceStable}
           onAddPullRequest={addPullRequestSurfaceStable}
           onAddPullRequests={addPullRequestsSurfaceStable}
+          onAddFogBugzCases={addFogBugzCasesSurfaceStable}
           onAddDevice={addDeviceSurfaceStable}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
@@ -3869,6 +3882,7 @@ export default function ChatView(props: ChatViewProps) {
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={pullRequestsSurfaceAvailable}
+          fogbugzCasesAvailable={fogbugzCasesAvailable}
           deviceAvailable={activeThreadRef !== null}
         >
           {rightPanelContent}

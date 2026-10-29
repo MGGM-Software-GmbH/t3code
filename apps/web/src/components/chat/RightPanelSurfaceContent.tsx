@@ -31,6 +31,9 @@ const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
+const FogBugzCases = lazy(() =>
+  import("../fogbugz/FogBugzCasesPage").then((module) => ({ default: module.FogBugzCases })),
+);
 
 type RightPanelTerminalProps = Omit<
   PersistentThreadTerminalPanelProps,
@@ -61,6 +64,7 @@ export function RightPanelSurfaceContent(props: {
   readonly activeSurfaceId: string | null;
   readonly threadRef: ScopedThreadRef;
   readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
   readonly visible: boolean;
   readonly composerDraftTarget: ScopedThreadRef | DraftId;
   readonly keybindings: ResolvedKeybindingsConfig;
@@ -165,6 +169,16 @@ export function RightPanelSurfaceContent(props: {
     }
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
+    case "fogbugz-cases":
+      return (
+        <Suspense fallback={null}>
+          <FogBugzCases
+            key={`${props.environmentId}:${props.projectId}`}
+            environmentId={props.environmentId}
+            projectId={props.projectId}
+          />
+        </Suspense>
+      );
     case "device":
       return (
         <Suspense fallback={null}>

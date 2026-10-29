@@ -1470,7 +1470,7 @@ function OpenCommandPaletteDialog(props: {
       kind: "action",
       value: "action:fogbugz-cases",
       searchTerms: ["fogbugz", "cases", "tickets", "fälle"],
-      title: "Open Fogbugz Fälle",
+      title: "Open Fogbugz Cases",
       icon: <span aria-hidden>#</span>,
       run: async () => {
         await navigate({ to: "/cases" });
