@@ -3282,7 +3282,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     className={cn(
                       "relative flex flex-col gap-px",
                       mggmThreadSidebarEnabled &&
-                        "[&>[data-thread-item]]:relative [&>[data-thread-item]+[data-thread-item]]:before:pointer-events-none [&>[data-thread-item]+[data-thread-item]]:before:absolute [&>[data-thread-item]+[data-thread-item]]:before:inset-x-2.5 [&>[data-thread-item]+[data-thread-item]]:before:top-0 [&>[data-thread-item]+[data-thread-item]]:before:border-t [&>[data-thread-item]+[data-thread-item]]:before:border-dashed [&>[data-thread-item]+[data-thread-item]]:before:border-sidebar-border/70",
+                        "[&>[data-thread-item]]:relative [&>[data-thread-item]+[data-thread-item]]:before:pointer-events-none [&>[data-thread-item]+[data-thread-item]]:before:absolute [&>[data-thread-item]+[data-thread-item]]:before:inset-x-2.5 [&>[data-thread-item]+[data-thread-item]]:before:top-0 [&>[data-thread-item]+[data-thread-item]]:before:border-t [&>[data-thread-item]+[data-thread-item]]:before:border-dashed [&>[data-thread-item]+[data-thread-item]]:before:border-sidebar-foreground/25",
                       sidebarListItems.length > 0 && "flex-1",
                       actionSweep !== null && "**:pointer-events-none",
                     )}

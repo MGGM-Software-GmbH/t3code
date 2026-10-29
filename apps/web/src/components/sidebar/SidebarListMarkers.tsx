@@ -90,7 +90,7 @@ export function SidebarDragBoundary(props: {
       className={cn(
         "pointer-events-none relative mx-0.5",
         props.showHeading
-          ? "h-8 before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-border"
+          ? "h-8 before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-foreground/40"
           : "-mb-px h-0",
       )}
     >
@@ -149,7 +149,7 @@ export function SidebarSectionHeader(props: {
       className={cn(
         "relative mx-0.5 h-8",
         mggmThreadSidebarEnabled &&
-          "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-border",
+          "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-foreground/40",
         props.className,
       )}
     >
@@ -192,7 +192,7 @@ export function SidebarIdleProjectHeader(props: {
   return (
     <SortableSidebarMarker
       marker={`idle-project:${props.projectKey}`}
-      className="relative mx-0.5 h-8 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-border"
+      className="relative mx-0.5 h-8 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-foreground/40"
     >
       <Tooltip>
         <TooltipTrigger
