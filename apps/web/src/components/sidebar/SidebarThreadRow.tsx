@@ -479,7 +479,7 @@ export function SortableThreadRow(
   const thread =
     useThreadShell(scopeThreadRef(rowProps.thread.environmentId, rowProps.thread.id)) ??
     rowProps.thread;
-  // Keyed by variant so a card/slim switch remounts the row.
+  // Keyed by variant so changing row layouts remounts the row.
   return <SidebarThreadRow key={rowProps.variant} {...rowProps} thread={thread} sortable={bag} />;
 }
 export type SidebarSweepAction = "settle" | "unsettle" | "unsnooze";
@@ -536,7 +536,7 @@ type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's branch and PR line under it.
-  variant: "card" | "slim" | "folder" | "folder-multiline";
+  variant: "card" | "project-card" | "slim" | "folder" | "folder-multiline";
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -1190,7 +1190,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     </span>
   ) : null;
 
-  if (variant !== "card") {
+  const inProjectGroup = variant === "project-card";
+  if (variant !== "card" && !inProjectGroup) {
     const multiline = variant === "folder-multiline";
     const inFolder = variant === "folder" || multiline;
     return (
@@ -1388,7 +1389,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {...(fileDropHandlers ?? {})}
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
-        metaLineEmpty && "[contain-intrinsic-size:auto_58px]",
+        (metaLineEmpty || inProjectGroup) && "[contain-intrinsic-size:auto_58px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1403,7 +1404,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               data-sidebar-parent={props.navigationParent}
               aria-label={accessibility.label}
               aria-current={accessibility.current}
-              data-testid="sidebar-row-card"
+              data-testid={inProjectGroup ? "sidebar-row-project-card" : "sidebar-row-card"}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
@@ -1417,18 +1418,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           <div
             className={cn(
               "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
-              metaLineEmpty && "h-auto",
+              (metaLineEmpty || inProjectGroup) && "h-auto",
+              inProjectGroup && "grid grid-cols-[minmax(0,1fr)_auto] gap-y-1",
             )}
           >
-            <div className="flex h-5 min-w-0 items-center gap-1.5">
-              {draftIndicator}
-              {props.project ? (
+            <div
+              className={cn(
+                "flex h-5 min-w-0 items-center gap-1.5",
+                inProjectGroup && "col-start-2 row-start-2",
+              )}
+            >
+              {inProjectGroup ? null : draftIndicator}
+              {!inProjectGroup && props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
-              {pinIndicator}
-              {props.projectDisplayName ? (
+              {inProjectGroup ? null : pinIndicator}
+              {!inProjectGroup && props.projectDisplayName ? (
                 <span
                   className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
                 >
@@ -1563,7 +1570,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
-            <div className="mt-1 flex min-w-0 items-center gap-1.5">
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1.5",
+                inProjectGroup ? "col-span-2 row-start-1" : "mt-1",
+              )}
+            >
+              {inProjectGroup ? draftIndicator : null}
+              {inProjectGroup ? pinIndicator : null}
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
@@ -1572,7 +1586,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ) : null}
               {titleLineProviderStack}
             </div>
-            {metaLine}
+            {inProjectGroup ? (
+              <div className="col-start-1 row-start-2 min-w-0 pr-1">{metaLine}</div>
+            ) : (
+              metaLine
+            )}
           </div>
           {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
         </TooltipTrigger>

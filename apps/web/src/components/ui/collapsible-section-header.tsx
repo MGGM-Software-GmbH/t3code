@@ -15,12 +15,14 @@ export function CollapsibleSectionHeader({
   tone = "muted",
   variant = "default",
   accessory,
+  icon,
   ...buttonProps
 }: Omit<ComponentProps<"button">, "className" | "style" | "aria-expanded"> & {
   expanded: boolean;
   tone?: keyof typeof tones;
   variant?: "default" | "panel";
   accessory?: ReactNode;
+  icon?: ReactNode;
 }) {
   return (
     <button
@@ -33,6 +35,7 @@ export function CollapsibleSectionHeader({
         tones[tone].label,
       )}
     >
+      {icon}
       <span className="min-w-0 truncate">{children}</span>
       <span
         aria-hidden

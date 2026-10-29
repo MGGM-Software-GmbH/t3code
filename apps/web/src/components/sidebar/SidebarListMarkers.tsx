@@ -11,6 +11,7 @@ import {
 } from "../Sidebar.logic";
 import { RelativeTimeLabel, SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
+import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 
 function SortableSidebarMarker(props: {
   marker: SidebarListMarker;
@@ -167,6 +168,7 @@ export function SidebarSectionHeader(props: {
 
 export function SidebarIdleProjectHeader(props: {
   projectKey: string;
+  project: ProjectFaviconProject | null;
   label: string;
   count: number;
   latestActivityAt: string | null;
@@ -190,6 +192,11 @@ export function SidebarIdleProjectHeader(props: {
               onClick={props.onToggle}
               expanded={props.expanded}
               tone="emphasized"
+              icon={
+                props.project ? (
+                  <ProjectFavicon project={props.project} className="size-4 shrink-0" />
+                ) : null
+              }
               accessory={
                 <span className="flex shrink-0 items-center gap-2 text-xs font-normal tabular-nums text-sidebar-muted-foreground">
                   <span aria-label={`${props.count} threads`}>{props.count}</span>

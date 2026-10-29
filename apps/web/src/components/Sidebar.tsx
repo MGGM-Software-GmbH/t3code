@@ -3269,7 +3269,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             ? "folder-multiline"
                             : "folder"
                           : isCard
-                            ? "card"
+                            ? navigationParent?.startsWith("idle-project:")
+                              ? "project-card"
+                              : "card"
                             : "slim";
                         return (
                           <SortableThreadRow
@@ -3434,6 +3436,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             <SidebarIdleProjectHeader
                               key={item.marker}
                               projectKey={projectKey}
+                              project={
+                                projectGroups.find(
+                                  (project) => project.projectKey === projectKey,
+                                ) ?? null
+                              }
                               label={group?.displayName ?? "Unknown project"}
                               count={group?.threads.length ?? 0}
                               latestActivityAt={group?.latestActivityAt ?? null}
