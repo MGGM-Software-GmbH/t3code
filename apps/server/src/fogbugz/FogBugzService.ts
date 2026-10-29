@@ -206,13 +206,19 @@ export const layer = Layer.effect(
     });
     return FogBugzService.of({
       caseContext: Effect.fn("FogBugz.caseContext")(function* (input) {
-        const rows = yield* sql<{
-          projectId: ProjectId;
-        }>`SELECT project_id AS "projectId" FROM orchestration_v2_projection_threads WHERE thread_id = ${input.threadId} AND deleted_at IS NULL`.pipe(
-          Effect.mapError(storageError),
-        );
-        if (!rows[0]) return yield* new FogBugzError({ code: "thread" });
-        const item = yield* caseForProject(rows[0].projectId, input.caseId);
+        let projectId: ProjectId;
+        if ("threadId" in input) {
+          const rows = yield* sql<{
+            projectId: ProjectId;
+          }>`SELECT project_id AS "projectId" FROM orchestration_v2_projection_threads WHERE thread_id = ${input.threadId} AND deleted_at IS NULL`.pipe(
+            Effect.mapError(storageError),
+          );
+          if (!rows[0]) return yield* new FogBugzError({ code: "thread" });
+          projectId = rows[0].projectId;
+        } else {
+          projectId = input.projectId;
+        }
+        const item = yield* caseForProject(projectId, input.caseId);
         const current = yield* authenticated();
         const events = yield* call((api, token) => api.caseEvents(token, item.id));
         return {

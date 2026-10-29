@@ -56,7 +56,10 @@ export const FogBugzCaseContext = Schema.Struct({
   events: Schema.Array(FogBugzCaseEvent),
 });
 export type FogBugzCaseContext = typeof FogBugzCaseContext.Type;
-export const FogBugzCaseContextInput = Schema.Struct({ threadId: ThreadId, caseId: FogBugzId });
+export const FogBugzCaseContextInput = Schema.Union([
+  Schema.Struct({ threadId: ThreadId, caseId: FogBugzId }),
+  Schema.Struct({ projectId: ProjectId, caseId: FogBugzId }),
+]);
 export const FogBugzThreadLink = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,

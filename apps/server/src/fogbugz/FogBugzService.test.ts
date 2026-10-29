@@ -121,6 +121,20 @@ describe("FogBugz integration persistence and access", () => {
           "thread",
         );
         expect(eventRequests()).toBe(1);
+        expect(yield* service.caseContext({ projectId, caseId: 42 })).toEqual(context);
+        expect((yield* Effect.flip(service.caseContext({ projectId, caseId: 43 }))).code).toBe(
+          "project",
+        );
+        expect(
+          (yield* Effect.flip(
+            service.caseContext({ projectId: ProjectId.make("missing"), caseId: 42 }),
+          )).code,
+        ).toBe("project");
+        yield* sql`UPDATE projection_projects SET deleted_at = '2026-10-29' WHERE project_id = ${projectId}`;
+        expect((yield* Effect.flip(service.caseContext({ projectId, caseId: 42 }))).code).toBe(
+          "project",
+        );
+        expect(eventRequests()).toBe(2);
       }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
     },
   );

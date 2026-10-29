@@ -1089,7 +1089,6 @@ export default function ChatView(props: ChatViewProps) {
       : null,
   );
   const fogbugzCasesAvailable =
-    isServerThread &&
     fogbugzStatus.data?.projects.some((link) => link.projectId === activeProject?.id) === true;
   const activeProjectSettings = resolveProjectSettings(
     settings,
@@ -1869,33 +1868,6 @@ export default function ChatView(props: ChatViewProps) {
   const loadFogBugzCaseContext = useAtomCommand(fogbugzEnvironment.caseContext, {
     reportFailure: false,
   });
-  const processFogBugzCase = async (action: FogBugzCaseAction, item: FogBugzCase) => {
-    if (!activeThreadId || !isServerThread || !canOperateThread) {
-      throw new Error("Case actions require an existing thread with permission to send messages.");
-    }
-    await performFogBugzCaseAction(action, {
-      loadContext: async () => {
-        const result = await loadFogBugzCaseContext({
-          environmentId,
-          input: { threadId: activeThreadId, caseId: item.id },
-        });
-        if (result._tag === "Failure") {
-          const error = squashAtomCommandFailure(result);
-          throw error instanceof Error ? error : new Error("Could not load the FogBugz case.");
-        }
-        return result.value;
-      },
-      isCurrentThread: () => currentRouteThreadKeyRef.current === routeThreadKey,
-      addContext: (text) => {
-        if (!composerRef.current?.insertTextAtEnd(text, { ensureLeadingBoundary: true })) {
-          throw new Error("The composer is busy; try again once it is ready.");
-        }
-        scheduleComposerFocus();
-      },
-      sendMessage: sendAppMessage,
-    });
-  };
-  const processFogBugzCaseStable = useStableCallback(processFogBugzCase);
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
@@ -2934,6 +2906,43 @@ export default function ChatView(props: ChatViewProps) {
   };
   const onWorktreeSetupWorkLocallyStable = useStableCallback(onWorktreeSetupWorkLocally);
   const onComposerSendStable = useStableCallback(onSend);
+  const processFogBugzCase = async (action: FogBugzCaseAction, item: FogBugzCase) => {
+    if (!activeThreadId || !activeProject || !canOperateThread) {
+      throw new Error("Case actions require a project and permission to send messages.");
+    }
+    const addContext = (text: string) => {
+      if (!composerRef.current?.insertTextAtEnd(text, { ensureLeadingBoundary: true })) {
+        throw new Error("The composer is busy; try again once it is ready.");
+      }
+      scheduleComposerFocus();
+    };
+    await performFogBugzCaseAction(action, {
+      loadContext: async () => {
+        const result = await loadFogBugzCaseContext({
+          environmentId,
+          input: isServerThread
+            ? { threadId: activeThreadId, caseId: item.id }
+            : { projectId: activeProject.id, caseId: item.id },
+        });
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          throw error instanceof Error ? error : new Error("Could not load the FogBugz case.");
+        }
+        return result.value;
+      },
+      isCurrentThread: () => currentRouteThreadKeyRef.current === routeThreadKey,
+      addContext,
+      sendMessage: async (text) => {
+        if (isServerThread) {
+          await sendAppMessage(text);
+        } else {
+          addContext(text);
+          await onSend();
+        }
+      },
+    });
+  };
+  const processFogBugzCaseStable = useStableCallback(processFogBugzCase);
   const sendPreviewAnnotation = (
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
@@ -3159,7 +3168,7 @@ export default function ChatView(props: ChatViewProps) {
       environmentId={activeThread.environmentId}
       projectId={activeThread.projectId}
       onCaseAction={processFogBugzCaseStable}
-      canProcessCase={isServerThread && canOperateThread}
+      canProcessCase={canOperateThread}
       visible={rightPanelOpen}
       composerDraftTarget={composerDraftTarget}
       keybindings={keybindings}

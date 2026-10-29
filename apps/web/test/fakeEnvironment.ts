@@ -474,4 +474,4 @@ export function runningRun(threadId: ThreadId, id: string, ordinal: number, user
   };
 }
 
-export { userItem };
+export { userItem, projectionOf };
