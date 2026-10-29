@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   status: { connection: null, projects: [] } as typeof FogBugzStatus.Type,
   requests: [] as { environmentId: string; input: Record<string, unknown> }[],
   cases: { cases: [], threads: [], projects: [], truncated: false } as typeof FogBugzCaseList.Type,
+  multipleProjects: false,
 }));
 
 vi.mock("../../state/fogbugz", async () => {
@@ -52,6 +53,20 @@ vi.mock(import("../../state/entities"), async (original) => ({
       createdAt: "2026-10-29T00:00:00Z",
       updatedAt: "2026-10-29T00:00:00Z",
     },
+    ...(state.multipleProjects
+      ? [
+          {
+            id: ProjectId.make("other-project"),
+            environmentId,
+            title: "Client",
+            workspaceRoot: "/workspace/client",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: "2026-10-29T00:00:00Z",
+            updatedAt: "2026-10-29T00:00:00Z",
+          },
+        ]
+      : []),
   ],
 }));
 vi.mock(import("../../state/server"), async (original) => {
@@ -65,6 +80,7 @@ const projectId = ProjectId.make("project-a");
 
 function setup() {
   state.requests = [];
+  state.multipleProjects = false;
   state.cases = { cases: [], threads: [], projects: [], truncated: false };
   state.status = {
     connection: {
@@ -200,15 +216,16 @@ it.each([390, 700])("keeps case actions in the current project at %i px", async 
   };
   try {
     const onCaseAction = vi.fn(async () => {});
+    const container = document.createElement("div");
+    container.className = "dark h-[800px] bg-background text-foreground";
     await using screen = await render(
-      <div className="dark h-[800px] bg-background text-foreground">
-        <FogBugzCases
-          environmentId={environmentId}
-          projectId={projectId}
-          canProcessCase
-          onCaseAction={onCaseAction}
-        />
-      </div>,
+      <FogBugzCases
+        environmentId={environmentId}
+        projectId={projectId}
+        canProcessCase
+        onCaseAction={onCaseAction}
+      />,
+      { container },
     );
     await expect
       .element(screen.getByRole("link", { name: "#12345" }))
@@ -241,9 +258,27 @@ it.each([390, 700])("keeps case actions in the current project at %i px", async 
     await userEvent.click(screen.getByRole("button", { name: "Case actions for #12345" }));
     await userEvent.click(page.getByRole("menuitem", { name: "Add to Context", exact: true }));
     await expect.element(screen.getByRole("alert")).toHaveTextContent("Case access was revoked");
-    await screen.rerender(<FogBugzCases environmentId={environmentId} />);
+    await screen.rerender(<FogBugzCases key="global" environmentId={environmentId} />);
     await expect
-      .element(screen.getByRole("button", { name: "New Thread in /workspace/server" }))
+      .element(screen.getByRole("button", { name: "Case actions for #12345" }))
+      .toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Case actions for #12345" }));
+    await expect
+      .element(page.getByRole("menuitem", { name: "Add to Context", exact: true }))
+      .toBeVisible();
+    await expect
+      .element(page.getByRole("menuitem", { name: "Server", exact: true }))
+      .not.toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    state.multipleProjects = true;
+    await screen.rerender(<FogBugzCases key="global" environmentId={environmentId} />);
+    await userEvent.click(screen.getByRole("button", { name: "Case actions for #12345" }));
+    await expect
+      .element(page.getByRole("menuitem", { name: "Add to Context", exact: true }))
+      .not.toBeInTheDocument();
+    await userEvent.click(page.getByRole("menuitem", { name: "Client", exact: true }));
+    await expect
+      .element(page.getByRole("menuitem", { name: "Create PRP", exact: true }))
       .toBeVisible();
   } finally {
     document.documentElement.classList.toggle("dark", wasDark);

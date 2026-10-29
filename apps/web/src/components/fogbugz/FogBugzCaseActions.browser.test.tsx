@@ -1,12 +1,15 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import {
   ProjectId,
+  CommandId,
+  OrchestrationV2DispatchCommandError,
   WS_METHODS,
   ORCHESTRATION_V2_WS_METHODS,
   ProviderInstanceId,
   type OrchestrationV2ThreadLaunchInput,
   type FogBugzCase,
   type FogBugzCaseContextInput,
+  type FogBugzCreateThreadInput,
   ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef, scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -29,6 +32,7 @@ import {
   type FakeDriver,
 } from "../../../test/fakeEnvironment";
 import { render } from "../../../test/render";
+import { fogbugzCasePrompt } from "./fogbugzCaseActions";
 
 vi.mock(
   "../../../../../packages/client-runtime/src/connection/driver.ts",
@@ -168,11 +172,18 @@ it.each(["saved", "draft"])("processes sidepanel cases in a %s thread", async (k
   await userEvent.click(page.getByRole("menuitem", { name: "Add to Context", exact: true }));
   await vi.waitFor(() => {
     expect(editor.element().textContent).toContain("Existing draft.");
-    expect(editor.element().textContent).toContain("Preserve notification preferences.");
+    expect(editor.element().textContent).toContain("FogBugz #42");
+    expect(editor.element().textContent).not.toContain("Use the FogBugz MCP");
+    expect(editor.element().textContent).not.toContain("Preserve notification preferences.");
   });
-  expect(requests).toEqual([
-    kind === "draft" ? { projectId, caseId: 42 } : { threadId: thread.id, caseId: 42 },
-  ]);
+  expect(requests).toEqual([]);
+  expect(
+    useComposerDraftStore
+      .getState()
+      .getComposerDraft(kind === "draft" ? draftId : scopeThreadRef(ENVIRONMENT_ID, thread.id))
+      ?.prompt,
+  ).toContain("Use the FogBugz MCP");
+  await expect.element(editor.getByRole("link", { name: "FogBugz #42" })).toBeVisible();
   expect(messages).toEqual([]);
   expect(launches).toEqual([]);
   const draft = editor.element().textContent;
@@ -189,10 +200,11 @@ it.each(["saved", "draft"])("processes sidepanel cases in a %s thread", async (k
       threadId: activeThreadId,
       projectId,
       workspaceStrategy: { type: "root" },
-      initialMessage: { text: expect.stringContaining("Implement the FogBugz case") },
+      initialMessage: { text: expect.stringContaining("Implement this case") },
     });
     expect(launches[0]?.initialMessage?.text).toContain("Existing draft.");
-    expect(launches[0]?.initialMessage?.text).toContain("Preserve notification preferences.");
+    expect(launches[0]?.initialMessage?.text).toContain("Use the FogBugz MCP");
+    expect(launches[0]?.initialMessage?.text).not.toContain("Preserve notification preferences.");
     return;
   }
   for (const label of ["Create PRP", "Implement"]) {
@@ -201,8 +213,119 @@ it.each(["saved", "draft"])("processes sidepanel cases in a %s thread", async (k
     await vi.waitFor(() => expect(messages).toHaveLength(label === "Create PRP" ? 1 : 2));
     expect(messages.at(-1)).toMatchObject({
       threadId: thread.id,
-      text: expect.stringContaining("Preserve notification preferences."),
+      text: expect.stringContaining("Use the FogBugz MCP"),
     });
     expect(editor.element().textContent).toBe(draft);
   }
 });
+
+it.each(["context", "prp", "implement", "send failure"] as const)(
+  "starts the global case %s action in the selected project",
+  async (scenario) => {
+    const action = scenario === "send failure" ? "implement" : scenario;
+    const projectId = ProjectId.make("project-render");
+    const fixtures = [threadWithHistory("global-existing", 1)];
+    const created: (typeof FogBugzCreateThreadInput.Type)[] = [];
+    const messages: { threadId: ThreadId; text: string }[] = [];
+    const item: FogBugzCase = {
+      id: 42,
+      title: "Repair notifications",
+      projectId: 12,
+      projectName: "OPS",
+      status: "1 ToDo",
+      open: true,
+      assignedTo: 7,
+      assignedToName: "Test User",
+      priority: "High",
+      categoryId: 1,
+      categoryName: "Bug",
+      categoryIconType: 1,
+      notifiedAt: null,
+      updatedAt: null,
+    };
+    using _environment = installFakeEnvironment(fixtures, {
+      [WS_METHODS.fogbugzStatus]: () =>
+        Effect.succeed({
+          connection: {
+            id: "connection",
+            baseUrl: "https://fogbugz.example/",
+            username: "test@example.com",
+            personId: 7,
+            personName: "Test User",
+            authenticated: true,
+          },
+          projects: [{ projectId, fogbugzProjectId: 12, fogbugzProjectGroupId: null }],
+        }),
+      [WS_METHODS.fogbugzCases]: () =>
+        Effect.succeed({
+          cases: [item],
+          threads: [],
+          projects: [{ projectId, fogbugzProjectId: 12 }],
+          truncated: false,
+        }),
+      [WS_METHODS.fogbugzThread]: () => Effect.succeed(null),
+      [WS_METHODS.fogbugzCreateThread]: (input: typeof FogBugzCreateThreadInput.Type) =>
+        Effect.sync(() => {
+          created.push(input);
+          fixtures.push(threadWithHistory(input.threadId, 0));
+          return input.threadId;
+        }),
+      [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (input: {
+        commandId: CommandId;
+        type: string;
+        threadId: ThreadId;
+        text: string;
+      }) => {
+        if (input.type === "message.dispatch") messages.push(input);
+        return scenario === "send failure"
+          ? Effect.fail(
+              new OrchestrationV2DispatchCommandError({
+                commandId: input.commandId,
+                commandType: input.type,
+                message: "Provider offline",
+              }),
+            )
+          : Effect.succeed({ sequence: 1 });
+      },
+    });
+    __setClientSettingsForTests({
+      ...DEFAULT_CLIENT_SETTINGS,
+      onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const router = getRouter(createMemoryHistory({ initialEntries: ["/cases"] }));
+    await router.load();
+    // AppRoot owns the real router and command pipeline.
+    await using screen = await render(<AppRoot router={router} />, { router: false });
+    await userEvent.click(page.getByRole("button", { name: "Case actions for #42" }));
+    await userEvent.click(
+      page.getByRole("menuitem", {
+        name:
+          action === "context" ? "Add to Context" : action === "prp" ? "Create PRP" : "Implement",
+        exact: true,
+      }),
+    );
+    await vi.waitFor(() => expect(created).toHaveLength(1));
+    expect(created[0]).toMatchObject({ projectId, caseId: 42 });
+    const ref = scopeThreadRef(ENVIRONMENT_ID, created[0]!.threadId);
+    const prompt = fogbugzCasePrompt(action, 42, "https://fogbugz.example/");
+    if (action === "context") {
+      await expect
+        .element(screen.getByTestId("composer-editor").getByRole("link", { name: "FogBugz #42" }))
+        .toBeVisible();
+      expect(useComposerDraftStore.getState().getComposerDraft(ref)?.prompt).toBe(prompt);
+      expect(messages).toEqual([]);
+    } else if (scenario === "send failure") {
+      await expect
+        .element(page.getByText("Unable to process the case", { exact: true }))
+        .toBeVisible();
+      expect(useComposerDraftStore.getState().getComposerDraft(ref)?.prompt).toBe(prompt);
+    } else {
+      await vi.waitFor(() => expect(messages).toHaveLength(1));
+      expect(messages[0]).toMatchObject({ threadId: ref.threadId, text: prompt });
+      await vi.waitFor(() =>
+        expect(useComposerDraftStore.getState().getComposerDraft(ref)?.prompt ?? "").toBe(""),
+      );
+    }
+    expect(router.state.location.pathname).toBe(`/${ENVIRONMENT_ID}/${ref.threadId}`);
+  },
+);

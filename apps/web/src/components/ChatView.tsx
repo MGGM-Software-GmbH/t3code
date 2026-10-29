@@ -1865,9 +1865,6 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const sendAppMessageStable = useStableCallback(sendAppMessage);
-  const loadFogBugzCaseContext = useAtomCommand(fogbugzEnvironment.caseContext, {
-    reportFailure: false,
-  });
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
@@ -2916,20 +2913,11 @@ export default function ChatView(props: ChatViewProps) {
       }
       scheduleComposerFocus();
     };
+    const baseUrl = fogbugzStatus.data?.connection?.baseUrl;
+    if (!baseUrl) throw new Error("Connect FogBugz before referencing a case.");
     await performFogBugzCaseAction(action, {
-      loadContext: async () => {
-        const result = await loadFogBugzCaseContext({
-          environmentId,
-          input: isServerThread
-            ? { threadId: activeThreadId, caseId: item.id }
-            : { projectId: activeProject.id, caseId: item.id },
-        });
-        if (result._tag === "Failure") {
-          const error = squashAtomCommandFailure(result);
-          throw error instanceof Error ? error : new Error("Could not load the FogBugz case.");
-        }
-        return result.value;
-      },
+      caseId: item.id,
+      baseUrl,
       isCurrentThread: () => currentRouteThreadKeyRef.current === routeThreadKey,
       addContext,
       sendMessage: async (text) => {

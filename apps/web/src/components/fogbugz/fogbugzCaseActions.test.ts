@@ -31,23 +31,24 @@ const context: FogBugzCaseContext = {
 };
 
 it.each(["context", "prp", "implement"] as const)(
-  "uses the case history for %s without invoking the other action",
+  "references the case through MCP for %s without embedding the case history",
   async (action) => {
     const addContext = vi.fn<(text: string) => void>();
     const sendMessage = vi.fn<(text: string) => Promise<void>>(async () => {});
     await performFogBugzCaseAction(action, {
-      loadContext: async () => context,
+      caseId: context.case.id,
+      baseUrl: "https://fogbugz.example/",
       isCurrentThread: () => true,
       addContext,
       sendMessage,
     });
     const text =
       action === "context" ? addContext.mock.calls[0]?.[0] : sendMessage.mock.calls[0]?.[0];
-    expect(text).toContain("FogBugz #42: Repair notifications");
+    expect(text).toContain("[FogBugz #42]");
     expect(text).toContain(context.url);
-    expect(text).toContain(
-      "Reporter (2026-10-29T10:00:00Z):\nNotify every project member.\nPreserve user preferences.",
-    );
+    expect(text).toContain("Use the FogBugz MCP to read case #42");
+    expect(text).not.toContain(context.case.title);
+    expect(text).not.toContain(context.events[0]!.text);
     if (action === "context") {
       expect(sendMessage).not.toHaveBeenCalled();
     } else {
@@ -60,20 +61,18 @@ it.each(["context", "prp", "implement"] as const)(
   },
 );
 
-it.each(["navigation", "load failure"])("does not change any thread after %s", async (reason) => {
+it("does not change a different thread after navigation", async () => {
   const addContext = vi.fn();
   const sendMessage = vi.fn(async () => {});
   await expect(
     performFogBugzCaseAction("implement", {
-      loadContext: async () => {
-        if (reason === "load failure") throw new Error("Access denied");
-        return context;
-      },
-      isCurrentThread: () => reason !== "navigation",
+      caseId: 42,
+      baseUrl: "https://fogbugz.example/",
+      isCurrentThread: () => false,
       addContext,
       sendMessage,
     }),
-  ).rejects.toThrow(reason === "navigation" ? "active thread changed" : "Access denied");
+  ).rejects.toThrow("active thread changed");
   expect(addContext).not.toHaveBeenCalled();
   expect(sendMessage).not.toHaveBeenCalled();
 });

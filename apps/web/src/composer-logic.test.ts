@@ -462,8 +462,10 @@ describe("assistant citation cursor offsets", () => {
     const prefix = "👋(";
     const between = "),雪";
     const after = " @AGENTS.md $review ";
-    const text = `${prefix}${citationSource}${between}${citationSource}${after}${terminalReference}!`;
-    const collapsedLength = `${prefix}□${between}□ □ □ □!`.length;
+    const caseReference =
+      '[FogBugz #42](https://fogbugz.example/default.asp?42 "Read this case through the FogBugz MCP.")';
+    const text = `${prefix}${citationSource}${between}${citationSource}${after}${terminalReference}${caseReference}!`;
+    const collapsedLength = `${prefix}□${between}□ □ □ □□!`.length;
     const boundaries = [
       [prefix.length, prefix.length],
       [prefix.length + 1, prefix.length + citationSource.length],
@@ -496,18 +498,24 @@ describe("assistant citation cursor offsets", () => {
     }
   });
 
-  it("deletes one collapsed citation without changing its neighbor or surrounding punctuation", () => {
-    const text = `(${citationSource}),${citationSource}!`;
-    const result = replaceTextRange(
-      text,
-      expandCollapsedComposerCursor(text, 1),
-      expandCollapsedComposerCursor(text, 2),
-      "",
-    );
+  it.each([
+    citationSource,
+    '[FogBugz #42](https://fogbugz.example/default.asp?42 "Read this case through the FogBugz MCP.")',
+  ])(
+    "deletes a collapsed reference and its instructions without changing its neighbor: %s",
+    (source) => {
+      const text = `(${source}),${source}!`;
+      const result = replaceTextRange(
+        text,
+        expandCollapsedComposerCursor(text, 1),
+        expandCollapsedComposerCursor(text, 2),
+        "",
+      );
 
-    expect(result).toEqual({ text: `(),${citationSource}!`, cursor: 1 });
-    expect(collapseExpandedComposerCursor(result.text, result.text.length)).toBe("(),□!".length);
-  });
+      expect(result).toEqual({ text: `(),${source}!`, cursor: 1 });
+      expect(collapseExpandedComposerCursor(result.text, result.text.length)).toBe("(),□!".length);
+    },
+  );
 });
 
 describe("literal editor answer cursor state", () => {

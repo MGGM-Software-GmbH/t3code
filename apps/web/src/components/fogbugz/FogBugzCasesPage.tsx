@@ -11,19 +11,35 @@ import { useProjects } from "../../state/entities";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { threadEnvironment } from "../../state/threads";
+import { useComposerDraftStore } from "../../composerDraftStore";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
 import { buildThreadRouteParams } from "../../threadRoutes";
-import { newThreadId } from "../../lib/utils";
+import { newMessageId, newThreadId } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarInset } from "../ui/sidebar";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
+import { toastManager } from "../ui/toast";
 import { FogBugzCategoryIcon } from "./FogBugzCategoryIcon";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
-import type { FogBugzCaseAction } from "./fogbugzCaseActions";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+  MenuSub,
+  MenuSubTrigger,
+  MenuSubPopup,
+} from "../ui/menu";
+import {
+  fogbugzCaseActions,
+  fogbugzCasePrompt,
+  type FogBugzCaseAction,
+} from "./fogbugzCaseActions";
 
 export function FogBugzCasesPage() {
   const primary = usePrimaryEnvironmentId();
@@ -108,20 +124,18 @@ export function FogBugzCases({
   );
   const create = useAtomCommand(fogbugzEnvironment.createThread);
   const permission = useAtomValue(fogbugzEnvironment.createThread.permissionAtom(environmentId));
+  const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
 
-  async function createThread(item: FogBugzCase, target: ProjectId) {
-    if (!config) return;
+  async function createThread(item: FogBugzCase, target: ProjectId, action: FogBugzCaseAction) {
+    const connection = status.data?.connection;
+    if (!config || !connection) throw new Error("Connect to the environment and FogBugz first.");
     const project = projects.find((candidate) => candidate.id === target);
     const settings = resolveProjectSettings(config.settings, target, project);
     const modelSelection =
       settings.settings.defaultModelSelection ??
       resolveProjectDefaultProviderModelSelection(config.providers, config.settings, target);
-    if (!modelSelection) {
-      setError("Configure a provider and default model before creating a thread.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
+    if (!modelSelection)
+      throw new Error("Configure a provider and default model before creating a thread.");
     const threadId = newThreadId();
     const result = await create({
       environmentId,
@@ -133,13 +147,47 @@ export function FogBugzCases({
         modelSelection,
       },
     });
-    setBusy(false);
-    if (result._tag === "Failure") setError(formatEnvironmentQueryError(result.cause));
-    if (result._tag === "Success")
-      await navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(scopeThreadRef(environmentId, result.value)),
+    if (result._tag === "Failure") throw new Error(formatEnvironmentQueryError(result.cause));
+    const ref = scopeThreadRef(environmentId, result.value);
+    const text = fogbugzCasePrompt(action, item.id, connection.baseUrl);
+    // Keep the selected instruction available if starting the turn fails.
+    useComposerDraftStore.getState().setPrompt(ref, text);
+    await navigate({
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams(ref),
+    });
+    if (action !== "context") {
+      const sent = await startTurn({
+        environmentId,
+        input: {
+          threadId: result.value,
+          message: { messageId: newMessageId(), role: "user", text, attachments: [] },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          dispatchMode: "queue",
+        },
       });
+      if (sent._tag === "Failure") throw new Error(formatEnvironmentQueryError(sent.cause));
+      if (useComposerDraftStore.getState().getComposerDraft(ref)?.prompt === text) {
+        useComposerDraftStore.getState().setPrompt(ref, "");
+      }
+    }
+  }
+
+  async function processCase(action: FogBugzCaseAction, item: FogBugzCase, target?: ProjectId) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (scopedProjectId && onCaseAction) await onCaseAction(action, item);
+      else if (target) await createThread(item, target, action);
+    } catch (cause) {
+      const description = cause instanceof Error ? cause.message : "Unable to process the case.";
+      setError(description);
+      if (!scopedProjectId)
+        toastManager.add({ type: "error", title: "Unable to process the case", description });
+    }
+    setBusy(false);
   }
 
   return (
@@ -280,81 +328,97 @@ export function FogBugzCases({
       ) : null}
       <div className="min-h-0 flex-1 overflow-auto">
         <WorkspacePageContainer width="expanded" className="gap-0 pt-0">
-          {cases.data?.cases.map((item) => (
-            <article key={item.id} className="flex flex-wrap items-center gap-3 border-b py-3">
-              <div className="min-w-0 flex-1 basis-64">
-                <div className="flex gap-2">
-                  <FogBugzCategoryIcon item={item} />
-                  {status.data?.connection ? (
-                    <a
-                      href={new URL(`default.asp?${item.id}`, status.data.connection.baseUrl).href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-foreground hover:underline"
-                    >
-                      #{item.id}
-                    </a>
-                  ) : (
-                    <span className="text-muted-foreground">#{item.id}</span>
-                  )}
-                  <h2 className="min-w-0 flex-1 break-words font-medium text-foreground/80">
-                    {item.title}
-                  </h2>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-                  <span>{item.projectName}</span>
-                  <span className="inline-flex items-center gap-3">
-                    <span aria-hidden="true">|</span>
-                    <span>{item.status.replace(/^\d+\s*[.:-]?\s*/, "")}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-3">
-                    <span aria-hidden="true">|</span>
-                    <Tooltip>
-                      <TooltipTrigger render={<span />}>{item.priority}</TooltipTrigger>
-                      <TooltipPopup>Priority</TooltipPopup>
-                    </Tooltip>
-                  </span>
-                  <span className="inline-flex items-center gap-3">
-                    <span aria-hidden="true">|</span>
-                    <Tooltip>
-                      <TooltipTrigger render={<span />}>{item.assignedToName}</TooltipTrigger>
-                      <TooltipPopup>Assigned to</TooltipPopup>
-                    </Tooltip>
-                  </span>
-                  <span className="inline-flex items-center gap-3">
-                    <span aria-hidden="true">|</span>
-                    <Tooltip>
-                      <TooltipTrigger render={<span />}>
-                        {item.notifiedAt ? (
-                          <time dateTime={item.notifiedAt}>
-                            {new Date(item.notifiedAt).toLocaleString()}
-                          </time>
-                        ) : (
-                          "No notification"
-                        )}
-                      </TooltipTrigger>
-                      <TooltipPopup>Your latest notification</TooltipPopup>
-                    </Tooltip>
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                  {cases.data?.threads
-                    .filter((thread) => thread.caseId === item.id)
-                    .map((thread) => (
-                      <Link
-                        key={thread.threadId}
-                        className="text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground"
-                        to="/$environmentId/$threadId"
-                        params={buildThreadRouteParams(
-                          scopeThreadRef(environmentId, thread.threadId),
-                        )}
+          {cases.data?.cases.map((item) => {
+            const targets = projects.filter((project) =>
+              cases.data?.projects.some(
+                (link) =>
+                  link.fogbugzProjectId === item.projectId &&
+                  link.projectId === project.id &&
+                  (projectId === "all" || link.projectId === projectId),
+              ),
+            );
+            const actionItems = (target?: ProjectId) =>
+              fogbugzCaseActions.map(([action, label]) => (
+                <MenuItem key={action} onClick={() => void processCase(action, item, target)}>
+                  {label}
+                </MenuItem>
+              ));
+            return (
+              <article key={item.id} className="flex flex-wrap items-center gap-3 border-b py-3">
+                <div className="min-w-0 flex-1 basis-64">
+                  <div className="flex gap-2">
+                    <FogBugzCategoryIcon item={item} />
+                    {status.data?.connection ? (
+                      <a
+                        href={
+                          new URL(`default.asp?${item.id}`, status.data.connection.baseUrl).href
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-foreground hover:underline"
                       >
-                        {thread.title}
-                      </Link>
-                    ))}
+                        #{item.id}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">#{item.id}</span>
+                    )}
+                    <h2 className="min-w-0 flex-1 break-words font-medium text-foreground/80">
+                      {item.title}
+                    </h2>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                    <span>{item.projectName}</span>
+                    <span className="inline-flex items-center gap-3">
+                      <span aria-hidden="true">|</span>
+                      <span>{item.status.replace(/^\d+\s*[.:-]?\s*/, "")}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-3">
+                      <span aria-hidden="true">|</span>
+                      <Tooltip>
+                        <TooltipTrigger render={<span />}>{item.priority}</TooltipTrigger>
+                        <TooltipPopup>Priority</TooltipPopup>
+                      </Tooltip>
+                    </span>
+                    <span className="inline-flex items-center gap-3">
+                      <span aria-hidden="true">|</span>
+                      <Tooltip>
+                        <TooltipTrigger render={<span />}>{item.assignedToName}</TooltipTrigger>
+                        <TooltipPopup>Assigned to</TooltipPopup>
+                      </Tooltip>
+                    </span>
+                    <span className="inline-flex items-center gap-3">
+                      <span aria-hidden="true">|</span>
+                      <Tooltip>
+                        <TooltipTrigger render={<span />}>
+                          {item.notifiedAt ? (
+                            <time dateTime={item.notifiedAt}>
+                              {new Date(item.notifiedAt).toLocaleString()}
+                            </time>
+                          ) : (
+                            "No notification"
+                          )}
+                        </TooltipTrigger>
+                        <TooltipPopup>Your latest notification</TooltipPopup>
+                      </Tooltip>
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                    {cases.data?.threads
+                      .filter((thread) => thread.caseId === item.id)
+                      .map((thread) => (
+                        <Link
+                          key={thread.threadId}
+                          className="text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground"
+                          to="/$environmentId/$threadId"
+                          params={buildThreadRouteParams(
+                            scopeThreadRef(environmentId, thread.threadId),
+                          )}
+                        >
+                          {thread.title}
+                        </Link>
+                      ))}
+                  </div>
                 </div>
-              </div>
-              {scopedProjectId ? (
                 <Menu>
                   <MenuTrigger
                     render={
@@ -362,75 +426,35 @@ export function FogBugzCases({
                         variant="outline"
                         size="icon"
                         aria-label={`Case actions for #${item.id}`}
-                        disabled={busy || !onCaseAction || !canProcessCase}
+                        disabled={
+                          busy ||
+                          (scopedProjectId
+                            ? !onCaseAction || !canProcessCase
+                            : !permission || targets.length === 0)
+                        }
                       />
                     }
                   >
                     <PlusIcon aria-hidden="true" />
                   </MenuTrigger>
                   <MenuPopup align="end">
-                    {(
-                      [
-                        ["context", "Add to Context"],
-                        ["prp", "Create PRP"],
-                        ["implement", "Implement"],
-                      ] as const
-                    ).map(([action, label]) => (
-                      <MenuItem
-                        key={action}
-                        onClick={() => {
-                          if (!onCaseAction || busy) return;
-                          setBusy(true);
-                          setError(null);
-                          void onCaseAction(action, item)
-                            .catch((cause: unknown) => {
-                              setError(
-                                cause instanceof Error
-                                  ? cause.message
-                                  : "Unable to process the case.",
-                              );
-                            })
-                            .finally(() => setBusy(false));
-                        }}
-                      >
-                        {label}
-                      </MenuItem>
-                    ))}
+                    {scopedProjectId
+                      ? actionItems()
+                      : targets.length === 1
+                        ? actionItems(targets[0]!.id)
+                        : targets.map((project) => (
+                            <MenuSub key={project.id}>
+                              <MenuSubTrigger title={project.workspaceRoot}>
+                                {project.title}
+                              </MenuSubTrigger>
+                              <MenuSubPopup>{actionItems(project.id)}</MenuSubPopup>
+                            </MenuSub>
+                          ))}
                   </MenuPopup>
                 </Menu>
-              ) : (
-                cases.data?.projects
-                  .filter(
-                    (link) =>
-                      link.fogbugzProjectId === item.projectId &&
-                      (projectId === "all" || link.projectId === projectId),
-                  )
-                  .map((link) => {
-                    const project = projects.find((candidate) => candidate.id === link.projectId);
-                    if (!project) return null;
-                    const label = `New Thread in ${project.workspaceRoot}`;
-                    return (
-                      <Tooltip key={link.projectId}>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              variant="outline"
-                              aria-label={label}
-                              disabled={busy || !permission}
-                              onClick={() => void createThread(item, link.projectId)}
-                            >
-                              <PlusIcon aria-hidden="true" />
-                              {project.title}
-                            </Button>
-                          }
-                        />
-                        <TooltipPopup>{label}</TooltipPopup>
-                      </Tooltip>
-                    );
-                  })
-              )}
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </WorkspacePageContainer>
       </div>
       {cases.data?.truncated ? (

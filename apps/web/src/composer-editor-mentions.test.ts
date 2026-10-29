@@ -91,6 +91,23 @@ describe("splitPromptIntoComposerSegments", () => {
     ).toEqual([{ type: "text", text: "Read [the docs](https://example.com/docs) first" }]);
   });
 
+  it("keeps FogBugz references atomic without accepting mismatched or unsafe links", () => {
+    const url = "https://fogbugz.example/team/default.asp?42";
+    const source = `[FogBugz #42](${url} "Read this case through the FogBugz MCP.")`;
+    expect(splitPromptIntoComposerSegments(`前${source}後`)).toEqual([
+      { type: "text", text: "前" },
+      { type: "fogbugz-reference", caseId: 42, url, source },
+      { type: "text", text: "後" },
+    ]);
+    for (const invalid of [
+      "[FogBugz #42](javascript:alert(42))",
+      "[FogBugz #42](https://fogbugz.example/default.asp?43)",
+      "[FogBugz #42](https://fogbugz.example/not-a-case?42)",
+    ]) {
+      expect(splitPromptIntoComposerSegments(invalid)).toEqual([{ type: "text", text: invalid }]);
+    }
+  });
+
   it("keeps multiple assistant citations atomic next to punctuation and Unicode", () => {
     const source = serializeAssistantCitation(citation);
     const otherCitation = {
