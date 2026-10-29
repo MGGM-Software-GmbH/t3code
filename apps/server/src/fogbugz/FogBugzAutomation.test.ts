@@ -167,10 +167,10 @@ describe("FogBugz automation", () => {
     ).toBeUndefined();
   });
 
-  it.effect(
-    "baselines existing cases and launches one analysis for a new initial assignment",
-    () => {
-      const test = fixture();
+  it.effect.each(["initial", "assigned"] as const)(
+    "baselines existing cases and analyzes initial requirements in %s mode",
+    (mode) => {
+      const test = fixture(mode);
       return Effect.gen(function* () {
         const service = yield* FogBugzAutomation;
         yield* TestClock.setTime(Date.parse(baselineAt));
@@ -188,6 +188,10 @@ describe("FogBugz automation", () => {
         });
         expect(test.state.launches[0]!.initialMessage!.text).toContain("Do not implement changes");
         expect(test.state.launches[0]!.initialMessage!.text).toContain("FogBugz MCP");
+        expect(test.state.launches[0]!.initialMessage!.text).toContain("Analyze the requirements");
+        expect(test.state.launches[0]!.initialMessage!.text).not.toContain(
+          "expected to contribute now",
+        );
         // Reconstructing the service must use the same persisted cursor.
         yield* Effect.gen(function* () {
           yield* (yield* FogBugzAutomation).run();
@@ -203,7 +207,7 @@ describe("FogBugz automation", () => {
       const service = yield* FogBugzAutomation;
       yield* TestClock.setTime(Date.parse(baselineAt));
       yield* service.run();
-      test.state.cases[0] = { ...caseState, id: 43, eventId: 3 };
+      test.state.cases[0] = { ...caseState, eventId: 3 };
       test.state.events = [
         { id: 1, verb: "Assigned", assignedTo: 8, createdAt: baselineAt },
         { id: 3, verb: "Assigned", assignedTo: 7, createdAt: eventAt },
@@ -216,6 +220,13 @@ describe("FogBugz automation", () => {
       expect(test.state.launches).toHaveLength(2);
       expect(test.state.launches[0]!.commandId).toBe(test.state.launches[1]!.commandId);
       expect(test.state.launches[0]!.threadId).toBe(test.state.launches[1]!.threadId);
+      expect(test.state.launches[0]!.initialMessage!.text).toContain("expected to contribute now");
+      expect(test.state.launches[0]!.initialMessage!.text).toContain("assignment event #3");
+      expect(test.state.launches[0]!.initialMessage!.text).toContain("FogBugz person #7");
+      expect(test.state.launches[0]!.initialMessage!.text).toContain(
+        "explicit requests from inferred expectations",
+      );
+      expect(test.state.launches[0]!.initialMessage!.text).toContain("Do not implement changes");
       test.state.settings = { ...test.state.settings, fogbugzAutoAnalyze: "never" };
       test.state.cases[0] = { ...caseState, id: 44 };
       yield* service.run();

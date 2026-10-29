@@ -20,6 +20,8 @@ Configure **Auto-Settle on**, **Auto-Unsettle On reactivate**, and **Auto-Analyz
 
 **Only initial event** analyzes new cases whose first two events are **Opened**, then **Assigned** to you. **Any assigned to me** also handles later assignments to you. Enabling analysis establishes a baseline on the next check; existing assignments do not start work. Each new assignment starts a separate linked thread using the project's default model and an analysis-only request through the FogBugz MCP. This can incur provider costs. Automatic analysis does not request implementation, file changes, or FogBugz comments. A missing default model prevents the run.
 
+For a later assignment, the analysis focuses on what you are expected to contribute now. It uses the assignment event and discussion to identify the requested review, decision, clarification, investigation, test, or implementation task, distinguishes explicit requests from inferred expectations, and flags missing information. New cases retain the initial requirements analysis.
+
 Click a case number to open it in a new browser tab using your existing FogBugz browser session. This link does not pass an API token.
 
 Linked threads open the case in the existing Browser panel using the selected browser profile. T3 exchanges the stored API token for a browser session without another password prompt. This requires the MGGM FogBugz browser-session API. Changing the FogBugz server or account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. File synchronization and FogBugz comment editing are not included.
