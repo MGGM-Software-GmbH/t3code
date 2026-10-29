@@ -30,7 +30,7 @@ export function FogBugzCasesPage() {
   return (
     <SidebarInset className="h-dvh min-w-0">
       <header className="flex min-h-14 flex-wrap items-center gap-3 border-b pr-4 pl-14">
-        <h1 className="text-lg font-semibold">Fälle</h1>
+        <h1 className="text-lg font-semibold">Fogbugz Fälle</h1>
         <div className="ml-auto">
           <Select
             value={environmentId ?? ""}

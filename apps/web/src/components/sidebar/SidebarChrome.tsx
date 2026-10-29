@@ -214,7 +214,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           ) : null}
           <SidebarUtilityItem
             icon={<span aria-hidden>#</span>}
-            label="Fälle"
+            label="Fogbugz Fälle"
             onClick={() => {
               closeMobileSidebar();
               void navigate({ to: "/cases" });
