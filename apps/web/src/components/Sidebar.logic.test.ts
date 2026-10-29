@@ -11,6 +11,7 @@ import {
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
   groupIdleSidebarThreads,
+  resolveSidebarThreadActivityTimestamp,
   resolveSidebarRowThreadId,
   orderItemsByPreferredIds,
   pinOrderKeyBetween,
@@ -719,6 +720,32 @@ describe("groupIdleSidebarThreads", () => {
       now,
     );
     expect(result.recent.map((entry) => entry.id)).toEqual(["response"]);
+    expect(resolveSidebarThreadActivityTimestamp(result.recent[0]!)).toBe(
+      "2026-03-10T11:00:00.000Z",
+    );
+  });
+
+  it("ignores metadata updates when ordering conversation activity", () => {
+    const result = groupIdleSidebarThreads(
+      [
+        {
+          ...thread("stale", "2026-03-10T11:59:00.000Z"),
+          latestUserMessageAt: "2026-03-01T00:00:00.000Z",
+        },
+        {
+          ...thread("older", "2026-03-10T11:58:00.000Z"),
+          latestUserMessageAt: "2026-03-10T01:00:00.000Z",
+        },
+        {
+          ...thread("newer", "2026-03-10T11:57:00.000Z"),
+          latestUserMessageAt: "2026-03-10T11:00:00.000Z",
+        },
+      ],
+      projects,
+      now,
+    );
+    expect(result.recent.map((entry) => entry.id)).toEqual(["newer", "older"]);
+    expect(result.projectGroups[0]?.threads.map((entry) => entry.id)).toEqual(["stale"]);
   });
 
   it("uses the project filter order and sorts each project's threads by activity", () => {
@@ -740,6 +767,10 @@ describe("groupIdleSidebarThreads", () => {
     ).toEqual([
       ["Zebra", ["zebra-new", "zebra-old"]],
       ["Alpha", ["alpha-new", "alpha-old"]],
+    ]);
+    expect(result.projectGroups.map((group) => group.latestActivityAt)).toEqual([
+      "2026-03-08T00:00:00.000Z",
+      "2026-03-08T11:00:00.000Z",
     ]);
   });
 

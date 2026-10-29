@@ -139,8 +139,11 @@ choice.
 On web and desktop, idle threads with activity in the last 24 hours appear in **Idle 24h**,
 with the most recently active first. Older idle threads appear in **Idle Projects**, grouped
 in the same project order as the project filter and sorted by recent activity within each
-project. Responses and completed runs count as activity. Both sections can be collapsed;
-the currently open thread remains visible. Pinned, snoozed, and settled threads retain
+project. Messages and run activity determine both the order and the displayed age;
+visiting or changing thread metadata does not make an old conversation recent.
+Each project group shows its thread count and last activity and can be collapsed
+independently. Section and project collapse states are saved locally, and the currently
+open thread remains visible. Pinned, snoozed, and settled threads retain
 their separate sections. Idle sections use activity order rather than manual thread order.
 
 On iOS and Android, enabling Working orders the active list by when each thread last came

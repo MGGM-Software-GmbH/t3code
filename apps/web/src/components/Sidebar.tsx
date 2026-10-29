@@ -319,6 +319,8 @@ const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
 const IDLE_RECENT_EXPANDED_KEY = "t3code:sidebar:idle-recent-expanded";
 const IDLE_PROJECTS_EXPANDED_KEY = "t3code:sidebar:idle-projects-expanded";
+const IDLE_PROJECT_EXPANDED_KEY = "t3code:sidebar:idle-project-expanded";
+const idleProjectExpandedSchema = Schema.Record(Schema.String, Schema.Boolean);
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -458,6 +460,11 @@ function useSidebarThreads(input: {
     false,
     Schema.Boolean,
   );
+  const [idleProjectExpandedByKey, setIdleProjectExpandedByKey] = useLocalStorage(
+    IDLE_PROJECT_EXPANDED_KEY,
+    {},
+    idleProjectExpandedSchema,
+  );
   const [settledTail, setSettledTail] = useState({
     scopeKey: projectScopeKey,
     count: SETTLED_TAIL_INITIAL_COUNT,
@@ -496,15 +503,25 @@ function useSidebarThreads(input: {
     : routeThreadOnly(idle.recent, routeRowThreadKey);
   const visibleIdleProjects = idle.projectGroups.map((group) => ({
     ...group,
-    visibleThreads: idleProjectsExpanded
-      ? group.threads
-      : routeThreadOnly(group.threads, routeRowThreadKey),
+    expanded: idleProjectExpandedByKey[group.projectKey] !== false,
+    visibleThreads:
+      idleProjectsExpanded && idleProjectExpandedByKey[group.projectKey] !== false
+        ? group.threads
+        : routeThreadOnly(group.threads, routeRowThreadKey),
   }));
   const visibleActiveThreads = [
     ...inlineWorkingThreads,
     ...visibleIdleRecent,
     ...visibleIdleProjects.flatMap((group) => group.visibleThreads),
   ];
+  const idleParentByThreadKey = new Map([
+    ...visibleIdleRecent.map((thread) => [threadShellKey(thread), "shelf:idle-recent"] as const),
+    ...visibleIdleProjects.flatMap((group) =>
+      group.visibleThreads.map(
+        (thread) => [threadShellKey(thread), `idle-project:${group.projectKey}`] as const,
+      ),
+    ),
+  ]);
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const olderSettledShelf = useOlderSettledShelf({
     scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
@@ -584,10 +601,16 @@ function useSidebarThreads(input: {
     inlineWorkingThreads,
     visibleIdleRecent,
     visibleIdleProjects,
+    idleParentByThreadKey,
     idleRecentExpanded,
     toggleIdleRecent: () => setIdleRecentExpanded((value) => !value),
     idleProjectsExpanded,
     toggleIdleProjects: () => setIdleProjectsExpanded((value) => !value),
+    toggleIdleProject: (projectKey: string) =>
+      setIdleProjectExpandedByKey((current) => ({
+        ...current,
+        [projectKey]: current[projectKey] === false,
+      })),
     searchableThreads: [
       ...pinnedThreads,
       ...activeThreads,
@@ -1290,10 +1313,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     inlineWorkingThreads,
     visibleIdleRecent,
     visibleIdleProjects,
+    idleParentByThreadKey,
     idleRecentExpanded,
     toggleIdleRecent,
     idleProjectsExpanded,
     toggleIdleProjects,
+    toggleIdleProject,
     snoozedThreads,
     settledThreads,
     snoozeNow,
@@ -1938,7 +1963,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (projectFolders === null && idle.projectGroups.length > 0) {
       items.push({ kind: "marker", marker: "idle-projects-header" });
       for (const group of visibleIdleProjects) {
-        if (group.visibleThreads.length === 0) continue;
+        if (!idleProjectsExpanded && group.visibleThreads.length === 0) continue;
         items.push({ kind: "marker", marker: `idle-project:${group.projectKey}` });
         items.push(...rowsOf(group.visibleThreads, "active"));
       }
@@ -3221,6 +3246,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     ref={attachTreeRef}
                     className={cn(
                       "relative flex flex-col gap-px",
+                      "[&>[data-thread-item]]:relative [&>[data-thread-item]+[data-thread-item]]:before:pointer-events-none [&>[data-thread-item]+[data-thread-item]]:before:absolute [&>[data-thread-item]+[data-thread-item]]:before:inset-x-2.5 [&>[data-thread-item]+[data-thread-item]]:before:top-0 [&>[data-thread-item]+[data-thread-item]]:before:border-t [&>[data-thread-item]+[data-thread-item]]:before:border-dashed [&>[data-thread-item]+[data-thread-item]]:before:border-sidebar-border/70",
                       sidebarListItems.length > 0 && "flex-1",
                       actionSweep !== null && "**:pointer-events-none",
                     )}
@@ -3231,6 +3257,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         section: SidebarSection,
                         // The tree row of the project folder this row sits in.
                         folderRow?: string,
+                        navigationParent?: string,
                       ) => {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
@@ -3258,6 +3285,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             thread={thread}
                             variant={rowVariant}
                             navigationParent={
+                              navigationParent ??
                               folderRow ??
                               (section === "working" ||
                               section === "snoozed" ||
@@ -3362,7 +3390,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         if (item.kind === "thread") {
                           // Folders draw active rows in their own place below.
                           if (projectFolders !== null && item.section === "active") continue;
-                          items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
+                          items.push(
+                            renderThreadRow(
+                              threadByKey.get(item.key)!,
+                              item.section,
+                              undefined,
+                              idleParentByThreadKey.get(item.key),
+                            ),
+                          );
                           continue;
                         }
                         if (projectFolders !== null && item.marker === "active-placeholder") {
@@ -3392,7 +3427,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         }
                         if (item.marker.startsWith("idle-project:")) {
                           const projectKey = item.marker.slice("idle-project:".length);
-                          const group = idle.projectGroups.find(
+                          const group = visibleIdleProjects.find(
                             (candidate) => candidate.projectKey === projectKey,
                           );
                           items.push(
@@ -3400,6 +3435,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               key={item.marker}
                               projectKey={projectKey}
                               label={group?.displayName ?? "Unknown project"}
+                              count={group?.threads.length ?? 0}
+                              latestActivityAt={group?.latestActivityAt ?? null}
+                              expanded={group?.expanded ?? false}
+                              onToggle={() => toggleIdleProject(projectKey)}
                             />,
                           );
                           continue;

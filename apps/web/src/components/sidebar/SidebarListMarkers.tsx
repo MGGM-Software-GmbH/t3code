@@ -9,7 +9,7 @@ import {
   sidebarMarkerId,
   type SidebarListMarker,
 } from "../Sidebar.logic";
-import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
+import { RelativeTimeLabel, SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 
 function SortableSidebarMarker(props: {
@@ -131,7 +131,10 @@ export function SidebarSectionHeader(props: {
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className={cn("relative mx-0.5 h-8", props.className)}
+      className={cn(
+        "relative mx-0.5 h-8 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-border",
+        props.className,
+      )}
     >
       {props.hostsUndoNotice ? (
         <SidebarThreadUndoNotice className="absolute inset-x-0 bottom-full bg-sidebar surface-grain" />
@@ -142,7 +145,7 @@ export function SidebarSectionHeader(props: {
         data-sidebar-row={`shelf:${shelf}`}
         onClick={props.toggle.onToggle}
         expanded={props.toggle.expanded}
-        tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
+        tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "info"}
         data-testid={`sidebar-${shelf}-shelf-toggle`}
         accessory={<span className="font-normal tabular-nums">{props.count}</span>}
       >
@@ -152,15 +155,46 @@ export function SidebarSectionHeader(props: {
   );
 }
 
-export function SidebarIdleProjectHeader(props: { projectKey: string; label: string }) {
+export function SidebarIdleProjectHeader(props: {
+  projectKey: string;
+  label: string;
+  count: number;
+  latestActivityAt: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <SortableSidebarMarker marker={`idle-project:${props.projectKey}`}>
-      <div className="flex h-7 items-center px-2.5 text-xs font-medium text-sidebar-muted-foreground">
-        <Tooltip>
-          <TooltipTrigger render={<span className="truncate" />}>{props.label}</TooltipTrigger>
-          <TooltipPopup side="right">{props.label}</TooltipPopup>
-        </Tooltip>
-      </div>
+    <SortableSidebarMarker
+      marker={`idle-project:${props.projectKey}`}
+      className="relative mx-0.5 h-8 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-border"
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <CollapsibleSectionHeader
+              role="treeitem"
+              tabIndex={-1}
+              data-sidebar-row={`idle-project:${props.projectKey}`}
+              data-sidebar-parent="shelf:idle-projects"
+              data-testid="sidebar-idle-project-toggle"
+              onClick={props.onToggle}
+              expanded={props.expanded}
+              tone="emphasized"
+              accessory={
+                <span className="flex shrink-0 items-center gap-2 text-xs font-normal tabular-nums text-sidebar-muted-foreground">
+                  <span aria-label={`${props.count} threads`}>{props.count}</span>
+                  <span aria-label="Last activity">
+                    <RelativeTimeLabel timestamp={props.latestActivityAt} />
+                  </span>
+                </span>
+              }
+            >
+              {props.label}
+            </CollapsibleSectionHeader>
+          }
+        />
+        <TooltipPopup side="right">{props.label}</TooltipPopup>
+      </Tooltip>
     </SortableSidebarMarker>
   );
 }

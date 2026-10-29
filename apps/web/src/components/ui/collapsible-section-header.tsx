@@ -6,6 +6,7 @@ const tones = {
   muted: { label: "text-sidebar-muted-foreground", line: "bg-sidebar-border/50" },
   emphasized: { label: "text-sidebar-foreground/80", line: "bg-sidebar-foreground/25" },
   accent: { label: "text-primary", line: "bg-primary/50" },
+  info: { label: "text-info-foreground", line: "bg-info/50" },
 } as const;
 
 export function CollapsibleSectionHeader({
@@ -32,7 +33,7 @@ export function CollapsibleSectionHeader({
         tones[tone].label,
       )}
     >
-      <span className="shrink-0">{children}</span>
+      <span className="min-w-0 truncate">{children}</span>
       <span
         aria-hidden
         // A header with a trailing count drops its rule so it doesn't read as a leader.

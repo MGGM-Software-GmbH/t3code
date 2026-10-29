@@ -982,18 +982,36 @@ export {
 export { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
 export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
 
-export function groupIdleSidebarThreads<
-  TThread extends Pick<
-    SidebarThreadSummary,
-    | "id"
-    | "environmentId"
-    | "projectId"
-    | "createdAt"
-    | "updatedAt"
-    | "latestUserMessageAt"
-    | "latestRun"
-  >,
->(
+type SidebarThreadActivity = Pick<
+  SidebarThreadSummary,
+  | "id"
+  | "environmentId"
+  | "projectId"
+  | "createdAt"
+  | "updatedAt"
+  | "latestUserMessageAt"
+  | "latestRun"
+>;
+
+export function resolveSidebarThreadActivityTimestamp(thread: SidebarThreadActivity): string {
+  const activity = [
+    thread.latestUserMessageAt,
+    thread.latestRun?.requestedAt,
+    thread.latestRun?.startedAt,
+    thread.latestRun?.completedAt,
+  ].flatMap((timestamp) => {
+    const parsed = toSortableTimestamp(timestamp ?? undefined);
+    return parsed === null ? [] : [parsed];
+  });
+  // Shell metadata also changes on visits, pinning and settlement, without conversation activity.
+  const timestamp =
+    activity.length > 0
+      ? Math.max(toSortableTimestamp(thread.createdAt) ?? 0, ...activity)
+      : firstValidTimestampMs(thread.updatedAt, thread.createdAt);
+  return new Date(timestamp).toISOString();
+}
+
+export function groupIdleSidebarThreads<TThread extends SidebarThreadActivity>(
   threads: readonly TThread[],
   projects: readonly Pick<
     SidebarProjectSnapshot,
@@ -1008,19 +1026,11 @@ export function groupIdleSidebarThreads<
       ),
     ),
   );
-  const activity = (thread: TThread) =>
-    Math.max(
-      ...[
-        thread.createdAt,
-        thread.updatedAt,
-        thread.latestUserMessageAt,
-        thread.latestRun?.requestedAt,
-        thread.latestRun?.startedAt,
-        thread.latestRun?.completedAt,
-      ].map((timestamp) => toSortableTimestamp(timestamp ?? undefined) ?? 0),
-    );
   const sorted = threads
-    .map((thread) => ({ thread, activity: activity(thread) }))
+    .map((thread) => ({
+      thread,
+      activity: Date.parse(resolveSidebarThreadActivityTimestamp(thread)),
+    }))
     .sort(
       (left, right) =>
         right.activity - left.activity ||
@@ -1028,7 +1038,10 @@ export function groupIdleSidebarThreads<
         left.thread.id.localeCompare(right.thread.id),
     );
   const recent: TThread[] = [];
-  const groups = new Map<string, { projectKey: string; displayName: string; threads: TThread[] }>();
+  const groups = new Map<
+    string,
+    { projectKey: string; displayName: string; latestActivityAt: string; threads: TThread[] }
+  >();
   for (const { thread, activity: timestamp } of sorted) {
     if (timestamp >= now - 24 * 60 * 60 * 1000) {
       recent.push(thread);
@@ -1039,7 +1052,12 @@ export function groupIdleSidebarThreads<
     const projectKey = project?.projectKey ?? refKey;
     let group = groups.get(projectKey);
     if (group === undefined) {
-      group = { projectKey, displayName: project?.displayName ?? "Unknown project", threads: [] };
+      group = {
+        projectKey,
+        displayName: project?.displayName ?? "Unknown project",
+        latestActivityAt: new Date(timestamp).toISOString(),
+        threads: [],
+      };
       groups.set(projectKey, group);
     }
     group.threads.push(thread);
