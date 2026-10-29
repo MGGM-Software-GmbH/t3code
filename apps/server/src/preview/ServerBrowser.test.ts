@@ -87,7 +87,7 @@ function makeSession(frame?: ReturnType<typeof makeFrame>) {
   const events = new NodeEvents.EventEmitter();
   return {
     on: vi.fn((name: string, listener: () => void) => events.on(name, listener)),
-    emit: (name: string) => events.emit(name),
+    emit: (name: string, ...args: unknown[]) => events.emit(name, ...args),
     detach: vi.fn(async () => {}),
     send: vi.fn(async (method: string, input?: unknown): Promise<Record<string, unknown>> => {
       if (method === "Page.getNavigationHistory") return { currentIndex: 0, entries: [{}] };
@@ -683,6 +683,37 @@ it.live("enforces provider ownership and explicit targets when a session has mul
       });
       expect(result).toBe("evaluated");
       expect(contexts).toHaveLength(2);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live.each([70, 100])("preserves quality %i and resolution during scrolling", (quality) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { browser, broker, tabId } = yield* ready;
+      const viewer = yield* browser.attachViewer({ ...viewerInput(tabId, true), quality });
+      const session = contexts[0]!.sessions.at(-1)!;
+      using _now = vi.spyOn(Date, "now").mockReturnValue(1000);
+      yield* viewer.input({ type: "takeControl" });
+      yield* viewer.input({ type: "wheel", x: 50, y: 50, deltaX: 0, deltaY: 100 });
+      for (const sessionId of [1, 2, 3, 4]) {
+        session.emit("Page.screencastFrame", { data: "ZnJhbWU=", sessionId });
+      }
+      yield* viewer.input({ type: "releaseControl" });
+      // Capturing waits for queued screencast changes before resuming the stream.
+      yield* broker.invoke<PreviewAutomationSnapshot>({
+        scope,
+        tabId,
+        operation: "snapshot",
+        input: {},
+      });
+      const starts = session.send.mock.calls.filter(
+        ([method]) => method === "Page.startScreencast",
+      );
+      expect(starts.length).toBeGreaterThan(0);
+      for (const [, params] of starts) {
+        expect(params).toEqual({ format: "jpeg", quality, maxWidth: 1280, maxHeight: 800 });
+      }
     }),
   ).pipe(Effect.provide(layer)),
 );
