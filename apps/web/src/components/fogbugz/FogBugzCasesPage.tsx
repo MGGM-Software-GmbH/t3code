@@ -268,7 +268,18 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
               <div className="min-w-0 flex-1 basis-64">
                 <div className="flex gap-2">
                   <FogBugzCategoryIcon item={item} />
-                  <span className="text-muted-foreground">#{item.id}</span>
+                  {status.data?.connection ? (
+                    <a
+                      href={new URL(`default.asp?${item.id}`, status.data.connection.baseUrl).href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground hover:underline"
+                    >
+                      #{item.id}
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">#{item.id}</span>
+                  )}
                   <h2 className="min-w-0 flex-1 break-words font-medium text-foreground/80">
                     {item.title}
                   </h2>

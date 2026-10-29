@@ -10,6 +10,8 @@ Open **Fogbugz Fälle** from the sidebar menu or command palette to see open cas
 
 Cases show category, status, priority, assignee and your latest notification time. The list sorts by that notification time, then by the last case update.
 
+Click a case number to open it in a new browser tab using your existing FogBugz browser session. This link does not pass an API token.
+
 Linked threads open the case in the existing Browser panel using the selected browser profile. T3 exchanges the stored API token for a browser session without another password prompt. This requires the MGGM FogBugz browser-session API. Changing the FogBugz server or account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. File synchronization and FogBugz comment editing are not included.
 
 ## Settings scope
