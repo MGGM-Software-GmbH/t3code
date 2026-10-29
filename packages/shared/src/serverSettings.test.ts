@@ -769,15 +769,38 @@ describe("synchronized model preferences", () => {
     });
     expect(next.providerModelPreferences?.[provider]?.hiddenModels).toEqual(["example"]);
   });
+  const unmigratedSettings = { ...DEFAULT_SERVER_SETTINGS, favorites: null };
   const provider = ProviderInstanceId.make("codex_work");
   const legacy = {
     favorites: [{ provider, model: "sol" }],
     providerModelPreferences: { [provider]: { hiddenModels: ["astra"], modelOrder: ["sol"] } },
   };
 
+  it("keeps the MGGM favorite when an older client offers its legacy lists", () => {
+    const patch = modelPreferencesMigrationPatch(DEFAULT_SERVER_SETTINGS, legacy)!;
+    const migrated = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, patch);
+    expect(migrated.favorites).toEqual(DEFAULT_SERVER_SETTINGS.favorites);
+    expect(migrated.providerModelPreferences).toEqual(legacy.providerModelPreferences);
+  });
+
+  it("retains the preset favorite while adding and removing another model", () => {
+    const added = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      setModelFavorites: [{ provider, model: "sol", favorite: true }],
+    });
+    expect(added.favorites).toEqual([
+      ...DEFAULT_SERVER_SETTINGS.favorites!,
+      { provider, model: "sol" },
+    ]);
+    expect(
+      applyServerSettingsPatch(added, {
+        setModelFavorites: [{ provider, model: "sol", favorite: false }],
+      }).favorites,
+    ).toEqual(DEFAULT_SERVER_SETTINGS.favorites);
+  });
+
   it("keeps concurrent adds and removes of the same favorite idempotent", () => {
     const add = { setModelFavorites: [{ provider, model: "sol", favorite: true }] };
-    const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, add);
+    const first = applyServerSettingsPatch(unmigratedSettings, add);
     expect(applyServerSettingsPatch(first, add).favorites).toEqual([{ provider, model: "sol" }]);
     const remove = { setModelFavorites: [{ provider, model: "sol", favorite: false }] };
     const removed = applyServerSettingsPatch(first, remove);
@@ -821,9 +844,9 @@ describe("synchronized model preferences", () => {
   });
 
   it("migrates saved lists independently without claiming empty legacy lists", () => {
-    expect(modelPreferencesMigrationPatch(DEFAULT_SERVER_SETTINGS, {})).toBeNull();
-    const patch = modelPreferencesMigrationPatch(DEFAULT_SERVER_SETTINGS, legacy)!;
-    const migrated = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, patch);
+    expect(modelPreferencesMigrationPatch(unmigratedSettings, {})).toBeNull();
+    const patch = modelPreferencesMigrationPatch(unmigratedSettings, legacy)!;
+    const migrated = applyServerSettingsPatch(unmigratedSettings, patch);
     expect(resolveModelPreferences(migrated)).toEqual(legacy);
     expect(modelPreferencesMigrationPatch(migrated, legacy)).toBeNull();
     const favoritesOnly = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { favorites: [] });
@@ -848,8 +871,8 @@ describe("synchronized model preferences", () => {
 
   it("replaces visibility records so showing every model clears removed entries", () => {
     const migrated = applyServerSettingsPatch(
-      DEFAULT_SERVER_SETTINGS,
-      modelPreferencesMigrationPatch(DEFAULT_SERVER_SETTINGS, legacy)!,
+      unmigratedSettings,
+      modelPreferencesMigrationPatch(unmigratedSettings, legacy)!,
     );
     const cleared = applyServerSettingsPatch(migrated, { providerModelPreferences: {} });
     expect(cleared.providerModelPreferences).toEqual({});
@@ -857,7 +880,7 @@ describe("synchronized model preferences", () => {
   });
 
   it("sets favorites without losing changes from other clients", () => {
-    const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    const first = applyServerSettingsPatch(unmigratedSettings, {
       setModelFavorites: [{ provider, model: "sol", favorite: true }],
     });
     const second = applyServerSettingsPatch(first, {
@@ -881,7 +904,7 @@ describe("synchronized model preferences", () => {
 
   it("keeps the same model on different provider instances as separate favorites", () => {
     const otherProvider = ProviderInstanceId.make("codex_personal");
-    const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    const first = applyServerSettingsPatch(unmigratedSettings, {
       setModelFavorites: [{ provider, model: "sol", favorite: true }],
     });
     const second = applyServerSettingsPatch(first, {

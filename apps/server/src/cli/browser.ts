@@ -122,7 +122,10 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
           ? new PreviewBrowserHost.PreviewBrowserRootError().message
           : undefined;
 
-      const needsProfile = yield* PreviewBrowserHost.sandboxBlocked;
+      // A profile on disk may not be loaded: an earlier parser run can fail.
+      const needsProfile = yield* isRoot
+        ? PreviewBrowserHost.sandboxRestricted
+        : PreviewBrowserHost.sandboxBlocked;
       const browser = yield* installedBrowser(yield* setupBaseDir(baseDir));
       const missing = Option.isSome(browser)
         ? yield* PreviewBrowserHost.missingLibraries(browser.value)
@@ -153,24 +156,38 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
             "T3's browser needs fontconfig and system fonts; setup installs them.",
           );
         }
-        return yield* Console.log(`\nThis needs root. Run:\n\n  ${setupCommand}\n`);
+        yield* Console.log(`\nThis needs root. Run:\n\n  ${setupCommand}\n`);
+        return yield* needsProfile
+          ? new PreviewBrowserHost.PreviewBrowserSandboxError({ setupCommand })
+          : missing.length > 0
+            ? new PreviewBrowserHost.PreviewBrowserLibrariesError({
+                setupCommand,
+                libraries: missing,
+              })
+            : new BrowserSetupStepError({
+                step: "install browser fonts",
+                detail: "Root privileges are required.",
+              });
       }
 
       if (needsProfile) {
-        yield* fs
-          .writeFileString(
-            PreviewBrowserHost.APPARMOR_PROFILE_PATH,
-            PreviewBrowserHost.APPARMOR_PROFILE,
-          )
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new BrowserSetupStepError({
-                  step: `write ${PreviewBrowserHost.APPARMOR_PROFILE_PATH}`,
-                  detail: cause.message,
-                }),
-            ),
-          );
+        // Preserve administrator policy and its local overrides when repairing a load.
+        if (!(yield* fs.exists(PreviewBrowserHost.APPARMOR_PROFILE_PATH))) {
+          yield* fs
+            .writeFileString(
+              PreviewBrowserHost.APPARMOR_PROFILE_PATH,
+              PreviewBrowserHost.APPARMOR_PROFILE,
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new BrowserSetupStepError({
+                    step: `write ${PreviewBrowserHost.APPARMOR_PROFILE_PATH}`,
+                    detail: cause.message,
+                  }),
+              ),
+            );
+        }
         yield* runStep("load the AppArmor profile", "apparmor_parser", [
           "-r",
           PreviewBrowserHost.APPARMOR_PROFILE_PATH,

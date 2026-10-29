@@ -126,13 +126,18 @@ export const missingLibraries = Effect.fn("PreviewBrowserHost.missingLibraries")
   return listed.length > 0 ? listed : [loaderError];
 });
 
-export const sandboxBlocked = Effect.gen(function* () {
+/** AppArmor restriction must be checked even when a profile already exists and needs reloading. */
+export const sandboxRestricted = Effect.gen(function* () {
   if ((yield* HostProcess.Platform) !== "linux") return false;
   const fs = yield* FileSystem.FileSystem;
-  const restricted = yield* fs.readFileString(USERNS_RESTRICTION).pipe(
+  return yield* fs.readFileString(USERNS_RESTRICTION).pipe(
     Effect.map((value) => value.trim() === "1"),
     Effect.orElseSucceed(() => false),
   );
-  if (!restricted) return false;
+}).pipe(Effect.withSpan("PreviewBrowserHost.sandboxRestricted"));
+
+export const sandboxBlocked = Effect.gen(function* () {
+  if (!(yield* sandboxRestricted)) return false;
+  const fs = yield* FileSystem.FileSystem;
   return !(yield* fs.exists(APPARMOR_PROFILE_PATH).pipe(Effect.orElseSucceed(() => false)));
 }).pipe(Effect.withSpan("PreviewBrowserHost.sandboxBlocked"));

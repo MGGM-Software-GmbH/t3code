@@ -240,6 +240,7 @@ export const make = Effect.gen(function* () {
       environmentThemes: true,
       usageLimitSources: true,
       providerWorkspaceSnapshotsOnDemand: true,
+      pdSecrets: true,
       usagePriceOverrides: true,
       usageModelAliases: true,
       threadPinning: true,

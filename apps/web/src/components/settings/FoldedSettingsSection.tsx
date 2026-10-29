@@ -66,7 +66,7 @@ export function FoldedSettingsSection({
   return (
     <section id={id} ref={targetRef} tabIndex={-1} className="outline-none">
       <Collapsible open={open} onOpenChange={setOpen} render={<SettingsGroup divided={false} />}>
-        <div className="flex items-center gap-4 px-3 sm:px-4">
+        <div className="flex flex-col items-stretch gap-x-4 px-3 sm:flex-row sm:items-center sm:px-4">
           <CollapsibleTrigger className="flex min-h-11 min-w-0 flex-1 items-center gap-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring rounded-md">
             <ChevronRightIcon
               aria-hidden
@@ -80,7 +80,9 @@ export function FoldedSettingsSection({
               <span className="min-w-0 truncate text-xs text-muted-foreground">{summary}</span>
             ) : null}
           </CollapsibleTrigger>
-          {control ? <div className="flex shrink-0 items-center">{control}</div> : null}
+          {control ? (
+            <div className="flex shrink-0 items-center pb-2 sm:pb-0">{control}</div>
+          ) : null}
         </div>
         <CollapsiblePanel>
           <div className="border-t border-border/50 [&>*+*]:border-t [&>*+*]:border-border/50">

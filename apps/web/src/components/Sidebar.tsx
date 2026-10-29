@@ -175,6 +175,7 @@ import {
   deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
   firstValidTimestampMs,
+  groupIdleSidebarThreads,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
@@ -254,6 +255,7 @@ import {
 } from "./sidebar/SidebarProjectFolderHeader";
 import {
   SidebarDragBoundary,
+  SidebarIdleProjectHeader,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
 } from "./sidebar/SidebarListMarkers";
@@ -315,6 +317,8 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
+const IDLE_RECENT_EXPANDED_KEY = "t3code:sidebar:idle-recent-expanded";
+const IDLE_PROJECTS_EXPANDED_KEY = "t3code:sidebar:idle-projects-expanded";
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -392,6 +396,7 @@ function routeThreadOnly(
 
 // Separate hooks cache maps independently of later Sidebar hooks and preserve dnd-kit inputs.
 function useSidebarThreads(input: {
+  readonly projectGroups: readonly SidebarProjectSnapshot[];
   readonly projectScopeKey: string | null;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
@@ -443,6 +448,16 @@ function useSidebarThreads(input: {
   // Shared with the old per-project sidebar, so folders keep their open state.
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const setProjectExpanded = useUiStateStore((store) => store.setProjectExpanded);
+  const [idleRecentExpanded, setIdleRecentExpanded] = useLocalStorage(
+    IDLE_RECENT_EXPANDED_KEY,
+    true,
+    Schema.Boolean,
+  );
+  const [idleProjectsExpanded, setIdleProjectsExpanded] = useLocalStorage(
+    IDLE_PROJECTS_EXPANDED_KEY,
+    false,
+    Schema.Boolean,
+  );
   const [settledTail, setSettledTail] = useState({
     scopeKey: projectScopeKey,
     count: SETTLED_TAIL_INITIAL_COUNT,
@@ -466,6 +481,30 @@ function useSidebarThreads(input: {
 
   const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
     partition;
+  const inlineWorkingThreads = workingShelfEnabled
+    ? EMPTY_THREADS
+    : activeThreads.filter(isThreadWorking);
+  const idle = groupIdleSidebarThreads(
+    workingShelfEnabled
+      ? activeThreads
+      : activeThreads.filter((thread) => !isThreadWorking(thread)),
+    input.projectGroups,
+    Date.parse(`${nowMinute}Z`),
+  );
+  const visibleIdleRecent = idleRecentExpanded
+    ? idle.recent
+    : routeThreadOnly(idle.recent, routeRowThreadKey);
+  const visibleIdleProjects = idle.projectGroups.map((group) => ({
+    ...group,
+    visibleThreads: idleProjectsExpanded
+      ? group.threads
+      : routeThreadOnly(group.threads, routeRowThreadKey),
+  }));
+  const visibleActiveThreads = [
+    ...inlineWorkingThreads,
+    ...visibleIdleRecent,
+    ...visibleIdleProjects.flatMap((group) => group.visibleThreads),
+  ];
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const olderSettledShelf = useOlderSettledShelf({
     scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
@@ -524,6 +563,7 @@ function useSidebarThreads(input: {
       ? activeThreads
       : projectFolders.flatMap((folder) => folder.threads)),
     ...visibleWorkingThreads,
+    ...visibleActiveThreads,
     ...visibleSnoozedThreads,
     ...renderedSettledThreads,
   ];
@@ -541,6 +581,14 @@ function useSidebarThreads(input: {
     ...partition,
     threads,
     workingShelfEnabled,
+    idle,
+    inlineWorkingThreads,
+    visibleIdleRecent,
+    visibleIdleProjects,
+    idleRecentExpanded,
+    toggleIdleRecent: () => setIdleRecentExpanded((value) => !value),
+    idleProjectsExpanded,
+    toggleIdleProjects: () => setIdleProjectsExpanded((value) => !value),
     searchableThreads: [
       ...pinnedThreads,
       ...activeThreads,
@@ -1239,6 +1287,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     activeReorderableThreadKeys,
     activeThreads,
     workingThreads,
+    idle,
+    inlineWorkingThreads,
+    visibleIdleRecent,
+    visibleIdleProjects,
+    idleRecentExpanded,
+    toggleIdleRecent,
+    idleProjectsExpanded,
+    toggleIdleProjects,
     snoozedThreads,
     settledThreads,
     snoozeNow,
@@ -1269,6 +1325,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     pinnedKeysById,
     activeKeysById,
   } = useSidebarThreads({
+    projectGroups,
     projectScopeKey,
     scopedProjectKeys,
     serverConfigs,
@@ -1867,13 +1924,25 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const items: SidebarListItem[] = [{ kind: "marker", marker: "pinned-header" }];
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
     items.push(...pinnedRows);
-    items.push({ kind: "marker", marker: "pinned-divider" });
-    const activeRows = rowsOf(activeThreads, "active");
-    items.push({ kind: "marker", marker: "active-placeholder" });
-    items.push(...activeRows);
+    // Returned threads lead the inbox directly below the remaining work.
     if (workingThreads.length > 0) {
       items.push({ kind: "marker", marker: "working-header" });
       items.push(...rowsOf(visibleWorkingThreads, "working"));
+    }
+    items.push({ kind: "marker", marker: "pinned-divider" });
+    items.push({ kind: "marker", marker: "active-placeholder" });
+    items.push(...rowsOf(inlineWorkingThreads, "active"));
+    if (idle.recent.length > 0) {
+      items.push({ kind: "marker", marker: "idle-recent-header" });
+      items.push(...rowsOf(visibleIdleRecent, "active"));
+    }
+    if (idle.projectGroups.length > 0) {
+      items.push({ kind: "marker", marker: "idle-projects-header" });
+      for (const group of visibleIdleProjects) {
+        if (group.visibleThreads.length === 0) continue;
+        items.push({ kind: "marker", marker: `idle-project:${group.projectKey}` });
+        items.push(...rowsOf(group.visibleThreads, "active"));
+      }
     }
     if (snoozedThreads.length > 0) {
       items.push({ kind: "marker", marker: "snoozed-header" });
@@ -1983,7 +2052,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeOrder: activeKeys,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
-            activeTimeOrdered: workingShelfEnabled,
+            activeTimeOrdered: true,
           }).kind !== "none"
         );
       },
@@ -2016,7 +2085,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeOrder: activeKeys,
       activeKeysById,
       activeReorderableKeys: activeReorderableThreadKeys,
-      activeTimeOrdered: workingShelfEnabled,
+      activeTimeOrdered: true,
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
@@ -3322,7 +3391,52 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           }
                           continue;
                         }
+                        if (item.marker.startsWith("idle-project:")) {
+                          const projectKey = item.marker.slice("idle-project:".length);
+                          const group = idle.projectGroups.find(
+                            (candidate) => candidate.projectKey === projectKey,
+                          );
+                          items.push(
+                            <SidebarIdleProjectHeader
+                              key={item.marker}
+                              projectKey={projectKey}
+                              label={group?.displayName ?? "Unknown project"}
+                            />,
+                          );
+                          continue;
+                        }
                         switch (item.marker) {
+                          case "idle-recent-header":
+                            items.push(
+                              <SidebarSectionHeader
+                                key="idle-recent-header"
+                                marker="idle-recent-header"
+                                label="Idle 24h"
+                                count={idle.recent.length}
+                                toggle={{
+                                  expanded: idleRecentExpanded,
+                                  onToggle: toggleIdleRecent,
+                                }}
+                              />,
+                            );
+                            break;
+                          case "idle-projects-header":
+                            items.push(
+                              <SidebarSectionHeader
+                                key="idle-projects-header"
+                                marker="idle-projects-header"
+                                label="Idle Projects"
+                                count={idle.projectGroups.reduce(
+                                  (count, group) => count + group.threads.length,
+                                  0,
+                                )}
+                                toggle={{
+                                  expanded: idleProjectsExpanded,
+                                  onToggle: toggleIdleProjects,
+                                }}
+                              />,
+                            );
+                            break;
                           case "pinned-header":
                             items.push(
                               <SidebarDragBoundary
@@ -3368,7 +3482,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="working-shelf-header"
                                 marker="working-header"
-                                className="mt-auto"
                                 label="Working"
                                 count={workingThreads.length}
                                 hostsUndoNotice
@@ -3384,7 +3497,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="snoozed-shelf-header"
                                 marker="snoozed-header"
-                                className={cn(workingThreads.length === 0 && "mt-auto")}
+                                className="mt-auto"
                                 label="Snoozed"
                                 count={snoozedThreads.length}
                                 hostsUndoNotice={workingThreads.length === 0}
@@ -3400,9 +3513,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="settled-shelf-header"
                                 marker="settled-header"
-                                className={cn(
-                                  workingThreads.length + snoozedThreads.length === 0 && "mt-auto",
-                                )}
+                                className={cn(snoozedThreads.length === 0 && "mt-auto")}
                                 label="Settled"
                                 count={settledCount}
                                 hostsUndoNotice={

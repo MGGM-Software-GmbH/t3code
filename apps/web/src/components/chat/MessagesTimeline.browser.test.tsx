@@ -13,7 +13,15 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
-import { createRef, Profiler, StrictMode, type ComponentProps, type ReactElement } from "react";
+import {
+  createRef,
+  Profiler,
+  StrictMode,
+  useState,
+  type ComponentProps,
+  type ReactElement,
+} from "react";
+import { userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
@@ -31,7 +39,7 @@ import { collectThreadFindRanges } from "./threadFindHighlights";
 import { toastManager } from "../ui/toast";
 import type { CitedHistory } from "./citationProcedure";
 import type { TimelineNavigation } from "./timelineViewport";
-import { rememberTimelinePosition } from "./timelineScrollAnchoring";
+import { readTimelinePosition, rememberTimelinePosition } from "./timelineScrollAnchoring";
 
 const environmentQuery = vi.hoisted(() => ({
   error: "Pull request not found",
@@ -122,10 +130,16 @@ function message(
   };
 }
 
-async function renderElement(element: ReactElement, options: { router?: false } = {}) {
+async function renderElement(
+  element: ReactElement,
+  { width = 900, height = 1200, router }: { width?: number; height?: number; router?: false } = {},
+) {
   const container = document.createElement("div");
-  container.style.cssText = "height: 1200px; width: 900px; display: flex; flex-direction: column;";
-  const screen = await render(element, { container, ...options });
+  container.style.cssText = `height: ${height}px; width: ${width}px; display: flex; flex-direction: column;`;
+  const screen = await render(element, {
+    container,
+    ...(router === false ? { router: false } : {}),
+  });
   const buttons = (name: string | RegExp) =>
     [...container.querySelectorAll<HTMLElement>("button, [role=button]")].filter((button) => {
       const label = button.getAttribute("aria-label") ?? button.textContent ?? "";
@@ -1164,4 +1178,203 @@ it("keeps concurrent approvals actionable outside collapsed work and restores se
   await expect
     .element(screen.getByRole("button", { name: "Open the current tab", exact: true }))
     .toBeVisible();
+  });
+
+const tallEntries = Array.from({ length: 12 }, (_, index) =>
+  message(
+    `Message ${index}\n\n${"Long paragraph. ".repeat(80)}`,
+    { role: "assistant" },
+    `message-${index}`,
+  ),
+);
+
+async function waitForList(props: ReturnType<typeof baseProps>) {
+  await vi.waitFor(() => {
+    const viewport = props.listRef.current?.getScrollableNode();
+    expect(viewport?.scrollHeight ?? 0).toBeGreaterThan(viewport?.clientHeight ?? 0);
+  });
+  return props.listRef.current!.getScrollableNode()!;
+}
+
+function v2Item(type: string, fields: Record<string, unknown>) {
+  const id = (fields.id as string | undefined) ?? type;
+  return {
+    position: 0,
+    visibility: "local",
+    sourceThreadId: "thread-1",
+    sourceItemId: id,
+    item: {
+      id,
+      threadId: "thread-1",
+      runId: "run-1",
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 0,
+      status: "completed",
+      title: null,
+      startedAt: null,
+      completedAt: null,
+      updatedAt: {},
+      type,
+      ...fields,
+    },
+  } as never;
+}
+
+it("reaches the measured end when a thread switch initially lands short", async () => {
+  const props = baseProps();
+  const timeline = (routeThreadKey: string, entries: Entry[]) => (
+    <MessagesTimeline {...props} routeThreadKey={routeThreadKey} timelineEntries={entries} />
+  );
+  await using screen = await renderElement(timeline(props.routeThreadKey, tallEntries), {
+    width: 390,
+    height: 844,
+  });
+  const viewport = await waitForList(props);
+  await screen.rerender(timeline(`${props.routeThreadKey}-other`, [message("Other thread")]));
+  await vi.waitFor(() => expect(screen.text()).toContain("Other thread"));
+  // Model an initial estimate landing before recycled rows finish measuring.
+  using estimatedScroll = vi
+    .spyOn(props.listRef.current!, "scrollToEnd")
+    .mockImplementationOnce(async () => {
+      viewport.scrollTop = 200;
+    });
+
+  await screen.rerender(timeline(props.routeThreadKey, tallEntries));
+  await vi.waitFor(() => {
+    expect(estimatedScroll).toHaveBeenCalled();
+    expect(screen.text()).toContain("Message 11");
+    expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeLessThanOrEqual(
+      1,
+    );
+  });
+});
+
+it.each([
+  { status: "running", width: 900 },
+  { status: "completed", width: 900 },
+  { status: "running", width: 390 },
+  { status: "completed", width: 390 },
+] as const)(
+  "opens past a remembered interruption when the resumed run is $status at $width pixels",
+  async ({ status, width }) => {
+    const props = baseProps();
+    const interrupted: Entry = {
+      id: "interruption",
+      kind: "event",
+      createdAt: CREATED_AT,
+      projectedItem: v2Item("run_interrupt_result", {
+        id: "interruption",
+        message: "Run interrupted by user",
+      }),
+    };
+    const entries = [...tallEntries.slice(0, 6), interrupted, ...tallEntries.slice(6)];
+    const timeline = (routeThreadKey: string, liveFollowEnabled = true) => (
+      <MessagesTimeline
+        {...props}
+        routeThreadKey={routeThreadKey}
+        timelineEntries={
+          routeThreadKey === props.routeThreadKey ? entries : [message("Other thread")]
+        }
+        liveFollowEnabled={liveFollowEnabled}
+        isWorking={status === "running"}
+        latestRun={{
+          runId: RunId.make("run-2"),
+          status,
+          startedAt: CREATED_AT,
+          completedAt: status === "completed" ? CREATED_AT : null,
+        }}
+      />
+    );
+    await using screen = await renderElement(timeline(props.routeThreadKey, false), {
+      width,
+      height: 844,
+    });
+    const viewport = await waitForList(props);
+    const list = props.listRef.current!;
+    const interruptionIndex = list.getState().data.findIndex((row) => row.id === "interruption");
+    expect(interruptionIndex).toBeGreaterThan(0);
+    await userEvent.wheel(viewport, { delta: { y: -40 } });
+    await act(async () => {
+      await list.scrollToIndex({ index: interruptionIndex, animated: false });
+    });
+    await vi.waitFor(() => {
+      expect(screen.text()).toContain("Run interrupted by user");
+      expect(readTimelinePosition(props.routeThreadKey)?.atEnd).toBe(false);
+    });
+
+    for (let visit = 0; visit < 2; visit += 1) {
+      await screen.rerender(timeline(`${props.routeThreadKey}-other`));
+      await vi.waitFor(() => expect(screen.text()).toContain("Other thread"));
+      await screen.rerender(timeline(props.routeThreadKey));
+      await vi.waitFor(() => {
+        expect(screen.text()).toContain("Message 11");
+        expect(
+          viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop,
+        ).toBeLessThanOrEqual(1);
+      });
+    }
+  },
+);
+
+it("opens at the end after reopening and switching away from a manual reading position", async () => {
+  const props = baseProps();
+  function Chat() {
+    const [liveFollowEnabled, setLiveFollowEnabled] = useState(true);
+    // The chat view stops following the live edge when the reader scrolls.
+    return (
+      <div className="contents" onWheelCapture={() => setLiveFollowEnabled(false)}>
+        <MessagesTimeline
+          {...props}
+          timelineEntries={tallEntries}
+          liveFollowEnabled={liveFollowEnabled}
+        />
+      </div>
+    );
+  }
+  let offset: number;
+  {
+    await using _chat = await renderElement(<Chat />);
+    const viewport = await waitForList(props);
+    await vi.waitFor(() => expect(readTimelinePosition(props.routeThreadKey)?.atEnd).toBe(true));
+
+    await userEvent.wheel(viewport, { delta: { y: -600 } });
+    await vi.waitFor(() => expect(readTimelinePosition(props.routeThreadKey)?.atEnd).toBe(false));
+    offset = viewport.scrollTop;
+  }
+  expect(readTimelinePosition(props.routeThreadKey)).toMatchObject({
+    atEnd: false,
+    scrollOffset: offset,
+  });
+
+  const timeline = (routeThreadKey: string) => (
+    <MessagesTimeline {...props} routeThreadKey={routeThreadKey} timelineEntries={tallEntries} />
+  );
+  await using screen = await renderElement(timeline(props.routeThreadKey));
+  const reopenedViewport = await waitForList(props);
+  await vi.waitFor(() =>
+    expect(
+      reopenedViewport.scrollHeight - reopenedViewport.clientHeight - reopenedViewport.scrollTop,
+    ).toBeLessThanOrEqual(1),
+  );
+
+  await screen.rerender(timeline(`${props.routeThreadKey}-other`));
+  await vi.waitFor(() =>
+    expect(
+      reopenedViewport.scrollHeight - reopenedViewport.clientHeight - reopenedViewport.scrollTop,
+    ).toBeLessThanOrEqual(1),
+  );
+  await userEvent.wheel(reopenedViewport, { delta: { y: -600 } });
+  expect(reopenedViewport.scrollTop).toBeLessThan(
+    reopenedViewport.scrollHeight - reopenedViewport.clientHeight,
+  );
+  await screen.rerender(timeline(props.routeThreadKey));
+  await vi.waitFor(() =>
+    expect(
+      reopenedViewport.scrollHeight - reopenedViewport.clientHeight - reopenedViewport.scrollTop,
+    ).toBeLessThanOrEqual(1),
+  );
 });

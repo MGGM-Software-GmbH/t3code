@@ -37,7 +37,9 @@ function layout(
   const rects = items.map((item) => {
     const height =
       item.kind === "thread"
-        ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
+        ? (item.section === "pinned" || item.section === "active" || item.section === "working"
+            ? cardHeight
+            : 36) * scale
         : item.marker === "pinned-header" || item.marker === "pinned-divider"
           ? 0
           : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
@@ -220,6 +222,52 @@ describe("sidebar collision detection", () => {
 });
 
 describe("sidebar drag projection", () => {
+  it("retains both idle shelves and project labels when an idle thread is pinned", () => {
+    const items = [
+      pinnedHeader,
+      thread("p", "pinned"),
+      divider,
+      marker("active-placeholder"),
+      marker("idle-recent-header"),
+      thread("recent", "active"),
+      marker("idle-projects-header"),
+      marker("idle-project:alpha"),
+      thread("older", "active"),
+      settledHeader,
+    ];
+    const result = preview({ items, settledOrder: [], settledExpanded: false }, "recent", "p");
+    for (const name of [
+      "idle-recent-header",
+      "idle-projects-header",
+      "idle-project:alpha",
+    ] as const) {
+      expect(result.get(sidebarMarkerId(name))?.scaleY).toBe(1);
+    }
+    expect(result.get("older")?.scaleY).toBe(1);
+    expect(result.get(sidebarMarkerId("active-placeholder"))?.scaleY).toBe(0);
+  });
+
+  it("accepts unpinning onto a collapsed idle shelf without treating it as a settled drop", () => {
+    const items = [
+      pinnedHeader,
+      thread("p", "pinned"),
+      divider,
+      marker("active-placeholder"),
+      marker("idle-projects-header"),
+      settledHeader,
+    ];
+    expect(
+      resolveSidebarDropTarget(items, "p", sidebarMarkerId("idle-projects-header"))?.section,
+    ).toBe("active");
+    const result = preview(
+      { items, settledOrder: [], settledExpanded: false },
+      "p",
+      sidebarMarkerId("idle-projects-header"),
+    );
+    expect(result.get(sidebarMarkerId("idle-projects-header"))?.scaleY).toBe(1);
+    expect(result.get(sidebarMarkerId("active-placeholder"))?.scaleY).toBe(0);
+  });
+
   it.each([
     ["a2", "a1"],
     ["p", "a1"],
@@ -514,20 +562,56 @@ describe("sidebar drag projection", () => {
     const items = [
       pinnedHeader,
       thread("p", "pinned"),
+      marker("working-header"),
+      thread("w", "working"),
       divider,
       thread("a1", "active"),
       thread("a2", "active"),
-      marker("working-header"),
-      thread("w", "working"),
       settledHeader,
       marker("settled-placeholder"),
     ];
     const input = { items, settledOrder: [], settledExpanded: false };
     expect(preview(input, "p", "a1").get("a2")?.y).toBe(0);
+    // By time, it lands below a2. Working moves up into the vacated pin slot.
     const byTime = preview({ ...input, activeOrder: ["a1", "a2", "p"] }, "p", "a1");
     expect(byTime.get("a2")?.y).toBe(-83);
-    expect(byTime.get(sidebarMarkerId("working-header"))).toEqual(stationary);
-    expect(byTime.get("w")).toEqual(stationary);
+    expect(byTime.get(sidebarMarkerId("working-header"))).toEqual({ ...stationary, y: -83 });
+    expect(byTime.get("w")).toEqual({ ...stationary, y: -83 });
+  });
+
+  it("keeps Working above the inbox while lower shelves retain their bottom spacing", () => {
+    const items = [
+      pinnedHeader,
+      marker("working-header"),
+      thread("working", "working"),
+      divider,
+      thread("first", "active"),
+      thread("second", "active"),
+      marker("snoozed-header"),
+      thread("snoozed", "snoozed"),
+      settledHeader,
+      thread("settled", "settled"),
+    ];
+    const args = layout(items, "first", "second");
+    const lowerShelfIndex = items.findIndex(
+      (item) => sidebarListItemId(item) === sidebarMarkerId("snoozed-header"),
+    );
+    for (const rect of args.rects.slice(lowerShelfIndex)) {
+      rect.top += 400;
+      rect.bottom += 400;
+    }
+    const strategy = createSidebarSortingStrategy({
+      items,
+      activeOrder: ["first", "second"],
+      settledOrder: ["settled"],
+      settledExpanded: true,
+    });
+    for (const markerName of ["working-header", "snoozed-header", "settled-header"] as const) {
+      const index = items.findIndex(
+        (item) => sidebarListItemId(item) === sidebarMarkerId(markerName),
+      );
+      expect(strategy({ ...args, index })).toEqual(stationary);
+    }
   });
 
   it("updates the projection when the target or measured geometry changes", () => {
@@ -679,6 +763,27 @@ describe("sidebar drag projection", () => {
     );
     expect(result.get(sidebarMarkerId("snoozed-header"))).toEqual({ ...stationary, y: 83 });
     expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(46);
+  });
+
+  it("previews a time-ordered inbox drop below the Working shelf", () => {
+    const items = [
+      pinnedHeader,
+      thread("p", "pinned"),
+      marker("working-header"),
+      thread("w", "working"),
+      divider,
+      thread("a1", "active"),
+      thread("a2", "active"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+    const input = { items, settledOrder: [], settledExpanded: false };
+    expect(preview(input, "p", "a1").get("a2")?.y).toBe(0);
+    // By time, it lands below a2. Working moves up into the vacated pin slot.
+    const byTime = preview({ ...input, activeOrder: ["a1", "a2", "p"] }, "p", "a1");
+    expect(byTime.get("a2")?.y).toBe(-83);
+    expect(byTime.get(sidebarMarkerId("working-header"))).toEqual({ ...stationary, y: -83 });
+    expect(byTime.get("w")).toEqual({ ...stationary, y: -83 });
   });
 });
 
