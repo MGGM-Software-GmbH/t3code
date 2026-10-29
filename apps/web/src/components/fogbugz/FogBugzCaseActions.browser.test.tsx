@@ -382,14 +382,14 @@ it.each(["context", "prp", "implement", "send failure"] as const)(
     const messages: { threadId: ThreadId; text: string }[] = [];
     const item: FogBugzCase = {
       id: 42,
-      title: "Repair notifications",
+      title: "Order confirmation: create multiple confirmations per customer reference",
       projectId: 12,
-      projectName: "OPS",
+      projectName: "OPS ItWorks",
       status: "1 ToDo",
       open: true,
       assignedTo: 7,
-      assignedToName: "Test User",
-      priority: "High",
+      assignedToName: "Alex Developer",
+      priority: "Must Fix (P3)",
       categoryId: 1,
       categoryName: "Bug",
       categoryIconType: 1,
@@ -412,7 +412,15 @@ it.each(["context", "prp", "implement", "send failure"] as const)(
       [WS_METHODS.fogbugzCases]: () =>
         Effect.succeed({
           cases: [item],
-          threads: [],
+          threads: [
+            {
+              threadId: fixtures[0]!.id,
+              projectId,
+              caseId: 42,
+              title: "#42 Order confirmation: create multiple confirmations per customer reference",
+              url: "https://fogbugz.example/default.asp?42",
+            },
+          ],
           projects: [{ projectId, fogbugzProjectId: 12 }],
           truncated: false,
         }),
@@ -449,7 +457,23 @@ it.each(["context", "prp", "implement", "send failure"] as const)(
     await router.load();
     // AppRoot owns the real router and command pipeline.
     await using screen = await render(<AppRoot router={router} />, { router: false });
+    if (scenario === "context") {
+      await expect
+        .element(page.getByRole("button", { name: "Case actions for #42" }))
+        .toBeVisible();
+      await page.viewport(390, 900);
+      await page.screenshot({ path: ".t3/fogbugz-cases-mobile.png" });
+      await page.viewport(320, 740);
+      await page.screenshot({ path: ".t3/fogbugz-cases-small-mobile.png" });
+      await page.viewport(1400, 900);
+      await page.screenshot({ path: ".t3/fogbugz-cases-desktop.png" });
+      await page.viewport(390, 900);
+    }
     await userEvent.click(page.getByRole("button", { name: "Case actions for #42" }));
+    if (scenario === "context") {
+      await expect.element(page.getByRole("menuitem", { name: "Add to Context" })).toBeVisible();
+      await page.screenshot({ path: ".t3/fogbugz-cases-mobile-actions.png" });
+    }
     await userEvent.click(
       page.getByRole("menuitem", {
         name:
@@ -462,6 +486,7 @@ it.each(["context", "prp", "implement", "send failure"] as const)(
     const ref = scopeThreadRef(ENVIRONMENT_ID, created[0]!.threadId);
     const prompt = fogbugzCasePrompt(action, 42, "https://fogbugz.example/");
     if (action === "context") {
+      await userEvent.click(screen.getByRole("button", { name: "Expand composer" }));
       await expect
         .element(screen.getByTestId("composer-editor").getByRole("link", { name: "FogBugz #42" }))
         .toBeVisible();

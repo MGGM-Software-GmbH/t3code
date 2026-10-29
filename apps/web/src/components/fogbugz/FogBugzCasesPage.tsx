@@ -3,7 +3,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { CommandId, EnvironmentId, ProjectId, type FogBugzCase } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { PlusIcon } from "lucide-react";
+import { MessageSquareIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { fogbugzEnvironment } from "../../state/fogbugz";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
@@ -48,16 +48,16 @@ export function FogBugzCasesPage() {
   const environmentId = selected ?? primary;
   return (
     <SidebarInset className="h-dvh min-w-0">
-      <header className="flex min-h-14 flex-wrap items-center gap-3 border-b pr-4 pl-14">
-        <h1 className="text-lg font-semibold">Fogbugz Cases</h1>
-        <div className="ml-auto">
+      <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-b py-2 pr-4 pl-14 sm:py-0">
+        <h1 className="shrink-0 text-base font-semibold sm:text-lg">Fogbugz Cases</h1>
+        <div className="ml-auto min-w-0 max-w-full sm:max-w-xs">
           <Select
             value={environmentId ?? ""}
             onValueChange={(value) => {
               if (value) setSelected(EnvironmentId.make(value));
             }}
           >
-            <SelectTrigger aria-label="Environment">
+            <SelectTrigger size="xs" aria-label="Environment">
               <SelectValue>
                 {environments.find((item) => item.environmentId === environmentId)?.label ??
                   "Select environment"}
@@ -194,33 +194,34 @@ export function FogBugzCases({
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <WorkspacePageContainer
         width="expanded"
-        className="flex-row flex-wrap items-center gap-2 py-4"
+        className="grid grid-cols-1 items-center gap-2 py-3 min-[360px]:grid-cols-2 sm:flex sm:flex-row sm:flex-wrap"
       >
         <form
-          className="flex min-w-0 flex-1 basis-full gap-2 sm:basis-64"
+          className="flex min-w-0 flex-1 gap-2 min-[360px]:col-span-2 sm:basis-64"
           onSubmit={(event) => {
             event.preventDefault();
             setSearch(query);
           }}
         >
           <Input
+            size="sm"
             aria-label="Search cases"
             value={query}
             placeholder="Search cases"
             onChange={(event) => setQuery(event.target.value)}
           />
-          <Button variant="outline" type="submit">
+          <Button size="sm" variant="outline" type="submit">
             Search
           </Button>
         </form>
-        <div className="w-36">
+        <div className="min-w-0 sm:w-36">
           <Select
             value={state}
             onValueChange={(value) => {
               if (value === "open" || value === "closed" || value === "all") setState(value);
             }}
           >
-            <SelectTrigger aria-label="Case status">
+            <SelectTrigger size="sm" aria-label="Case status">
               <SelectValue>
                 {state === "open" ? "Open" : state === "closed" ? "Closed" : "All statuses"}
               </SelectValue>
@@ -232,14 +233,14 @@ export function FogBugzCases({
             </SelectPopup>
           </Select>
         </div>
-        <div className="w-44">
+        <div className="min-w-0 sm:w-40">
           <Select
             value={assigned}
             onValueChange={(value) => {
               if (value) setAssigned(value);
             }}
           >
-            <SelectTrigger aria-label="Assignee">
+            <SelectTrigger size="sm" aria-label="Assignee">
               <SelectValue>{assigned === "me" ? "Assigned to me" : "All assignees"}</SelectValue>
             </SelectTrigger>
             <SelectPopup>
@@ -248,42 +249,45 @@ export function FogBugzCases({
             </SelectPopup>
           </Select>
         </div>
-        {scopedProjectId === undefined ? (
-          <div className="w-48">
-            <Select
-              value={projectId}
-              onValueChange={(value) => {
-                if (value) setProjectId(value);
-              }}
-            >
-              <SelectTrigger aria-label="T3 project">
-                <SelectValue>
-                  {projects.find((item) => item.id === projectId)?.title ?? "All linked projects"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                <SelectItem value="all">All linked projects</SelectItem>
-                {projects
-                  .filter((item) => linked.some((link) => link.projectId === item.id))
-                  .map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.title}
-                    </SelectItem>
-                  ))}
-              </SelectPopup>
-            </Select>
-          </div>
-        ) : null}
-        <Button
-          variant="outline"
-          disabled={cases.isPending}
-          onClick={() => {
-            status.refresh();
-            cases.refresh();
-          }}
-        >
-          Refresh
-        </Button>
+        <div className="flex min-w-0 gap-2 min-[360px]:col-span-2 sm:contents">
+          {scopedProjectId === undefined ? (
+            <div className="min-w-0 flex-1 sm:w-44 sm:flex-none">
+              <Select
+                value={projectId}
+                onValueChange={(value) => {
+                  if (value) setProjectId(value);
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="T3 project">
+                  <SelectValue>
+                    {projects.find((item) => item.id === projectId)?.title ?? "All linked projects"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="all">All linked projects</SelectItem>
+                  {projects
+                    .filter((item) => linked.some((link) => link.projectId === item.id))
+                    .map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.title}
+                      </SelectItem>
+                    ))}
+                </SelectPopup>
+              </Select>
+            </div>
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={cases.isPending}
+            onClick={() => {
+              status.refresh();
+              cases.refresh();
+            }}
+          >
+            Refresh
+          </Button>
+        </div>
       </WorkspacePageContainer>
       {status.error || cases.error || error ? (
         <p role="alert" className="p-4 text-destructive">
@@ -292,8 +296,8 @@ export function FogBugzCases({
       ) : null}
       {(!status.data && status.isPending) ||
       (status.data?.connection?.authenticated && linked.length > 0 && cases.isPending) ? (
-        <p role="status" className="p-4 text-muted-foreground">
-          Loading cases…
+        <p role="status" className="px-5 py-1 text-xs text-muted-foreground sm:px-6">
+          {cases.data ? "Refreshing cases…" : "Loading cases…"}
         </p>
       ) : null}
       {status.isSuccess && !status.data?.connection?.authenticated ? (
@@ -344,50 +348,57 @@ export function FogBugzCases({
                 </MenuItem>
               ));
             return (
-              <article key={item.id} className="flex flex-wrap items-center gap-3 border-b py-3">
-                <div className="min-w-0 flex-1 basis-64">
-                  <div className="flex gap-2">
-                    <FogBugzCategoryIcon item={item} />
-                    {status.data?.connection ? (
-                      <a
-                        href={
-                          new URL(`default.asp?${item.id}`, status.data.connection.baseUrl).href
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-muted-foreground hover:text-foreground hover:underline"
-                      >
-                        #{item.id}
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground">#{item.id}</span>
-                    )}
+              <article
+                key={item.id}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b py-3"
+              >
+                <div className="min-w-0">
+                  <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:gap-2">
+                    <span className="inline-flex shrink-0 items-center gap-2">
+                      <FogBugzCategoryIcon item={item} />
+                      {status.data?.connection ? (
+                        <a
+                          href={
+                            new URL(`default.asp?${item.id}`, status.data.connection.baseUrl).href
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-muted-foreground hover:text-foreground hover:underline"
+                        >
+                          #{item.id}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">#{item.id}</span>
+                      )}
+                    </span>
                     <h2 className="min-w-0 flex-1 break-words font-medium text-foreground/80">
                       {item.title}
                     </h2>
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-                    <span>{item.projectName}</span>
-                    <span className="inline-flex items-center gap-3">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground sm:mt-1 sm:text-sm">
+                    <span className="inline-flex max-w-full items-center gap-2">
+                      <span className="min-w-0 break-words">{item.projectName}</span>
                       <span aria-hidden="true">|</span>
-                      <span>{item.status.replace(/^\d+\s*[.:-]?\s*/, "")}</span>
                     </span>
-                    <span className="inline-flex items-center gap-3">
+                    <span className="inline-flex max-w-full items-center gap-2">
+                      <span>{item.status.replace(/^\d+\s*[.:-]?\s*/, "")}</span>
                       <span aria-hidden="true">|</span>
+                    </span>
+                    <span className="inline-flex max-w-full items-center gap-2">
                       <Tooltip>
                         <TooltipTrigger render={<span />}>{item.priority}</TooltipTrigger>
                         <TooltipPopup>Priority</TooltipPopup>
                       </Tooltip>
-                    </span>
-                    <span className="inline-flex items-center gap-3">
                       <span aria-hidden="true">|</span>
+                    </span>
+                    <span className="inline-flex max-w-full items-center gap-2">
                       <Tooltip>
                         <TooltipTrigger render={<span />}>{item.assignedToName}</TooltipTrigger>
                         <TooltipPopup>Assigned to</TooltipPopup>
                       </Tooltip>
-                    </span>
-                    <span className="inline-flex items-center gap-3">
                       <span aria-hidden="true">|</span>
+                    </span>
+                    <span className="inline-flex max-w-full items-center gap-2">
                       <Tooltip>
                         <TooltipTrigger render={<span />}>
                           {item.notifiedAt ? (
@@ -402,19 +413,21 @@ export function FogBugzCases({
                       </Tooltip>
                     </span>
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  <div className="mt-2 flex min-w-0 flex-col gap-1 sm:mt-1">
                     {cases.data?.threads
                       .filter((thread) => thread.caseId === item.id)
                       .map((thread) => (
                         <Link
                           key={thread.threadId}
-                          className="text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground"
+                          className="inline-flex min-w-0 items-center gap-1.5 text-xs text-foreground underline underline-offset-4 hover:text-muted-foreground sm:text-sm"
+                          title={thread.title}
                           to="/$environmentId/$threadId"
                           params={buildThreadRouteParams(
                             scopeThreadRef(environmentId, thread.threadId),
                           )}
                         >
-                          {thread.title}
+                          <MessageSquareIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{thread.title}</span>
                         </Link>
                       ))}
                   </div>
@@ -458,7 +471,7 @@ export function FogBugzCases({
         </WorkspacePageContainer>
       </div>
       {cases.data?.truncated ? (
-        <p className="p-3 text-sm text-muted-foreground">
+        <p className="px-5 py-2 text-xs text-muted-foreground sm:px-6 sm:text-sm">
           Showing the first 200 results. Narrow your search.
         </p>
       ) : null}
