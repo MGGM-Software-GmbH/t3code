@@ -45,6 +45,7 @@ import {
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
+import { FogBugzProjectSettings } from "./FogBugzProjectSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
@@ -559,6 +560,20 @@ function ProjectDetail({
               </div>
             }
           />
+        </SettingsSection>
+        <SettingsSection title="FogBugz">
+          {group.memberProjects.map((member) => (
+            <FogBugzProjectSettings
+              key={member.physicalProjectKey}
+              environmentId={member.environmentId}
+              projectId={member.id}
+              {...(group.memberProjects.length > 1
+                ? {
+                    label: `${environmentById.get(member.environmentId)?.label ?? member.environmentId}: ${member.workspaceRoot}`,
+                  }
+                : {})}
+            />
+          ))}
         </SettingsSection>
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />

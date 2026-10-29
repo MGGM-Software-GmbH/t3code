@@ -22,7 +22,7 @@ export function MggmSettingsPanel() {
       {target ? (
         <FogBugzSettings key={target.environmentId} environmentId={target.environmentId} />
       ) : null}
-      <SettingsSection title="MGGM">
+      <SettingsSection title="Layout">
         <SettingsRow
           {...searchableSetting("mggm-thread-sidebar")}
           description="Group idle threads by activity and project, with compact project cards and group separators."

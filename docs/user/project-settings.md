@@ -2,7 +2,9 @@
 
 ## FogBugz
 
-In **Settings > MGGM**, select an environment and connect your existing MGGM FogBugz account using its base URL, username and password. The environment stores the API token in its server-side secret store. Use **Test connection**, **Update connection**, or **Disconnect** to manage it. Assign one FogBugz project to each T3 project using the projects visible to your account.
+In **Settings > MGGM**, select an environment and connect your existing MGGM FogBugz account using its base URL, email and password. The environment stores the API token in its server-side secret store. Use **Test connection**, **Update connection**, or **Disconnect** to manage it.
+
+In **Settings > Projects**, select a T3 project and choose its **FogBugz project** from the projects visible to your account. Each T3 project has its own assignment. Choose **Not linked** to remove it.
 
 Open **Fälle** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. **New thread** creates a linked thread without starting an agent run. Existing threads appear as direct links; a thread can also link a case by number or remove that association.
 
