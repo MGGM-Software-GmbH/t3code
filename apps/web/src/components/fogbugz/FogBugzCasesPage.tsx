@@ -342,12 +342,12 @@ function Cases({ environmentId }: { environmentId: EnvironmentId }) {
                         render={
                           <Button
                             variant="outline"
-                            size="icon"
                             aria-label={label}
                             disabled={busy || !permission}
                             onClick={() => void createThread(item, link.projectId)}
                           >
                             <PlusIcon aria-hidden="true" />
+                            {project.title}
                           </Button>
                         }
                       />
