@@ -22,6 +22,8 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { FogBugzCategoryIcon } from "./FogBugzCategoryIcon";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import type { FogBugzCaseAction } from "./fogbugzCaseActions";
 
 export function FogBugzCasesPage() {
   const primary = usePrimaryEnvironmentId();
@@ -67,9 +69,13 @@ export function FogBugzCasesPage() {
 export function FogBugzCases({
   environmentId,
   projectId: scopedProjectId,
+  onCaseAction,
+  canProcessCase = false,
 }: {
   environmentId: EnvironmentId;
   projectId?: ProjectId;
+  onCaseAction?: (action: FogBugzCaseAction, item: FogBugzCase) => Promise<void>;
+  canProcessCase?: boolean;
 }) {
   const navigate = useNavigate();
   const projects = useProjects().filter((item) => item.environmentId === environmentId);
@@ -348,35 +354,81 @@ export function FogBugzCases({
                     ))}
                 </div>
               </div>
-              {cases.data?.projects
-                .filter(
-                  (link) =>
-                    link.fogbugzProjectId === item.projectId &&
-                    (projectId === "all" || link.projectId === projectId),
-                )
-                .map((link) => {
-                  const project = projects.find((candidate) => candidate.id === link.projectId);
-                  if (!project) return null;
-                  const label = `New Thread in ${project.workspaceRoot}`;
-                  return (
-                    <Tooltip key={link.projectId}>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            variant="outline"
-                            aria-label={label}
-                            disabled={busy || !permission}
-                            onClick={() => void createThread(item, link.projectId)}
-                          >
-                            <PlusIcon aria-hidden="true" />
-                            {project.title}
-                          </Button>
-                        }
+              {scopedProjectId ? (
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        aria-label={`Case actions for #${item.id}`}
+                        disabled={busy || !onCaseAction || !canProcessCase}
                       />
-                      <TooltipPopup>{label}</TooltipPopup>
-                    </Tooltip>
-                  );
-                })}
+                    }
+                  >
+                    <PlusIcon aria-hidden="true" />
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    {(
+                      [
+                        ["context", "Add to Context"],
+                        ["prp", "Create PRP"],
+                        ["implement", "Implement"],
+                      ] as const
+                    ).map(([action, label]) => (
+                      <MenuItem
+                        key={action}
+                        onClick={() => {
+                          if (!onCaseAction || busy) return;
+                          setBusy(true);
+                          setError(null);
+                          void onCaseAction(action, item)
+                            .catch((cause: unknown) => {
+                              setError(
+                                cause instanceof Error
+                                  ? cause.message
+                                  : "Unable to process the case.",
+                              );
+                            })
+                            .finally(() => setBusy(false));
+                        }}
+                      >
+                        {label}
+                      </MenuItem>
+                    ))}
+                  </MenuPopup>
+                </Menu>
+              ) : (
+                cases.data?.projects
+                  .filter(
+                    (link) =>
+                      link.fogbugzProjectId === item.projectId &&
+                      (projectId === "all" || link.projectId === projectId),
+                  )
+                  .map((link) => {
+                    const project = projects.find((candidate) => candidate.id === link.projectId);
+                    if (!project) return null;
+                    const label = `New Thread in ${project.workspaceRoot}`;
+                    return (
+                      <Tooltip key={link.projectId}>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              variant="outline"
+                              aria-label={label}
+                              disabled={busy || !permission}
+                              onClick={() => void createThread(item, link.projectId)}
+                            >
+                              <PlusIcon aria-hidden="true" />
+                              {project.title}
+                            </Button>
+                          }
+                        />
+                        <TooltipPopup>{label}</TooltipPopup>
+                      </Tooltip>
+                    );
+                  })
+              )}
             </article>
           ))}
         </WorkspacePageContainer>

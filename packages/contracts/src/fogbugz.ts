@@ -44,6 +44,19 @@ export const FogBugzCase = Schema.Struct({
   updatedAt: Schema.NullOr(Schema.String),
 });
 export type FogBugzCase = typeof FogBugzCase.Type;
+export const FogBugzCaseEvent = Schema.Struct({
+  id: FogBugzId,
+  author: Schema.String,
+  createdAt: Schema.NullOr(Schema.String),
+  text: Schema.String,
+});
+export const FogBugzCaseContext = Schema.Struct({
+  case: FogBugzCase,
+  url: Schema.String,
+  events: Schema.Array(FogBugzCaseEvent),
+});
+export type FogBugzCaseContext = typeof FogBugzCaseContext.Type;
+export const FogBugzCaseContextInput = Schema.Struct({ threadId: ThreadId, caseId: FogBugzId });
 export const FogBugzThreadLink = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,

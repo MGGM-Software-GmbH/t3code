@@ -1,5 +1,6 @@
 import type {
   EditorId,
+  FogBugzCase,
   EnvironmentId,
   PreviewAnnotationPayload,
   ProjectId,
@@ -22,6 +23,7 @@ import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
+import type { FogBugzCaseAction } from "../fogbugz/fogbugzCaseActions";
 
 const PreviewPanel = lazy(() =>
   import("../preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
@@ -65,6 +67,8 @@ export function RightPanelSurfaceContent(props: {
   readonly threadRef: ScopedThreadRef;
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
+  readonly onCaseAction: (action: FogBugzCaseAction, item: FogBugzCase) => Promise<void>;
+  readonly canProcessCase: boolean;
   readonly visible: boolean;
   readonly composerDraftTarget: ScopedThreadRef | DraftId;
   readonly keybindings: ResolvedKeybindingsConfig;
@@ -173,9 +177,11 @@ export function RightPanelSurfaceContent(props: {
       return (
         <Suspense fallback={null}>
           <FogBugzCases
-            key={`${props.environmentId}:${props.projectId}`}
+            key={`${scopedThreadKey(threadRef)}:${props.projectId}`}
             environmentId={props.environmentId}
             projectId={props.projectId}
+            onCaseAction={props.onCaseAction}
+            canProcessCase={props.canProcessCase}
           />
         </Suspense>
       );

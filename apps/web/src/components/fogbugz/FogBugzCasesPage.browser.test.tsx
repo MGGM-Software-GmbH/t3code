@@ -199,19 +199,52 @@ it.each([390, 700])("keeps case actions in the current project at %i px", async 
     ],
   };
   try {
+    const onCaseAction = vi.fn(async () => {});
     await using screen = await render(
       <div className="dark h-[800px] bg-background text-foreground">
-        <FogBugzCases environmentId={environmentId} projectId={projectId} />
+        <FogBugzCases
+          environmentId={environmentId}
+          projectId={projectId}
+          canProcessCase
+          onCaseAction={onCaseAction}
+        />
       </div>,
     );
     await expect
       .element(screen.getByRole("link", { name: "#12345" }))
       .toHaveAttribute("href", "https://fogbugz.example/default.asp?12345");
     await expect
-      .element(screen.getByRole("button", { name: "New Thread in /workspace/server" }))
+      .element(screen.getByRole("button", { name: "Case actions for #12345" }))
       .toBeVisible();
     expect(screen.container.querySelectorAll("article button")).toHaveLength(1);
     expect(screen.container.scrollWidth).toBeLessThanOrEqual(width);
+    for (const [label, action] of [
+      ["Add to Context", "context"],
+      ["Create PRP", "prp"],
+      ["Implement", "implement"],
+    ] as const) {
+      await userEvent.click(screen.getByRole("button", { name: "Case actions for #12345" }));
+      await expect.element(page.getByRole("menuitem", { name: label, exact: true })).toBeVisible();
+      await userEvent.click(page.getByRole("menuitem", { name: label, exact: true }));
+      expect(onCaseAction).toHaveBeenLastCalledWith(action, state.cases.cases[0]);
+    }
+    await screen.rerender(
+      <FogBugzCases
+        environmentId={environmentId}
+        projectId={projectId}
+        canProcessCase
+        onCaseAction={async () => {
+          throw new Error("Case access was revoked");
+        }}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Case actions for #12345" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Add to Context", exact: true }));
+    await expect.element(screen.getByRole("alert")).toHaveTextContent("Case access was revoked");
+    await screen.rerender(<FogBugzCases environmentId={environmentId} />);
+    await expect
+      .element(screen.getByRole("button", { name: "New Thread in /workspace/server" }))
+      .toBeVisible();
   } finally {
     document.documentElement.classList.toggle("dark", wasDark);
     await page.viewport(1280, 800);

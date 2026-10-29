@@ -40,6 +40,8 @@ import {
   FogBugzStatus,
   FogBugzProject,
   FogBugzCaseList,
+  FogBugzCaseContext,
+  FogBugzCaseContextInput,
   FogBugzThreadLink,
   FogBugzError,
   FogBugzConnectInput,
@@ -454,6 +456,7 @@ export const WS_METHODS = {
   fogbugzProjects: "fogbugz.projects",
   fogbugzLinkProject: "fogbugz.link-project",
   fogbugzCases: "fogbugz.cases",
+  fogbugzCaseContext: "fogbugz.case-context",
   fogbugzThread: "fogbugz.thread",
   fogbugzLinkThread: "fogbugz.link-thread",
   fogbugzCreateThread: "fogbugz.create-thread",
@@ -2036,6 +2039,11 @@ export const WsRpcGroup = RpcGroup.make(
   Rpc.make(WS_METHODS.fogbugzCases, {
     payload: FogBugzCasesInput,
     success: FogBugzCaseList,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzCaseContext, {
+    payload: FogBugzCaseContextInput,
+    success: FogBugzCaseContext,
     error: FogBugzError,
   }),
   Rpc.make(WS_METHODS.fogbugzThread, {

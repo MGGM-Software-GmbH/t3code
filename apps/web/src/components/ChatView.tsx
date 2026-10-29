@@ -114,6 +114,8 @@ import { useAtomValue } from "@effect/atom-react";
 import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { FogBugzThreadContext } from "./fogbugz/FogBugzThreadContext";
+import { performFogBugzCaseAction, type FogBugzCaseAction } from "./fogbugz/fogbugzCaseActions";
+import type { FogBugzCase } from "@t3tools/contracts";
 import { fogbugzEnvironment } from "../state/fogbugz";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
@@ -1864,6 +1866,36 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const sendAppMessageStable = useStableCallback(sendAppMessage);
+  const loadFogBugzCaseContext = useAtomCommand(fogbugzEnvironment.caseContext, {
+    reportFailure: false,
+  });
+  const processFogBugzCase = async (action: FogBugzCaseAction, item: FogBugzCase) => {
+    if (!activeThreadId || !isServerThread || !canOperateThread) {
+      throw new Error("Case actions require an existing thread with permission to send messages.");
+    }
+    await performFogBugzCaseAction(action, {
+      loadContext: async () => {
+        const result = await loadFogBugzCaseContext({
+          environmentId,
+          input: { threadId: activeThreadId, caseId: item.id },
+        });
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          throw error instanceof Error ? error : new Error("Could not load the FogBugz case.");
+        }
+        return result.value;
+      },
+      isCurrentThread: () => currentRouteThreadKeyRef.current === routeThreadKey,
+      addContext: (text) => {
+        if (!composerRef.current?.insertTextAtEnd(text, { ensureLeadingBoundary: true })) {
+          throw new Error("The composer is busy; try again once it is ready.");
+        }
+        scheduleComposerFocus();
+      },
+      sendMessage: sendAppMessage,
+    });
+  };
+  const processFogBugzCaseStable = useStableCallback(processFogBugzCase);
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
@@ -3126,6 +3158,8 @@ export default function ChatView(props: ChatViewProps) {
       threadRef={activeThreadRef}
       environmentId={activeThread.environmentId}
       projectId={activeThread.projectId}
+      onCaseAction={processFogBugzCaseStable}
+      canProcessCase={isServerThread && canOperateThread}
       visible={rightPanelOpen}
       composerDraftTarget={composerDraftTarget}
       keybindings={keybindings}

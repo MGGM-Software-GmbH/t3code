@@ -210,6 +210,33 @@ export class FogBugzApi {
         }),
       );
   }
+
+  async caseEvents(token: string, caseId: number) {
+    const cases = child(
+      await this.request({
+        cmd: "search",
+        token,
+        q: String(caseId),
+        cols: "ixBug,events",
+        max: "1",
+        eventsOrder: "asc",
+        eventsLimit: "0",
+      }),
+      "cases",
+    );
+    const item = cases.children.find(
+      (node) => node.name === "case" && id(value(node, "ixBug")) === caseId,
+    );
+    if (!item) throw new FogBugzError({ code: "access" });
+    return child(item, "events")
+      .children.filter((node) => node.name === "event")
+      .map((event) => ({
+        id: id(value(event, "ixBugEvent")),
+        author: value(event, "sPerson"),
+        createdAt: timestamp(value(event, "dt")),
+        text: value(event, "s"),
+      }));
+  }
 }
 
 function childCategory(categories: XmlNode, categoryId: string): XmlNode {

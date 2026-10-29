@@ -309,6 +309,7 @@ const json = (body: unknown, status = 200) =>
 const threadSubscribers = new Map<string, Queue.Queue<OrchestrationV2ThreadStreamItem>>();
 let threads: ReadonlyArray<FakeThread> = [];
 let sequence = 1;
+let extraHandlers: Record<string, (input: never) => unknown> = {};
 
 const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>) => () => void) =>
   Stream.unwrap(
@@ -363,6 +364,7 @@ const handlers: Record<string, (input: never) => unknown> = {
 // Unanswered calls stay pending, like a server that has not replied yet.
 const client = new Proxy(handlers, {
   get: (target, method: string) =>
+    extraHandlers[method] ??
     target[method] ??
     (() => {
       const rpc = WsRpcGroup.requests.get(method);
@@ -408,8 +410,12 @@ const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
 );
 
 /** Serves the environment's HTTP API and these threads until disposed. */
-export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Disposable {
+export function installFakeEnvironment(
+  fixtures: ReadonlyArray<FakeThread>,
+  rpcHandlers: Record<string, (input: never) => unknown> = {},
+): Disposable {
   threads = fixtures;
+  extraHandlers = rpcHandlers;
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
@@ -431,6 +437,7 @@ export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Dis
     [Symbol.dispose]: () => {
       globalThis.fetch = realFetch;
       threads = [];
+      extraHandlers = {};
     },
   };
 }

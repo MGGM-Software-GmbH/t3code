@@ -2,6 +2,41 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { FogBugzApi, normalizeFogBugzUrl } from "./FogBugzApi.ts";
 
 describe("FogBugz API", () => {
+  it("loads visible case history as text with a POST and rejects a different case", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(
+        new Response(
+          "<response><cases><case><ixBug>42</ixBug><events><event><ixBugEvent>501</ixBugEvent><sPerson>Test &amp; User</sPerson><dt>2026-10-29T08:00:00Z</dt><s><![CDATA[Requirements <with markup>\nSecond line]]></s></event></events></case></cases></response>",
+        ),
+      );
+    const api = new FogBugzApi("https://fogbugz.example/", fetch);
+    expect(await api.caseEvents("private-token", 42)).toEqual([
+      {
+        id: 501,
+        author: "Test & User",
+        createdAt: "2026-10-29T08:00:00.000Z",
+        text: "Requirements <with markup>\nSecond line",
+      },
+    ]);
+    expect(fetch.mock.calls[0]?.[1]?.method).toBe("POST");
+    const body = new URLSearchParams(String(fetch.mock.calls[0]?.[1]?.body));
+    expect(Object.fromEntries(body)).toMatchObject({
+      q: "42",
+      cols: "ixBug,events",
+      eventsOrder: "asc",
+      eventsLimit: "0",
+    });
+    expect(String(fetch.mock.calls[0]?.[0])).not.toContain("private-token");
+    fetch.mockResolvedValue(
+      new Response("<response><cases><case><ixBug>43</ixBug><events/></case></cases></response>"),
+    );
+    await expect(api.caseEvents("private-token", 42)).rejects.toMatchObject({ code: "access" });
+    fetch.mockResolvedValue(
+      new Response("<response><cases><case><ixBug>42</ixBug><events/></case></cases></response>"),
+    );
+    expect(await api.caseEvents("private-token", 42)).toEqual([]);
+  });
   it("sends credentials and tokens only in POST bodies and refuses redirects", async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()

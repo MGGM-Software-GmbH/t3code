@@ -57,7 +57,9 @@ function fixture() {
             : command === "listCategories"
               ? "<categories><category><ixCategory>1</ixCategory><nIconType>1</nIconType></category></categories>"
               : command === "search"
-                ? `<cases>${params.get("q") === "42" ? caseXml(42, 12) : caseXml(42, 12) + caseXml(43, 99) + caseXml(44, 12, 8)}</cases>`
+                ? params.get("cols") === "ixBug,events"
+                  ? "<cases><case><ixBug>42</ixBug><events><event><ixBugEvent>501</ixBugEvent><sPerson>Test Person</sPerson><dt>2026-10-29T10:00:00Z</dt><s>Required behavior</s></event></events></case></cases>"
+                  : `<cases>${params.get("q") === "42" ? caseXml(42, 12) : caseXml(42, 12) + caseXml(43, 99) + caseXml(44, 12, 8)}</cases>`
                 : "";
     return new Response(`<response>${content}</response>`);
   });
@@ -80,6 +82,48 @@ const seed = Effect.gen(function* () {
 });
 
 describe("FogBugz integration persistence and access", () => {
+  it.effect(
+    "loads context only for a case in the thread's linked project without changing its association",
+    () => {
+      const test = fixture();
+      return Effect.gen(function* () {
+        using _fetch = vi.spyOn(globalThis, "fetch").mockImplementation(test.fetch);
+        yield* seed;
+        const service = yield* FogBugzService;
+        yield* service.connect(credentials);
+        yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
+        const context = yield* service.caseContext({ threadId, caseId: 42 });
+        expect(context.case.id).toBe(42);
+        expect(context.url).toBe("https://fogbugz.example/default.asp?42");
+        expect(context.events).toEqual([
+          {
+            id: 501,
+            author: "Test Person",
+            createdAt: "2026-10-29T10:00:00.000Z",
+            text: "Required behavior",
+          },
+        ]);
+        expect(yield* service.thread(threadId)).toBeNull();
+        const eventRequests = () =>
+          test.requests.filter((request) => request.get("cols") === "ixBug,events").length;
+        expect(eventRequests()).toBe(1);
+        expect((yield* Effect.flip(service.caseContext({ threadId, caseId: 43 }))).code).toBe(
+          "project",
+        );
+        expect(
+          (yield* Effect.flip(
+            service.caseContext({ threadId: ThreadId.make("missing"), caseId: 42 }),
+          )).code,
+        ).toBe("thread");
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`UPDATE orchestration_v2_projection_threads SET deleted_at = '2026-10-29' WHERE thread_id = ${threadId}`;
+        expect((yield* Effect.flip(service.caseContext({ threadId, caseId: 42 }))).code).toBe(
+          "thread",
+        );
+        expect(eventRequests()).toBe(1);
+      }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
+    },
+  );
   it.effect(
     "resolves current readable group members and sorts personal notifications before modification dates",
     () => {

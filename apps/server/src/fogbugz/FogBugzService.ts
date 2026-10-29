@@ -9,6 +9,8 @@ import {
   type FogBugzCasesInput,
   type FogBugzLinkThreadInput,
   type FogBugzCase,
+  type FogBugzCaseContext,
+  type FogBugzCaseContextInput,
   type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -44,6 +46,9 @@ export class FogBugzService extends Context.Service<
     cases: (
       input: typeof FogBugzCasesInput.Type,
     ) => Effect.Effect<typeof FogBugzCaseList.Type, FogBugzError>;
+    caseContext: (
+      input: typeof FogBugzCaseContextInput.Type,
+    ) => Effect.Effect<FogBugzCaseContext, FogBugzError>;
     thread: (
       threadId: ThreadId,
     ) => Effect.Effect<typeof FogBugzThreadLink.Type | null, FogBugzError>;
@@ -200,6 +205,22 @@ export const layer = Layer.effect(
       );
     });
     return FogBugzService.of({
+      caseContext: Effect.fn("FogBugz.caseContext")(function* (input) {
+        const rows = yield* sql<{
+          projectId: ProjectId;
+        }>`SELECT project_id AS "projectId" FROM orchestration_v2_projection_threads WHERE thread_id = ${input.threadId} AND deleted_at IS NULL`.pipe(
+          Effect.mapError(storageError),
+        );
+        if (!rows[0]) return yield* new FogBugzError({ code: "thread" });
+        const item = yield* caseForProject(rows[0].projectId, input.caseId);
+        const current = yield* authenticated();
+        const events = yield* call((api, token) => api.caseEvents(token, item.id));
+        return {
+          case: item,
+          url: new URL(`default.asp?${item.id}`, current.current.baseUrl).href,
+          events,
+        };
+      }),
       status: Effect.fn("FogBugz.status")(function* () {
         return { connection: yield* connection(), projects: yield* projectLinks() };
       }),
