@@ -1,4 +1,5 @@
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { isThreadWorking as isSidebarThreadWorking } from "@t3tools/client-runtime/state/thread-inbox";
 import * as DateTime from "effect/DateTime";
 import { deriveActiveWorkStartedAt } from "../session-logic.ts";
@@ -20,6 +21,7 @@ import {
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
+  resolveWorkingShelfThreads,
   searchSidebarThreads,
   shouldRecedeSidebarThread,
   sortInboxThreadsByReturn,
@@ -1235,6 +1237,34 @@ describe("Working shelf (beta)", () => {
         hasActionableProposedPlan: true,
       }),
     ).toBe(false);
+  });
+
+  it("hides the open working thread when the MGGM shelf is collapsed", () => {
+    const openThread = { environmentId: localEnvironmentId, id: ThreadId.make("working") };
+    const otherEnvironmentThread = {
+      ...openThread,
+      environmentId: EnvironmentId.make("environment-remote"),
+    };
+    const threads = [otherEnvironmentThread, openThread];
+    const input = {
+      threads,
+      routeThreadKey: scopedThreadKey(scopeThreadRef(openThread.environmentId, openThread.id)),
+      mggmThreadSidebarEnabled: true,
+    };
+
+    expect(resolveWorkingShelfThreads({ ...input, expanded: true })).toBe(threads);
+    expect(resolveWorkingShelfThreads({ ...input, expanded: false })).toEqual([]);
+    expect(
+      resolveWorkingShelfThreads({ ...input, expanded: false, mggmThreadSidebarEnabled: false }),
+    ).toEqual([openThread]);
+    expect(
+      resolveWorkingShelfThreads({
+        ...input,
+        expanded: false,
+        mggmThreadSidebarEnabled: false,
+        routeThreadKey: null,
+      }),
+    ).toEqual([]);
   });
 
   describe("sortInboxThreadsByReturn", () => {

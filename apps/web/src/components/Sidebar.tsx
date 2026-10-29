@@ -186,6 +186,7 @@ import {
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
   resolveSidebarThreadSection,
+  resolveWorkingShelfThreads,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
   shouldNavigateAfterThreadPark,
@@ -558,9 +559,12 @@ function useSidebarThreads(input: {
   const visibleSnoozedThreads = snoozedShelfExpanded
     ? snoozedThreads
     : routeThreadOnly(snoozedThreads, routeRowThreadKey);
-  const visibleWorkingThreads = workingShelfExpanded
-    ? workingThreads
-    : routeThreadOnly(workingThreads, routeRowThreadKey);
+  const visibleWorkingThreads = resolveWorkingShelfThreads({
+    threads: workingThreads,
+    expanded: workingShelfExpanded,
+    routeThreadKey: routeRowThreadKey,
+    mggmThreadSidebarEnabled,
+  });
   const projectFolders =
     folderGroups === null
       ? null

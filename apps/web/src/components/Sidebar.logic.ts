@@ -1,4 +1,5 @@
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
@@ -992,6 +993,23 @@ export {
 
 export { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
 export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
+
+export function resolveWorkingShelfThreads<
+  TThread extends Pick<SidebarThreadSummary, "environmentId" | "id">,
+>(input: {
+  readonly threads: readonly TThread[];
+  readonly expanded: boolean;
+  readonly routeThreadKey: string | null;
+  readonly mggmThreadSidebarEnabled: boolean;
+}): readonly TThread[] {
+  if (input.expanded) return input.threads;
+  if (input.mggmThreadSidebarEnabled || input.routeThreadKey === null) return [];
+  const routeThread = input.threads.find(
+    (thread) =>
+      scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === input.routeThreadKey,
+  );
+  return routeThread === undefined ? [] : [routeThread];
+}
 
 type SidebarThreadActivity = Pick<
   SidebarThreadSummary,
