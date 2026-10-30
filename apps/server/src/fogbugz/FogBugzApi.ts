@@ -1,4 +1,6 @@
 import { FogBugzCase, FogBugzError, FogBugzId, FogBugzProject } from "@t3tools/contracts";
+import { isPrivateNetworkHost, normalizeHostname } from "@t3tools/shared/hostClassification";
+import * as NodeNet from "node:net";
 import * as Schema from "effect/Schema";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
@@ -80,7 +82,9 @@ function boolean(text: string): boolean {
 export function normalizeFogBugzUrl(input: string): string {
   try {
     const url = new URL(input);
-    const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    const local =
+      url.hostname === "localhost" ||
+      (NodeNet.isIP(normalizeHostname(url.hostname)) !== 0 && isPrivateNetworkHost(url.hostname));
     if (
       (url.protocol !== "https:" && !(local && url.protocol === "http:")) ||
       url.username ||

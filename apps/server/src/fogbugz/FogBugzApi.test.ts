@@ -182,6 +182,11 @@ describe("FogBugz API", () => {
 
   it.each([
     "http://example.test/",
+    "http://8.8.8.8/",
+    "http://172.32.0.1/",
+    "http://192.169.2.159/",
+    "http://192.168.2.159.example.test/",
+    "http://[2606:4700:4700::1111]/",
     "https://name:password@example.test/",
     "https://example.test/?token=secret",
     "file:///tmp/test",
@@ -190,10 +195,15 @@ describe("FogBugz API", () => {
     expect(() => normalizeFogBugzUrl(url)).toThrow();
   });
 
-  it("accepts HTTPS subpaths and isolated localhost HTTP", () => {
+  it("accepts HTTPS subpaths and HTTP on localhost or private IP addresses", () => {
     expect(normalizeFogBugzUrl("https://example.test/fogbugz")).toBe(
       "https://example.test/fogbugz/",
     );
     expect(normalizeFogBugzUrl("http://127.0.0.1:18080")).toBe("http://127.0.0.1:18080/");
+    for (const host of ["192.168.2.159", "10.0.0.1", "172.16.0.1", "172.31.255.254", "[fd00::1]"]) {
+      expect(normalizeFogBugzUrl(`http://${host}:18080/fogbugz`)).toBe(
+        `http://${host}:18080/fogbugz/`,
+      );
+    }
   });
 });

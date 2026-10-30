@@ -10,6 +10,9 @@ import {
   type FogBugzCase,
   type FogBugzCaseContextInput,
   type FogBugzCreateThreadInput,
+  type FogBugzConnectInput,
+  type FogBugzConnection,
+  FogBugzError,
   ThreadId,
   DEFAULT_SERVER_SETTINGS,
   type ServerSettingsPatch,
@@ -117,6 +120,89 @@ it("shows case metadata in the sidebar on wide and narrow screens", async () => 
   await expect.element(page.getByText("Prio 1", { exact: true })).toBeVisible();
   await expect.element(page.getByRole("dialog")).toHaveStyle({ opacity: "1" });
   await page.screenshot({ path: ".t3/fogbugz-thread-narrow.png" });
+});
+
+it("requires saving edited FogBugz connection details before testing them", async () => {
+  let connection: FogBugzConnection = {
+    id: "connection",
+    baseUrl: "http://127.0.0.1:18080/",
+    username: "test@example.com",
+    personId: 7,
+    personName: "Test User",
+    authenticated: true,
+  };
+  const testedUrls: string[] = [];
+  const saved: (typeof FogBugzConnectInput.Type)[] = [];
+  using _environment = installFakeEnvironment([], {
+    [WS_METHODS.fogbugzStatus]: () => Effect.succeed({ connection, projects: [] }),
+    [WS_METHODS.fogbugzTest]: () =>
+      Effect.sync(() => {
+        testedUrls.push(connection.baseUrl);
+        return connection;
+      }),
+    [WS_METHODS.fogbugzConnect]: (input: typeof FogBugzConnectInput.Type) => {
+      if (input.password === "rejected-password") {
+        return Effect.fail(new FogBugzError({ code: "authentication" }));
+      }
+      saved.push(input);
+      connection = {
+        ...connection,
+        baseUrl: new URL(input.baseUrl).href,
+        username: input.username,
+      };
+      return Effect.succeed(connection);
+    },
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  await page.viewport(1400, 900);
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/settings/mggm?machine=${ENVIRONMENT_ID}`] }),
+  );
+  await router.load();
+  // AppRoot owns the settings route and connection mutation pipeline.
+  await using _screen = await render(<AppRoot router={router} />, { router: false });
+  const url = page.getByRole("textbox", { name: "FogBugz base URL" });
+  const test = page.getByRole("button", { name: "Test connection" });
+  await expect.element(url).toHaveValue(connection.baseUrl);
+  await userEvent.click(test);
+  await vi.waitFor(() => expect(testedUrls).toEqual(["http://127.0.0.1:18080/"]));
+  await userEvent.fill(url, "http://192.168.2.159:18080/");
+  await expect
+    .element(page.getByText(/Unsaved connection changes. Enter your password/))
+    .toBeVisible();
+  await page.screenshot({ path: ".t3/fogbugz-unsaved-wide.png" });
+  await page.viewport(390, 900);
+  await page.screenshot({ path: ".t3/fogbugz-unsaved-narrow.png" });
+  await expect.element(test).toBeDisabled();
+  await expect.element(page.getByText("Connection verified: Test User.")).not.toBeInTheDocument();
+  await userEvent.fill(url, "http://127.0.0.1:18080/");
+  await expect.element(test).toBeEnabled();
+  await userEvent.fill(url, "http://192.168.2.159:18080");
+  const password = page.getByLabelText("FogBugz password");
+  await userEvent.fill(password, "rejected-password");
+  await userEvent.click(page.getByRole("button", { name: "Update connection" }));
+  await expect
+    .element(page.getByRole("alert"))
+    .toHaveTextContent(new FogBugzError({ code: "authentication" }).message);
+  await expect.element(test).toBeDisabled();
+  await userEvent.fill(password, "test-password");
+  await userEvent.click(page.getByRole("button", { name: "Update connection" }));
+  await expect.element(page.getByText("Connected as Test User.")).toBeVisible();
+  expect(saved).toEqual([
+    {
+      baseUrl: "http://192.168.2.159:18080",
+      username: "test@example.com",
+      password: "test-password",
+    },
+  ]);
+  await expect.element(test).toBeEnabled();
+  await userEvent.click(test);
+  await vi.waitFor(() =>
+    expect(testedUrls).toEqual(["http://127.0.0.1:18080/", "http://192.168.2.159:18080/"]),
+  );
 });
 
 it("saves global and project FogBugz automation choices", async () => {

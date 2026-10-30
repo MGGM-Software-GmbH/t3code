@@ -107,7 +107,7 @@ const messages = {
   network: "Could not reach the FogBugz API.",
   response: "FogBugz returned an invalid API response.",
   access: "The FogBugz case or project is not accessible to this account.",
-  url: "Use an HTTPS base URL without credentials, a query, or a fragment. Localhost HTTP is allowed for development.",
+  url: "Use an HTTPS base URL without credentials, a query, or a fragment. HTTP is allowed for localhost and private IP addresses.",
   storage: "Could not save or load the FogBugz integration.",
   project: "Link this T3 project to the case's FogBugz project first.",
   thread: "Could not create or load the T3 thread.",

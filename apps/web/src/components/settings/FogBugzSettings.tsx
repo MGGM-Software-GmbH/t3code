@@ -23,6 +23,11 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const hasUnsavedChanges =
+    !!connection &&
+    ((baseUrl ?? connection.baseUrl) !== connection.baseUrl ||
+      (username ?? connection.username) !== connection.username ||
+      password !== "");
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -41,6 +46,8 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
     setBusy(false);
     if (result._tag === "Failure") setError(formatEnvironmentQueryError(result.cause));
     if (result._tag === "Success") {
+      setBaseUrl(result.value.baseUrl);
+      setUsername(result.value.username);
       setMessage(`Connected as ${result.value.personName}.`);
       status.refresh();
     }
@@ -90,6 +97,13 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
                 />
               }
             />
+            {hasUnsavedChanges ? (
+              <p role="status" className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
+                {password
+                  ? "Unsaved connection changes. Update the connection to apply them."
+                  : "Unsaved connection changes. Enter your password and update the connection to apply them."}
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2 px-3 py-3 sm:px-4">
               <Button type="submit" disabled={!password}>
                 {connection ? "Update connection" : "Connect"}
@@ -99,6 +113,7 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
                   <Button
                     variant="outline"
                     type="button"
+                    disabled={hasUnsavedChanges}
                     onClick={async () => {
                       setBusy(true);
                       const result = await test({ environmentId, input: {} });
@@ -138,7 +153,7 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
                 </>
               ) : null}
             </div>
-            {message ? (
+            {message && !hasUnsavedChanges ? (
               <p role="status" className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
                 {message}
               </p>
