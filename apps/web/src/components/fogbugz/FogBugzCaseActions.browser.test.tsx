@@ -122,7 +122,7 @@ it("shows case metadata in the sidebar on wide and narrow screens", async () => 
   await page.screenshot({ path: ".t3/fogbugz-thread-narrow.png" });
 });
 
-it("requires saving edited FogBugz connection details before testing them", async () => {
+it("saves an alternate FogBugz address without asking for the password again", async () => {
   let connection: FogBugzConnection = {
     id: "connection",
     baseUrl: "http://127.0.0.1:18080/",
@@ -141,7 +141,7 @@ it("requires saving edited FogBugz connection details before testing them", asyn
         return connection;
       }),
     [WS_METHODS.fogbugzConnect]: (input: typeof FogBugzConnectInput.Type) => {
-      if (input.password === "rejected-password") {
+      if (input.baseUrl.includes("unreachable")) {
         return Effect.fail(new FogBugzError({ code: "authentication" }));
       }
       saved.push(input);
@@ -171,7 +171,7 @@ it("requires saving edited FogBugz connection details before testing them", asyn
   await vi.waitFor(() => expect(testedUrls).toEqual(["http://127.0.0.1:18080/"]));
   await userEvent.fill(url, "http://192.168.2.159:18080/");
   await expect
-    .element(page.getByText(/Unsaved connection changes. Enter your password/))
+    .element(page.getByText("Unsaved connection changes. Save changes to apply and verify them."))
     .toBeVisible();
   await page.screenshot({ path: ".t3/fogbugz-unsaved-wide.png" });
   await page.viewport(390, 900);
@@ -180,22 +180,23 @@ it("requires saving edited FogBugz connection details before testing them", asyn
   await expect.element(page.getByText("Connection verified: Test User.")).not.toBeInTheDocument();
   await userEvent.fill(url, "http://127.0.0.1:18080/");
   await expect.element(test).toBeEnabled();
-  await userEvent.fill(url, "http://192.168.2.159:18080");
+  await userEvent.fill(url, "https://unreachable.example/");
   const password = page.getByLabelText("FogBugz password");
-  await userEvent.fill(password, "rejected-password");
-  await userEvent.click(page.getByRole("button", { name: "Update connection" }));
+  await expect.element(password).toHaveValue("");
+  await expect.element(page.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  await userEvent.click(page.getByRole("button", { name: "Save changes" }));
   await expect
     .element(page.getByRole("alert"))
     .toHaveTextContent(new FogBugzError({ code: "authentication" }).message);
   await expect.element(test).toBeDisabled();
-  await userEvent.fill(password, "test-password");
-  await userEvent.click(page.getByRole("button", { name: "Update connection" }));
+  await userEvent.fill(url, "http://192.168.2.159:18080");
+  await userEvent.click(page.getByRole("button", { name: "Save changes" }));
   await expect.element(page.getByText("Connected as Test User.")).toBeVisible();
   expect(saved).toEqual([
     {
       baseUrl: "http://192.168.2.159:18080",
       username: "test@example.com",
-      password: "test-password",
+      password: "",
     },
   ]);
   await expect.element(test).toBeEnabled();
@@ -203,6 +204,11 @@ it("requires saving edited FogBugz connection details before testing them", asyn
   await vi.waitFor(() =>
     expect(testedUrls).toEqual(["http://127.0.0.1:18080/", "http://192.168.2.159:18080/"]),
   );
+  await userEvent.fill(page.getByRole("textbox", { name: "FogBugz account" }), "other@example.com");
+  await expect.element(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await expect
+    .element(page.getByText("Enter your password to save these connection changes."))
+    .toBeVisible();
 });
 
 it("saves global and project FogBugz automation choices", async () => {

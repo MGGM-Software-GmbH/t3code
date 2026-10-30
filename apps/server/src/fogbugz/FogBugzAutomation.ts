@@ -109,7 +109,7 @@ const make = Effect.gen(function* () {
     }
     const snapshot = yield* fogbugz.automationSnapshot(projectId);
     const now = DateTime.formatIso(yield* DateTime.now);
-    const identity = `${snapshot.connection.baseUrl}|${snapshot.connection.personId}|${snapshot.mapping}`;
+    const scope = `${snapshot.connection.personId}|${snapshot.mapping}`;
     const rows = yield* sql<{
       payload: string;
     }>`SELECT payload FROM fogbugz_automation WHERE project_id = ${projectId}`.pipe(
@@ -118,7 +118,12 @@ const make = Effect.gen(function* () {
     const stored = rows[0]
       ? yield* decodeCursor(rows[0].payload).pipe(Effect.mapError(storageError))
       : null;
-    const previous = stored?.identity === identity ? stored : null;
+    // Persisted URL-based identities keep retry IDs stable across alias changes.
+    const previous =
+      stored && (stored.identity === scope || stored.identity.endsWith(`|${scope}`))
+        ? stored
+        : null;
+    const identity = previous?.identity ?? scope;
     const mode = settings.fogbugzAutoAnalyze;
     const since = previous?.mode === mode ? previous.since : now;
     const cases: Record<string, typeof Observation.Type> = { ...previous?.cases };

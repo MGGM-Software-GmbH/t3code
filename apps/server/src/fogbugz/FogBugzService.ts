@@ -338,6 +338,36 @@ export const layer = Layer.effect(
               catch: apiError,
             });
             const api = new FogBugzApi(baseUrl);
+            const previous = yield* connection();
+            const sameAccount = previous?.username.toLowerCase() === input.username.toLowerCase();
+            if (!input.password && (!previous || !sameAccount)) {
+              return yield* new FogBugzError({ code: "authentication" });
+            }
+            // An existing token proves that an alternate address belongs to the same account.
+            if (previous && (previous.baseUrl !== baseUrl || !input.password)) {
+              const savedToken = yield* secrets
+                .get(`fogbugz-${previous.id}`)
+                .pipe(Effect.mapError(storageError));
+              if (Option.isNone(savedToken))
+                return yield* new FogBugzError({ code: "authentication" });
+              const person = yield* Effect.tryPromise({
+                try: () => api.person(new TextDecoder().decode(savedToken.value)),
+                catch: apiError,
+              });
+              if (person.id !== previous.personId)
+                return yield* new FogBugzError({ code: "authentication" });
+              if (!input.password) {
+                const next = {
+                  ...previous,
+                  baseUrl,
+                  username: input.username,
+                  personName: person.name,
+                  authenticated: true,
+                };
+                yield* saveConnection(next);
+                return next;
+              }
+            }
             const token = yield* Effect.tryPromise({
               try: () => api.login(input.username, input.password),
               catch: apiError,
@@ -352,8 +382,7 @@ export const layer = Layer.effect(
                 ),
               ),
             );
-            const previous = yield* connection();
-            const sameIdentity = previous?.baseUrl === baseUrl && previous.personId === person.id;
+            const sameIdentity = previous?.personId === person.id;
             const next = {
               id: yield* crypto.randomUUIDv4().pipe(Effect.mapError(storageError)),
               baseUrl,

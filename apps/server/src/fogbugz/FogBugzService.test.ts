@@ -276,11 +276,41 @@ describe("FogBugz integration persistence and access", () => {
           expect(test.requests.at(-1)?.get("q")).toContain("project:=12");
           expect(test.secrets.size).toBe(1);
           expect(JSON.stringify(yield* service.status())).not.toContain("private-");
+          yield* service.linkProject({
+            projectId,
+            fogbugzProjectId: null,
+            fogbugzProjectGroupId: 3,
+          });
+          yield* service.linkThread({ threadId, caseId: 42 });
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`INSERT INTO fogbugz_automation (project_id, payload) VALUES (${projectId}, '{"cursor":42}')`;
+          const previous = (yield* service.status()).connection!;
+          const updated = yield* service.connect({
+            ...credentials,
+            baseUrl: "http://192.168.2.159:18080",
+            password: "",
+          });
+          expect(updated.id).toBe(previous.id);
+          expect(updated.baseUrl).toBe("http://192.168.2.159:18080/");
+          expect(test.requests.filter((request) => request.get("cmd") === "logon")).toHaveLength(1);
+          expect((yield* service.status()).projects).toEqual([
+            { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 },
+          ]);
+          expect(yield* sql`SELECT payload FROM fogbugz_automation`).toEqual([
+            { payload: '{"cursor":42}' },
+          ]);
+          expect((yield* service.thread(threadId))?.caseId).toBe(42);
+          yield* service.connect({ ...credentials, baseUrl: updated.baseUrl });
+          expect((yield* service.thread(threadId))?.caseId).toBe(42);
+          expect((yield* service.status()).projects[0]?.fogbugzProjectGroupId).toBe(3);
+          expect(yield* sql`SELECT payload FROM fogbugz_automation`).toEqual([
+            { payload: '{"cursor":42}' },
+          ]);
         }).pipe(Effect.provide(test.service));
         yield* Effect.gen(function* () {
           const restored = yield* FogBugzService;
           expect((yield* restored.thread(threadId))?.url).toBe(
-            "https://fogbugz.example/default.asp?pg=pgEditBug&command=view&ixBug=42",
+            "http://192.168.2.159:18080/default.asp?pg=pgEditBug&command=view&ixBug=42",
           );
           yield* restored.linkThread({ threadId, caseId: null });
           expect(yield* restored.thread(threadId)).toBeNull();
@@ -293,6 +323,46 @@ describe("FogBugz integration persistence and access", () => {
           ).toBe(1);
         }).pipe(Effect.provide(layer.pipe(Layer.provide(test.dependencies))));
       }).pipe(Effect.provide(test.dependencies.pipe(Layer.provide(NodeServices.layer))));
+    },
+  );
+
+  it.effect(
+    "preserves the connection and links when a new address rejects the saved identity",
+    () => {
+      const test = fixture();
+      return Effect.gen(function* () {
+        using fetch = vi.spyOn(globalThis, "fetch").mockImplementation(test.fetch);
+        yield* seed;
+        const service = yield* FogBugzService;
+        expect((yield* Effect.flip(service.connect({ ...credentials, password: "" }))).code).toBe(
+          "authentication",
+        );
+        expect(test.requests).toHaveLength(0);
+        yield* service.connect(credentials);
+        yield* service.linkProject({ projectId, fogbugzProjectId: 12 });
+        yield* service.linkThread({ threadId, caseId: 42 });
+        const previous = yield* service.status();
+        for (const [response, code] of [
+          [new Response('<response><error code="3">Expired</error></response>'), "authentication"],
+          [
+            new Response(
+              "<response><person><ixPerson>8</ixPerson><sFullName>Other Person</sFullName></person></response>",
+            ),
+            "authentication",
+          ],
+          [new Response("Unavailable", { status: 503 }), "network"],
+        ] as const) {
+          fetch.mockResolvedValueOnce(response);
+          expect(
+            (yield* Effect.flip(
+              service.connect({ ...credentials, baseUrl: "https://other.example/", password: "" }),
+            )).code,
+          ).toBe(code);
+          expect(yield* service.status()).toEqual(previous);
+          expect((yield* service.thread(threadId))?.caseId).toBe(42);
+          expect(test.secrets.size).toBe(1);
+        }
+      }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
     },
   );
 

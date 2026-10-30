@@ -10,6 +10,7 @@ import {
 import * as TestClock from "effect/testing/TestClock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/sql/SqlClient";
 import { ServerSettingsService } from "../serverSettings.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import {
@@ -176,6 +177,14 @@ describe("FogBugz automation", () => {
         yield* TestClock.setTime(Date.parse(baselineAt));
         yield* service.run();
         expect(test.state.launches).toHaveLength(0);
+        const sql = yield* SqlClient.SqlClient;
+        const rows = yield* sql<{
+          payload: string;
+        }>`SELECT payload FROM fogbugz_automation WHERE project_id = ${projectId}`;
+        const cursor = JSON.parse(rows[0]!.payload);
+        // Persisted URL-based operation identities must survive an alias change.
+        cursor.identity = "http://127.0.0.1:18080|7|12";
+        yield* sql`UPDATE fogbugz_automation SET payload = ${JSON.stringify(cursor)} WHERE project_id = ${projectId}`;
         test.state.cases[0] = { ...caseState, id: 43 };
         yield* service.run();
         yield* service.run();

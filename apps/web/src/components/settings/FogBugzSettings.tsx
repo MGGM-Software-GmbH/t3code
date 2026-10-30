@@ -23,6 +23,10 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const accountChanged =
+    !!connection &&
+    (username ?? connection.username).trim().toLowerCase() !== connection.username.toLowerCase();
+  const requiresPassword = !connection || !connection.authenticated || accountChanged;
   const hasUnsavedChanges =
     !!connection &&
     ((baseUrl ?? connection.baseUrl) !== connection.baseUrl ||
@@ -86,27 +90,33 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
               }
             />
             <SettingsRow
-              title="Password"
-              description="Use your existing FogBugz account. Changing the URL or email clears its project and thread links."
+              title={requiresPassword ? "Password" : "Password (optional)"}
+              description={
+                accountChanged
+                  ? "Changing the account clears its project and thread links."
+                  : requiresPassword
+                    ? "Sign in with your existing FogBugz account."
+                    : "Leave empty to keep your current sign-in. Changing the URL keeps your project and thread links."
+              }
               control={
                 <SecretInput
                   aria-label="FogBugz password"
                   value={password}
-                  configured={!!connection}
+                  placeholder={requiresPassword ? "Account password" : "Keep current sign-in"}
                   onChange={(event) => setPassword(event.target.value)}
                 />
               }
             />
             {hasUnsavedChanges ? (
               <p role="status" className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-                {password
-                  ? "Unsaved connection changes. Update the connection to apply them."
-                  : "Unsaved connection changes. Enter your password and update the connection to apply them."}
+                {requiresPassword && !password
+                  ? "Enter your password to save these connection changes."
+                  : "Unsaved connection changes. Save changes to apply and verify them."}
               </p>
             ) : null}
             <div className="flex flex-wrap gap-2 px-3 py-3 sm:px-4">
-              <Button type="submit" disabled={!password}>
-                {connection ? "Update connection" : "Connect"}
+              <Button type="submit" disabled={requiresPassword ? !password : !hasUnsavedChanges}>
+                {connection ? "Save changes" : "Connect"}
               </Button>
               {connection ? (
                 <>

@@ -81,7 +81,7 @@ export const FogBugzCaseList = Schema.Struct({
 export const FogBugzConnectInput = Schema.Struct({
   baseUrl: TrimmedNonEmptyString,
   username: TrimmedNonEmptyString,
-  password: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)),
+  password: Schema.String.check(Schema.isMaxLength(4096)),
 });
 export const FogBugzCasesInput = Schema.Struct({
   query: Schema.String.check(Schema.isMaxLength(200)),
