@@ -214,7 +214,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           ) : null}
         </>
       )}
-      <SidebarThreadUndoNotice />
       <PdSecretsControl />
       <SidebarWeeklyLimit />
       <CodexResetForecastIndicator />
@@ -228,6 +227,9 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     <SidebarFooter>
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
+      <SidebarMenu className="empty:hidden">
+        <SidebarThreadUndoNotice />
+      </SidebarMenu>
       <SidebarUtilityMenu />
     </SidebarFooter>
   );
