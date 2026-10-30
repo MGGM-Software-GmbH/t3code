@@ -1,8 +1,8 @@
 #!/bin/sh
-# Installs the T3 Code CLI from a GitHub Release archive. Needs only sh, tar,
+# Installs the MGGM T3 Code CLI from a GitHub Release archive. Needs only sh, tar,
 # sha256sum or shasum, and curl or wget; no Node, npm, or compiler.
 #
-#   curl -fsSL https://t3.codes/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | sh
 #
 # Environment:
 #   T3CODE_CHANNEL           release train to follow: stable, nightly, or preview
@@ -17,7 +17,7 @@
 # instead of fetching the release again.
 set -eu
 
-repo="pingdotgg/t3code"
+repo="MGGM-Software-GmbH/t3code"
 base_url="${T3CODE_RELEASE_BASE_URL:-https://github.com/${repo}/releases/download}"
 t3_home="${T3CODE_HOME:-$HOME/.t3}"
 bin_dir="${T3CODE_INSTALL_BIN_DIR:-$HOME/.local/bin}"
@@ -146,7 +146,10 @@ channel="${T3CODE_CHANNEL:-stable}"
 version="${T3CODE_VERSION:-}"
 if [ -z "$version" ]; then
   case "$channel" in
-    stable) tag_pattern='v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)' ;;
+    stable)
+      tag_pattern='v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\(-mggm\.[0-9][0-9]*\)\{0,1\}\)'
+      release_index_url="https://api.github.com/repos/${repo}/releases/latest"
+      ;;
     nightly | preview) tag_pattern="v\([0-9][^\"]*-${channel}\.[0-9]*\.[0-9]*\)" ;;
     *) fail "T3CODE_CHANNEL must be stable, nightly, or preview" ;;
   esac
@@ -223,6 +226,18 @@ else
   rm -rf "$target_dir"
   mv "$staging" "$target_dir"
   trap - EXIT
+fi
+
+if [ "$platform" = linux ]; then
+  step "Setting up the browser host..."
+  if ! "${target_dir}/t3" browser setup --base-dir "$t3_home"; then
+    # Install only the host prerequisites. Never start T3 or change its user data as root.
+    if [ "$(id -u)" -eq 0 ] || ! command -v sudo >/dev/null 2>&1; then
+      fail "browser host setup failed; run the browser setup command printed above, then rerun this installer"
+    fi
+    sudo -n -- "${target_dir}/t3" browser setup --base-dir "$t3_home" ||
+      fail "browser host setup failed; run the browser setup command printed above, then rerun this installer"
+  fi
 fi
 
 step "Setting up the t3 command..."

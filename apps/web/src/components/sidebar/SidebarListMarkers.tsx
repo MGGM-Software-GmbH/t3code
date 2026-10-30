@@ -1,4 +1,5 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode, useLayoutEffect } from "react";
@@ -8,7 +9,9 @@ import {
   sidebarMarkerId,
   type SidebarListMarker,
 } from "../Sidebar.logic";
-import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
+import { RelativeTimeLabel, SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
+import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { useClientSettings } from "../../hooks/useSettings";
 
 function SortableSidebarMarker(props: {
   marker: SidebarListMarker;
@@ -77,14 +80,24 @@ export function SidebarDragBoundary(props: {
   label: string;
   visible: boolean;
   isDropTarget: boolean;
+  showHeading?: boolean;
 }) {
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className="pointer-events-none relative mx-0.5 -mb-px h-0"
+      className={cn(
+        "pointer-events-none relative mx-0.5",
+        props.showHeading
+          ? "h-8 before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-foreground/40"
+          : "-mb-px h-0",
+      )}
     >
-      {props.visible ? (
+      {props.showHeading ? (
+        <h3 className="flex h-8 items-center px-2 text-xs font-medium text-info-foreground">
+          {props.label}
+        </h3>
+      ) : props.visible ? (
         <div className="sidebar-drag-boundary-label absolute inset-x-2 top-1 flex h-4 items-center gap-2">
           <span
             className={cn(
@@ -108,7 +121,12 @@ export function SidebarDragBoundary(props: {
 }
 
 export function SidebarSectionHeader(props: {
-  marker: "working-header" | "snoozed-header" | "settled-header";
+  marker:
+    | "working-header"
+    | "idle-recent-header"
+    | "idle-projects-header"
+    | "snoozed-header"
+    | "settled-header";
   label: string;
   /** A muted trailing count. */
   count: number;
@@ -117,17 +135,20 @@ export function SidebarSectionHeader(props: {
   isDropTarget?: boolean;
   toggle: { expanded: boolean; onToggle: () => void };
 }) {
-  const shelf =
-    props.marker === "working-header"
-      ? "working"
-      : props.marker === "snoozed-header"
-        ? "snoozed"
-        : "settled";
+  const shelf = props.marker.slice(0, -"-header".length);
+  const mggmThreadSidebarEnabled = useClientSettings(
+    (settings) => settings.mggmThreadSidebarEnabled,
+  );
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className={cn("relative mx-0.5 h-8", props.className)}
+      className={cn(
+        "relative mx-0.5 h-8",
+        mggmThreadSidebarEnabled &&
+          "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-foreground/40",
+        props.className,
+      )}
     >
       <CollapsibleSectionHeader
         role="treeitem"
@@ -135,12 +156,70 @@ export function SidebarSectionHeader(props: {
         data-sidebar-row={`shelf:${shelf}`}
         onClick={props.toggle.onToggle}
         expanded={props.toggle.expanded}
-        tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
+        tone={
+          props.isDropTarget
+            ? "accent"
+            : props.dragging
+              ? "emphasized"
+              : mggmThreadSidebarEnabled
+                ? "info"
+                : "muted"
+        }
         data-testid={`sidebar-${shelf}-shelf-toggle`}
         accessory={<span className="font-normal tabular-nums">{props.count}</span>}
       >
         {props.label}
       </CollapsibleSectionHeader>
+    </SortableSidebarMarker>
+  );
+}
+
+export function SidebarIdleProjectHeader(props: {
+  projectKey: string;
+  project: ProjectFaviconProject | null;
+  label: string;
+  count: number;
+  latestActivityAt: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <SortableSidebarMarker
+      marker={`idle-project:${props.projectKey}`}
+      className="relative mx-0.5 h-8 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:border-t before:border-sidebar-foreground/40"
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <CollapsibleSectionHeader
+              role="treeitem"
+              tabIndex={-1}
+              data-sidebar-row={`idle-project:${props.projectKey}`}
+              data-sidebar-parent="shelf:idle-projects"
+              data-testid="sidebar-idle-project-toggle"
+              onClick={props.onToggle}
+              expanded={props.expanded}
+              tone="emphasized"
+              icon={
+                props.project ? (
+                  <ProjectFavicon project={props.project} className="size-4 shrink-0" />
+                ) : null
+              }
+              accessory={
+                <span className="flex shrink-0 items-center gap-2 text-xs font-normal tabular-nums text-sidebar-muted-foreground">
+                  <span aria-label={`${props.count} threads`}>{props.count}</span>
+                  <span aria-label="Last activity">
+                    <RelativeTimeLabel timestamp={props.latestActivityAt} />
+                  </span>
+                </span>
+              }
+            >
+              {props.label}
+            </CollapsibleSectionHeader>
+          }
+        />
+        <TooltipPopup side="right">{props.label}</TooltipPopup>
+      </Tooltip>
     </SortableSidebarMarker>
   );
 }

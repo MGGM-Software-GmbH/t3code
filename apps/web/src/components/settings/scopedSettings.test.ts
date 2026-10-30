@@ -100,6 +100,17 @@ const checkout = resolveSettingsScope(
 );
 
 describe("scoped settings targets", () => {
+  it("stores a post-login script on the selected environment without project overrides", () => {
+    const patch = { pdSecretsPostLoginScript: "~/.claude/install/pd-secrets-post-login.sh" };
+    const plan = planScopedSettingsPatch(named, environments, patch);
+    expect(plan.serverWrites).toHaveLength(1);
+    expect(plan.serverWrites[0]).toMatchObject({ environmentId: server.environmentId, patch });
+    expect(applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, patch).pdSecretsPostLoginScript).toBe(
+      patch.pdSecretsPostLoginScript,
+    );
+    expect(planScopedSettingsPatch(project, environments, patch).serverWrites).toEqual([]);
+    expect(planScopedSettingsPatch(project, environments, patch).unavailableReason).toBeTruthy();
+  });
   it("uses the named environment even when a different primary is available", () => {
     const selected = selectScopedSettingsEnvironments(named, environments, laptop.environmentId);
     expect(selected.environments).toEqual([server]);
@@ -121,13 +132,15 @@ describe("scoped settings targets", () => {
   });
 
   it("resolves each member's effective settings and source at project scope", () => {
+    // Mixed-value coverage needs explicit contrasting settings, independent of shipped defaults.
+    const inherited = environment("Laptop", { settings: { defaultAutoPull: false } });
     const overridden = environment("Server", {
       settings: {
         defaultAutoPull: false,
         projectSettingsOverrides: { [projectId]: { defaultAutoPull: true } },
       },
     });
-    const targets = resolveScopedSettingsTargets(project, [laptop, overridden]);
+    const targets = resolveScopedSettingsTargets(project, [inherited, overridden]);
     expect(targets.map((target) => [target.projectId, target.settings.defaultAutoPull])).toEqual([
       [projectId, true],
       [laptopProjectId, false],

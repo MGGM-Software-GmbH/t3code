@@ -130,6 +130,26 @@ export function formatChatTimestampTooltip(
   return `${time}, ${day}${ordinalSuffix(day)} ${month} ${year}`;
 }
 
+const germanTimestampFormatter = new Intl.DateTimeFormat("de-DE", {
+  weekday: "long",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/** Local usage/reset times in the fork's fixed German weekday and numeric date format. */
+export function formatGermanTimestamp(isoDate: string): string {
+  const date = parseTimestampDate(isoDate);
+  if (!date) return "";
+  const parts = new Map(
+    germanTimestampFormatter.formatToParts(date).map(({ type, value }) => [type, value]),
+  );
+  return `${parts.get("weekday")}, ${parts.get("day")}.${parts.get("month")}.${parts.get("year")} ${parts.get("hour")}:${parts.get("minute")}`;
+}
+
 export function formatShortTimestamp(isoDate: string, timestampFormat: TimestampFormat): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";

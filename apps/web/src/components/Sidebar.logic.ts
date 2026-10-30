@@ -1,4 +1,5 @@
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
@@ -29,6 +30,7 @@ import {
   type ThreadSortInput,
 } from "@t3tools/client-runtime/state/thread-sort";
 import type { SidebarThreadSummary, Thread } from "../types";
+import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import { normalizeSearchText } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
 import { observeIntersection } from "../lib/observeIntersection";
@@ -185,6 +187,9 @@ export type SidebarListMarker =
   | "settled-placeholder"
   | "pinned-divider"
   | "working-header"
+  | "idle-recent-header"
+  | "idle-projects-header"
+  | `idle-project:${string}`
   | "snoozed-header"
   | "settled-header";
 
@@ -200,6 +205,9 @@ export function sidebarListItemId(item: SidebarListItem): string {
   return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
 }
 
+/** The section a slot belongs to, read off the markers around it: pins,
+    optionally Working, then the inbox after the pinned divider, followed
+    by snoozed and settled shelves. */
 function sectionAtSidebarSlot(items: readonly SidebarListItem[], index: number): SidebarSection {
   let section: SidebarSection = "pinned";
   for (let i = 0; i < index && i < items.length; i += 1) {
@@ -219,10 +227,15 @@ type SidebarDropTarget = {
   readonly activeOrder: readonly string[];
 };
 
+function isPinningDrop(from: SidebarSection, to: SidebarDropTarget["section"]): boolean {
+  return to === "pinned" || (from === "pinned" && to === "active");
+}
+
 export function resolveSidebarDropTarget(
   items: readonly SidebarListItem[],
   activeKey: string,
   overId: string,
+  pinningOnly = false,
 ): SidebarDropTarget | null {
   const activeIndex = items.findIndex((item) => sidebarListItemId(item) === activeKey);
   const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
@@ -231,20 +244,19 @@ export function resolveSidebarDropTarget(
   moved.splice(overIndex, 0, items[activeIndex]!);
   const section = sectionAtSidebarSlot(moved, overIndex);
   if (section === "working" || section === "snoozed") return null;
+  const source = items[activeIndex];
+  if (pinningOnly && source?.kind === "thread" && !isPinningDrop(source.section, section))
+    return null;
   const pinnedOrder: string[] = [];
   const activeOrder: string[] = [];
   let currentSection: SidebarSection = "pinned";
   for (const item of moved) {
     if (item.kind === "marker") {
       if (item.marker === "pinned-divider") currentSection = "active";
-      else if (
-        item.marker === "working-header" ||
-        item.marker === "snoozed-header" ||
-        item.marker === "settled-header"
-      )
-        break;
+      else if (item.marker === "working-header") currentSection = "working";
+      else if (item.marker === "snoozed-header" || item.marker === "settled-header") break;
     } else if (currentSection === "pinned") pinnedOrder.push(item.key);
-    else activeOrder.push(item.key);
+    else if (currentSection === "active") activeOrder.push(item.key);
   }
   return { section, pinnedOrder, activeOrder };
 }
@@ -323,6 +335,7 @@ export function planSidebarThreadDrop(input: {
   readonly activeKeysById: ReadonlyMap<string, string | null | undefined>;
   readonly activeReorderableKeys?: ReadonlySet<string>;
   readonly activeTimeOrdered?: boolean;
+  readonly pinningOnly?: boolean;
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -337,7 +350,9 @@ export function planSidebarThreadDrop(input: {
     activeKeysById,
     activeReorderableKeys,
   } = input;
-  if (activeSection === "working") return { kind: "none" };
+  if (input.pinningOnly) {
+    if (!isPinningDrop(activeSection, target.section)) return { kind: "none" };
+  } else if (activeSection === "working") return { kind: "none" };
   if (input.supportsSettlement === false && (target.section === "settled" || activeSettled)) {
     return { kind: "none" };
   }
@@ -357,7 +372,7 @@ export function planSidebarThreadDrop(input: {
   };
   switch (target.section) {
     case "active": {
-      if (input.activeTimeOrdered) {
+      if (input.activeTimeOrdered || input.pinningOnly) {
         return activeSection === "active"
           ? { kind: "none" }
           : {
@@ -978,6 +993,113 @@ export {
 
 export { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
 export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
+
+export function resolveWorkingShelfThreads<
+  TThread extends Pick<SidebarThreadSummary, "environmentId" | "id">,
+>(input: {
+  readonly threads: readonly TThread[];
+  readonly expanded: boolean;
+  readonly routeThreadKey: string | null;
+  readonly mggmThreadSidebarEnabled: boolean;
+}): readonly TThread[] {
+  if (input.expanded) return input.threads;
+  if (input.mggmThreadSidebarEnabled || input.routeThreadKey === null) return [];
+  const routeThread = input.threads.find(
+    (thread) =>
+      scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === input.routeThreadKey,
+  );
+  return routeThread === undefined ? [] : [routeThread];
+}
+
+type SidebarThreadActivity = Pick<
+  SidebarThreadSummary,
+  | "id"
+  | "environmentId"
+  | "projectId"
+  | "createdAt"
+  | "updatedAt"
+  | "latestUserMessageAt"
+  | "latestRun"
+>;
+
+export function resolveSidebarThreadActivityTimestamp(thread: SidebarThreadActivity): string {
+  const activity = [
+    thread.latestUserMessageAt,
+    thread.latestRun?.requestedAt,
+    thread.latestRun?.startedAt,
+    thread.latestRun?.completedAt,
+  ].flatMap((timestamp) => {
+    const parsed = toSortableTimestamp(timestamp ?? undefined);
+    return parsed === null ? [] : [parsed];
+  });
+  // Shell metadata also changes on visits, pinning and settlement, without conversation activity.
+  const timestamp =
+    activity.length > 0
+      ? Math.max(toSortableTimestamp(thread.createdAt) ?? 0, ...activity)
+      : firstValidTimestampMs(thread.updatedAt, thread.createdAt);
+  return new Date(timestamp).toISOString();
+}
+
+export function groupIdleSidebarThreads<TThread extends SidebarThreadActivity>(
+  threads: readonly TThread[],
+  projects: readonly Pick<
+    SidebarProjectSnapshot,
+    "projectKey" | "displayName" | "memberProjectRefs"
+  >[],
+  now: number,
+) {
+  const projectByRef = new Map<string, (typeof projects)[number]>(
+    projects.flatMap((project) =>
+      project.memberProjectRefs.map(
+        (ref) => [`${ref.environmentId}:${ref.projectId}`, project] as const,
+      ),
+    ),
+  );
+  const sorted = threads
+    .map((thread) => ({
+      thread,
+      activity: Date.parse(resolveSidebarThreadActivityTimestamp(thread)),
+    }))
+    .sort(
+      (left, right) =>
+        right.activity - left.activity ||
+        left.thread.environmentId.localeCompare(right.thread.environmentId) ||
+        left.thread.id.localeCompare(right.thread.id),
+    );
+  const recent: TThread[] = [];
+  const groups = new Map<
+    string,
+    { projectKey: string; displayName: string; latestActivityAt: string; threads: TThread[] }
+  >();
+  for (const { thread, activity: timestamp } of sorted) {
+    if (timestamp >= now - 24 * 60 * 60 * 1000) {
+      recent.push(thread);
+      continue;
+    }
+    const refKey = `${thread.environmentId}:${thread.projectId}`;
+    const project = projectByRef.get(refKey);
+    const projectKey = project?.projectKey ?? refKey;
+    let group = groups.get(projectKey);
+    if (group === undefined) {
+      group = {
+        projectKey,
+        displayName: project?.displayName ?? "Unknown project",
+        latestActivityAt: new Date(timestamp).toISOString(),
+        threads: [],
+      };
+      groups.set(projectKey, group);
+    }
+    group.threads.push(thread);
+  }
+  const projectRank = new Map(projects.map((project, index) => [project.projectKey, index]));
+  const projectGroups = [...groups.values()].sort(
+    (left, right) =>
+      (projectRank.get(left.projectKey) ?? Number.MAX_SAFE_INTEGER) -
+        (projectRank.get(right.projectKey) ?? Number.MAX_SAFE_INTEGER) ||
+      left.projectKey.localeCompare(right.projectKey),
+  );
+  return { recent, projectGroups };
+}
 
 const EMPTY_CONTENT_MATCH_KEYS: ReadonlySet<string> = new Set<string>();
 

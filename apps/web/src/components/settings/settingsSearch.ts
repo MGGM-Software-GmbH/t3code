@@ -18,6 +18,7 @@ import type { ResolvedSettingsScope } from "./settingsScope";
 export type SettingsPath =
   | "/settings/projects"
   | "/settings/general"
+  | "/settings/mggm"
   | "/settings/diagnostics"
   | "/settings/appearance"
   | "/settings/chat"
@@ -87,6 +88,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/diagnostics": "Diagnostics",
   "/settings/projects": "Projects",
   "/settings/general": "General",
+  "/settings/mggm": "MGGM",
   "/settings/appearance": "Appearance",
   "/settings/chat": "Chat",
   "/settings/diffs": "Diffs & pull requests",
@@ -116,6 +118,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     heading: null,
     paths: [
       "/settings/general",
+      "/settings/mggm",
       "/settings/appearance",
       "/settings/chat",
       "/settings/diffs",
@@ -408,6 +411,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sort projects sidebar manual created recent"],
   },
   {
+    id: "mggm-thread-sidebar",
+    title: "MGGM thread layout",
+    to: "/settings/mggm",
+    searchTerms: ["sidebar idle 24h projects groups pinned compact activity separators"],
+  },
+  {
     id: "snooze-options",
     title: "Snooze options",
     to: "/settings/threads",
@@ -426,6 +435,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Resume after usage limits",
     to: "/settings/threads",
     searchTerms: ["usage quota rate limit reset recover continue"],
+  },
+  {
+    id: "model-capacity-retry-delay",
+    title: "Model capacity retry delay",
+    to: "/settings/general",
+    searchTerms: [
+      "selected model at capacity retry minutes recover continue play same model disable",
+    ],
   },
   {
     id: "working-shelf",
@@ -518,6 +535,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "In-app notifications",
     to: "/settings/general",
     searchTerms: ["notification toast popup completion input approval failure"],
+  },
+  {
+    id: "slow-request-warning-threshold",
+    title: "Slow request warning threshold",
+    to: "/settings/general",
+    searchTerms: ["some requests are slow warning timeout threshold seconds disable"],
   },
   {
     id: "time-format",
@@ -827,6 +850,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "device hosts ssh remote mac mini identity key connection eas expo cloud simlock pool gateway local simulators",
     ],
+  },
+  {
+    id: "pd-secrets-post-login-script",
+    title: "Post-login script",
+    to: "/settings/access",
+    scope: "environment",
+    searchTerms: ["pd-secrets Password Depot sign in login bash script integration"],
   },
   {
     id: "agent-device-access",
@@ -1158,6 +1188,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/diagnostics": "environment",
   "/settings/projects": "project",
   "/settings/general": null,
+  "/settings/mggm": null,
   "/settings/appearance": null,
   "/settings/chat": null,
   "/settings/diffs": null,

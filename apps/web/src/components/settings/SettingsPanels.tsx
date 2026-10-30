@@ -16,6 +16,7 @@ import {
   DEFAULT_UNIFIED_SETTINGS,
   type DiffLayout,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
   type QuitConfirmationMode,
@@ -456,6 +457,14 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
       ? ["In-app notifications"]
       : []),
+    ...(settings.slowRequestWarningThresholdSeconds !==
+    DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds
+      ? ["Slow request warning threshold"]
+      : []),
+    ...(settings.modelCapacityRetryDelayMinutes !==
+    DEFAULT_UNIFIED_SETTINGS.modelCapacityRetryDelayMinutes
+      ? ["Model capacity retry delay"]
+      : []),
     ...(settings.sidebarProjectGroupingMode !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
       ? ["Project Grouping"]
       : []),
@@ -614,6 +623,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
+      slowRequestWarningThresholdSeconds:
+        DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
@@ -635,6 +646,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
+      modelCapacityRetryDelayMinutes: DEFAULT_UNIFIED_SETTINGS.modelCapacityRetryDelayMinutes,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
@@ -772,6 +784,47 @@ export function GeneralSettingsPanel() {
       <SettingsSection id="notifications" title="Notifications">
         <NotificationSettings />
         <SettingsRow
+          {...searchableSetting("slow-request-warning-threshold")}
+          description="Seconds before showing a slow-request warning. Set to 0 to disable."
+          resetAction={
+            settings.slowRequestWarningThresholdSeconds !==
+            DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds ? (
+              <SettingResetButton
+                label="slow request warning threshold"
+                onClick={() =>
+                  updateSettings({
+                    slowRequestWarningThresholdSeconds:
+                      DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <DraftInput
+              size="sm"
+              type="number"
+              min={0}
+              max={MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS}
+              step={1}
+              className="w-full sm:w-24"
+              value={String(settings.slowRequestWarningThresholdSeconds)}
+              onCommit={(value) => {
+                const seconds = Number(value);
+                if (
+                  value.trim() !== "" &&
+                  Number.isInteger(seconds) &&
+                  seconds >= 0 &&
+                  seconds <= MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS
+                ) {
+                  updateSettings({ slowRequestWarningThresholdSeconds: seconds });
+                }
+              }}
+              aria-label="Slow request warning threshold (seconds)"
+            />
+          }
+        />
+        <SettingsRow
           {...searchableSetting("in-app-notifications")}
           description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
           control={
@@ -860,6 +913,30 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("model-capacity-retry-delay")}
+          description="Minutes before retrying a model-capacity stop with the same model. Set to 0 to disable. Play resumes immediately."
+          settingKeys={["modelCapacityRetryDelayMinutes"]}
+          control={
+            <DraftInput
+              size="sm"
+              type="number"
+              min={0}
+              step={1}
+              className="w-full sm:w-24"
+              value={String(settings.modelCapacityRetryDelayMinutes)}
+              onCommit={(value) => {
+                const minutes = Number(value);
+                if (value.trim() !== "" && Number.isSafeInteger(minutes) && minutes >= 0) {
+                  updateSettings({ modelCapacityRetryDelayMinutes: minutes });
+                }
+              }}
+              aria-label="Model capacity retry delay (minutes)"
+            />
+          }
+        />
+
         <SettingsRow
           {...searchableSetting("working-shelf")}
           description="Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The boring sidebar in Labs has no Working section."

@@ -58,6 +58,7 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import { ROLLBACK_FAILED_MESSAGE } from "./CheckpointRollbackService.ts";
@@ -88,8 +89,11 @@ import * as ThreadLaunchService from "./ThreadLaunchService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
-const layerPlatformTest = Layer.merge(
+const layerPlatformTest = Layer.mergeAll(
   NodeServices.layer,
+  Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
+    refreshReviewComments: ({ records }) => Effect.succeed([...records]),
+  }),
   Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
     resolveLink: () => Effect.die("unused title link"),
   }),
@@ -286,7 +290,7 @@ const layerTest = Layer.mergeAll(
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
   Layer.provide(layerServerConfig),
-  Layer.provide(ServerSettings.layerTest()),
+  Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provide(layerTestProviderInstanceRegistry),
   Layer.provide(layerGitWorkflowTest),
   Layer.provide(layerProjectServiceTest),
@@ -6612,13 +6616,33 @@ it.layer(layerSharedApplicationDataPlaneTest)("shared application data plane", (
 });
 
 it.layer(layerTest)("usage-limit recovery", (it) => {
-  it.effect.each(["interrupted", "usage_limit"] as const)(
-    "manually resumes an %s run ahead of its queued message only once",
+  it.effect.each([
+    "interrupted",
+    "usage_limit",
+    "capacity",
+    "capacity-auto",
+    "capacity-cancel",
+    "capacity-disabled",
+    "capacity-play-disabled",
+    "capacity-model-change",
+  ] as const)(
+    "guards manual and automatic continuation of an %s run with a queued message",
     (reason) =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const events = yield* EventSink.EventSinkV2;
         const threadId = ThreadId.make(`manual-resume:${reason}`);
+        const preferences = yield* ServerSettings.ServerSettingsService;
+        const capacity = reason.startsWith("capacity");
+        const selectedModel = capacity
+          ? {
+              ...modelSelection,
+              options: [
+                { id: "reasoningEffort", value: "high" },
+                { id: "serviceTier", value: "default" },
+              ],
+            }
+          : modelSelection;
         const projectId = ProjectId.make(`manual-resume:project:${reason}`);
         const now = yield* DateTime.now;
         const createdAt = DateTime.formatIso(now);
@@ -6626,7 +6650,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           projectId,
           title: "Resume project",
           workspaceRoot: process.cwd(),
-          defaultModelSelection: modelSelection,
+          defaultModelSelection: selectedModel,
           createdAt,
         });
         yield* orchestrator.dispatch({
@@ -6635,7 +6659,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           threadId,
           projectId,
           title: "Interrupted thread",
-          modelSelection,
+          modelSelection: selectedModel,
           runtimeMode: "full-access",
           interactionMode: "default",
           branch: null,
@@ -6693,8 +6717,8 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           ],
         });
         let scheduledResume: ReturnType<typeof limitRecoveryCommand> = null;
-        if (reason === "usage_limit") {
-          const resetAt = DateTime.formatIso(DateTime.add(now, { minutes: 1 }));
+        if (reason === "usage_limit" || capacity) {
+          const resetAt = DateTime.formatIso(DateTime.add(now, { minutes: capacity ? 5 : 1 }));
           yield* events.write({
             events: [
               {
@@ -6719,8 +6743,10 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
                   completedAt: now,
                   updatedAt: now,
                   failure: {
-                    class: "usage_limit",
-                    message: "Plan limit reached.",
+                    class: capacity ? "provider_error" : "usage_limit",
+                    message: capacity
+                      ? "Selected model is at capacity. Please try a different model."
+                      : "Plan limit reached.",
                     code: "usageLimitExceeded",
                     retryable: null,
                     resetAt,
@@ -6733,13 +6759,46 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
             (thread) => thread.id === threadId,
           )!;
           yield* orchestrator.dispatch(
-            limitRecoveryCommand(shell, true, DateTime.toEpochMillis(now))!,
+            limitRecoveryCommand(shell, true, DateTime.toEpochMillis(now), false, 5)!,
           );
           const armed = (yield* orchestrator.getShellSnapshot()).threads.find(
             (thread) => thread.id === threadId,
           )!;
-          scheduledResume = limitRecoveryCommand(armed, true, Date.parse(resetAt));
+          scheduledResume = limitRecoveryCommand(armed, true, Date.parse(resetAt), false, 5);
           assert.isNotNull(scheduledResume);
+        }
+        if (reason === "capacity-play-disabled")
+          yield* preferences.updateSettings({ modelCapacityRetryDelayMinutes: 0 });
+        if (reason.startsWith("capacity-") && reason !== "capacity-play-disabled") {
+          const current = yield* orchestrator.getThreadProjection(threadId);
+          if (reason === "capacity-cancel") {
+            yield* orchestrator.dispatch({
+              type: "thread.metadata.update",
+              commandId: CommandId.make(`manual-resume:cancel:${reason}`),
+              threadId,
+              limitRecovery: { ...current.thread.limitRecovery!, autoResume: false },
+            });
+          }
+          if (reason === "capacity-disabled")
+            yield* preferences.updateSettings({ modelCapacityRetryDelayMinutes: 0 });
+          if (reason === "capacity-model-change") {
+            yield* orchestrator.dispatch({
+              type: "thread.model-selection.set",
+              commandId: CommandId.make(`manual-resume:model:${reason}`),
+              threadId,
+              modelSelection: { ...selectedModel, model: "different-model" },
+            });
+          }
+          yield* TestClock.adjust("5 minutes");
+          yield* orchestrator.dispatch(scheduledResume!);
+          yield* orchestrator.dispatch(scheduledResume!);
+          const continued = yield* orchestrator.getThreadProjection(threadId);
+          assert.lengthOf(continued.runs, reason === "capacity-auto" ? 3 : 2);
+          if (reason === "capacity-auto")
+            assert.deepEqual(continued.runs[2]?.modelSelection, selectedModel);
+          if (reason === "capacity-disabled")
+            yield* preferences.updateSettings({ modelCapacityRetryDelayMinutes: 5 });
+          return;
         }
         const resume = (suffix: string) => ({
           type: "message.dispatch" as const,
@@ -6758,15 +6817,18 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         assert.lengthOf(after.runs, 3);
         assert.equal(after.runs[1]?.status, "queued");
         assert.equal(after.runs[2]?.status, "starting");
+        assert.deepEqual(after.runs[2]?.modelSelection, selectedModel);
         assert.equal(
           (yield* orchestrator.dispatch(resume("second")).pipe(Effect.exit))._tag,
           "Failure",
         );
         if (scheduledResume !== null) {
-          yield* TestClock.adjust("1 minute");
+          yield* TestClock.adjust(capacity ? "5 minutes" : "1 minute");
           yield* orchestrator.dispatch(scheduledResume);
         }
         assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 3);
+        if (reason === "capacity-play-disabled")
+          yield* preferences.updateSettings({ modelCapacityRetryDelayMinutes: 5 });
       }),
   );
 

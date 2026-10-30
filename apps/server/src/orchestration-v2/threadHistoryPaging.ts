@@ -633,10 +633,18 @@ export function buildBoundedThreadProjection(input: {
   };
   const latestLocalTurnOrdinal = computeLatestLocalTurnOrdinal(input.projection.turnItems);
 
+  const pendingQuestionIds = new Set(
+    controlProjection.runtimeRequests
+      .filter((request) => request.kind === "user_input" && request.status === "pending")
+      .map((request) => request.id),
+  );
   const dependencyReserve = (() => {
     let reserve = 0;
     for (const item of controlProjection.turnItems) {
-      if (item.type === "run_interrupt_request") {
+      if (
+        item.type === "run_interrupt_request" ||
+        (item.type === "user_input_request" && pendingQuestionIds.has(item.requestId))
+      ) {
         reserve += bytesOfJson(item);
       }
     }
@@ -674,6 +682,12 @@ export function buildBoundedThreadProjection(input: {
   }
   for (const item of dependencyTurnItems) {
     turnItemById.set(String(item.id), item);
+  }
+  // Pending forms are control state even when their history row has been paged out.
+  for (const item of controlProjection.turnItems) {
+    if (item.type === "user_input_request" && pendingQuestionIds.has(item.requestId)) {
+      turnItemById.set(String(item.id), item);
+    }
   }
   const turnItems = [...turnItemById.values()];
 

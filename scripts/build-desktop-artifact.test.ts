@@ -40,6 +40,7 @@ import {
   resolveMacWebAuthnEntitlements,
   resolveMacPasskeySigningConfiguration,
   resolveMergedStageDependencies,
+  resolveFffNativeDependencies,
   resolveBuildOptions,
   stageWslRuntimeArchive,
   ancestorNodeModulesPaths,
@@ -606,7 +607,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "node-pty": "1.1.0",
         "@crowecawcaw/xa11y": "0.13.0",
         "@ff-labs/fff-bin-linux-x64-gnu": "0.9.4",
-        "@ff-labs/fff-bin-linux-x64-musl": "0.9.4",
       },
     );
   });
@@ -1626,6 +1626,25 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }),
     ),
   );
+
+  it("promotes target fff binaries to direct staged dependencies", () => {
+    assert.deepStrictEqual(resolveFffNativeDependencies("mac", "arm64", "0.9.4"), {
+      "@ff-labs/fff-bin-darwin-arm64": "0.9.4",
+    });
+    assert.deepStrictEqual(resolveFffNativeDependencies("mac", "universal", "0.9.4"), {
+      "@ff-labs/fff-bin-darwin-arm64": "0.9.4",
+      "@ff-labs/fff-bin-darwin-x64": "0.9.4",
+    });
+    assert.deepStrictEqual(resolveFffNativeDependencies("win", "x64", "0.9.4"), {
+      "@ff-labs/fff-bin-win32-x64": "0.9.4",
+    });
+    assert.deepStrictEqual(resolveFffNativeDependencies("linux", "x64", "0.9.4"), {
+      "@ff-labs/fff-bin-linux-x64-gnu": "0.9.4",
+    });
+    assert.deepStrictEqual(resolveFffNativeDependencies("linux", "arm64", "0.9.4"), {
+      "@ff-labs/fff-bin-linux-arm64-gnu": "0.9.4",
+    });
+  });
 
   it.effect("rejects universal builds on Linux and Windows before staging binaries", () =>
     Effect.gen(function* () {

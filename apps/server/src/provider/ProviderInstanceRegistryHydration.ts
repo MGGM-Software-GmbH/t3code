@@ -1,4 +1,5 @@
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   defaultInstanceIdForDriver,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -45,7 +46,10 @@ type ProviderInstanceRegistryHydrationEnv =
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
 ): ProviderInstanceConfigMap => {
-  const merged: Record<string, ProviderInstanceConfig> = { ...settings.providerInstances };
+  const merged: Record<string, ProviderInstanceConfig> = {
+    ...DEFAULT_PROVIDER_INSTANCE_CONFIGS,
+    ...settings.providerInstances,
+  };
 
   for (const driver of BUILT_IN_DRIVERS) {
     if (driver.metadata.hasDefaultInstance === false) continue;

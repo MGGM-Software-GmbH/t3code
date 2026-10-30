@@ -151,6 +151,10 @@ access. Source control contains automatic pull, the default pull request merge m
 generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
 
+Under **Settings → General → Notifications**, **Slow request warning threshold** sets how
+long this browser waits before warning about a slow request. The default is 60 seconds;
+set it to `0` to disable these warnings. Changes take effect without reloading.
+
 The Projects category, under Code, holds the project's name, icon, actions,
 checkouts and removal. Actions belong to a project: editing them creates the project's own list
 on each selected environment, and reset returns to the environment's shared list. A project's
@@ -209,6 +213,17 @@ Results also list folders in the worktree folder that no thread uses, with their
 
 Browser captures and rotated logs have separate retention periods. Expired capture links stop
 working. Current logs, message attachments, and browser profiles are kept.
+
+## Retry a busy model
+
+In **General**, set **Model capacity retry delay** to the number of minutes to wait after
+"Selected model is at capacity. Please try a different model." The default is 5 minutes;
+0 disables automatic retries. Retries keep the same provider, model, and model options.
+This setting is independent of usage-limit recovery.
+
+Use **Play** in the stopped thread to continue immediately, or cancel its scheduled retry
+in the thread's recovery notice. A server restart preserves the scheduled retry. Changing
+the thread's model prevents the old capacity failure from automatically starting another model.
 
 ## Project icons
 

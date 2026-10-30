@@ -130,7 +130,10 @@ import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
 
-function timelineListStateFor(identity: string): {
+function timelineListStateFor(
+  identity: string,
+  findOpen: boolean,
+): {
   readonly identity: string;
   readonly rememberedPosition: RememberedTimelinePosition | undefined;
   readonly workGroupViewState: WorkGroupViewState;
@@ -138,7 +141,10 @@ function timelineListStateFor(identity: string): {
   const rememberedPosition = readTimelinePosition(identity);
   return {
     identity,
-    rememberedPosition,
+    // Reopening follows the latest work, including work after an interruption.
+    // Preserve the search position while find explicitly owns navigation.
+    rememberedPosition:
+      rememberedPosition && !findOpen ? { ...rememberedPosition, atEnd: true } : rememberedPosition,
     workGroupViewState: rememberedPosition?.disclosures?.workGroupState ?? {
       scrollPositions: new Map(),
       expandedEntries: new Set(),
@@ -398,7 +404,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   // Find open at the opening is part of the snapshot: opening find later
   // announces its own navigation (threadFindStore's announceOpening).
   const [listState, setListState] = useState(() => ({
-    ...timelineListStateFor(listIdentityKey),
+    ...timelineListStateFor(listIdentityKey, findOpen),
     findOpenAtOpening: findOpen,
   }));
   const [expandedRunIds, setExpandedRunIds] = useState<ReadonlySet<RunId>>(
@@ -427,7 +433,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   let paintedExpandedAttemptIds = expandedAttemptIds;
   const identityChanged = listState.identity !== listIdentityKey;
   const { rememberedPosition, workGroupViewState } = identityChanged
-    ? timelineListStateFor(listIdentityKey)
+    ? timelineListStateFor(listIdentityKey, findOpen)
     : listState;
   if (identityChanged) {
     setPlayingAudioRows(new Map());

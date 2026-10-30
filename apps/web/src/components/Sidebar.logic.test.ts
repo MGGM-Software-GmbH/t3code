@@ -1,4 +1,5 @@
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { isThreadWorking as isSidebarThreadWorking } from "@t3tools/client-runtime/state/thread-inbox";
 import * as DateTime from "effect/DateTime";
 import { deriveActiveWorkStartedAt } from "../session-logic.ts";
@@ -10,6 +11,8 @@ import {
   deleteSelectedThreadEntries,
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
+  groupIdleSidebarThreads,
+  resolveSidebarThreadActivityTimestamp,
   resolveSidebarRowThreadId,
   orderItemsByPreferredIds,
   pinOrderKeyBetween,
@@ -18,6 +21,7 @@ import {
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
+  resolveWorkingShelfThreads,
   searchSidebarThreads,
   shouldRecedeSidebarThread,
   sortInboxThreadsByReturn,
@@ -663,6 +667,159 @@ function makeThread(overrides: ThreadFixtureOverrides = {}): Thread {
   });
 }
 
+describe("groupIdleSidebarThreads", () => {
+  const now = Date.parse("2026-03-10T12:00:00.000Z");
+  const thread = (id: string, updatedAt: string, projectId = "project-1") =>
+    makeThread({
+      id: ThreadId.make(id),
+      projectId: ProjectId.make(projectId),
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt,
+    });
+  const projects = [
+    {
+      projectKey: "zebra",
+      displayName: "Zebra",
+      memberProjectRefs: [
+        { environmentId: localEnvironmentId, projectId: ProjectId.make("project-2") },
+      ],
+    },
+    {
+      projectKey: "alpha",
+      displayName: "Alpha",
+      memberProjectRefs: [
+        { environmentId: localEnvironmentId, projectId: ProjectId.make("project-1") },
+      ],
+    },
+  ];
+
+  it("splits at 24 hours without duplicating threads and lists recent activity first", () => {
+    const result = groupIdleSidebarThreads(
+      [
+        thread("old", "2026-03-09T11:59:59.999Z"),
+        thread("boundary", "2026-03-09T12:00:00.000Z"),
+        thread("latest", "2026-03-10T11:00:00.000Z"),
+      ],
+      projects,
+      now,
+    );
+    expect(result.recent.map((entry) => entry.id)).toEqual(["latest", "boundary"]);
+    expect(result.projectGroups.flatMap((group) => group.threads.map((entry) => entry.id))).toEqual(
+      ["old"],
+    );
+  });
+
+  it("counts a completed response even when the last user message is older", () => {
+    const result = groupIdleSidebarThreads(
+      [
+        {
+          ...thread("response", "2026-03-02T00:00:00.000Z"),
+          latestUserMessageAt: "2026-03-02T00:00:00.000Z",
+          latestRun: makeLatestRun({ completedAt: "2026-03-10T11:00:00.000Z" }),
+        },
+      ],
+      projects,
+      now,
+    );
+    expect(result.recent.map((entry) => entry.id)).toEqual(["response"]);
+    expect(resolveSidebarThreadActivityTimestamp(result.recent[0]!)).toBe(
+      "2026-03-10T11:00:00.000Z",
+    );
+  });
+
+  it("ignores metadata updates when ordering conversation activity", () => {
+    const result = groupIdleSidebarThreads(
+      [
+        {
+          ...thread("stale", "2026-03-10T11:59:00.000Z"),
+          latestUserMessageAt: "2026-03-01T00:00:00.000Z",
+        },
+        {
+          ...thread("older", "2026-03-10T11:58:00.000Z"),
+          latestUserMessageAt: "2026-03-10T01:00:00.000Z",
+        },
+        {
+          ...thread("newer", "2026-03-10T11:57:00.000Z"),
+          latestUserMessageAt: "2026-03-10T11:00:00.000Z",
+        },
+      ],
+      projects,
+      now,
+    );
+    expect(result.recent.map((entry) => entry.id)).toEqual(["newer", "older"]);
+    expect(result.projectGroups[0]?.threads.map((entry) => entry.id)).toEqual(["stale"]);
+  });
+
+  it("uses the project filter order and sorts each project's threads by activity", () => {
+    const result = groupIdleSidebarThreads(
+      [
+        thread("alpha-new", "2026-03-08T11:00:00.000Z"),
+        thread("zebra-old", "2026-03-07T00:00:00.000Z", "project-2"),
+        thread("alpha-old", "2026-03-06T00:00:00.000Z"),
+        thread("zebra-new", "2026-03-08T00:00:00.000Z", "project-2"),
+      ],
+      projects,
+      now,
+    );
+    expect(
+      result.projectGroups.map((group) => [
+        group.displayName,
+        group.threads.map((entry) => entry.id),
+      ]),
+    ).toEqual([
+      ["Zebra", ["zebra-new", "zebra-old"]],
+      ["Alpha", ["alpha-new", "alpha-old"]],
+    ]);
+    expect(result.projectGroups.map((group) => group.latestActivityAt)).toEqual([
+      "2026-03-08T00:00:00.000Z",
+      "2026-03-08T11:00:00.000Z",
+    ]);
+  });
+
+  it("groups logical project members across environments without merging unrelated project IDs", () => {
+    const remote = EnvironmentId.make("remote");
+    const result = groupIdleSidebarThreads(
+      [
+        thread("local", "2026-03-08T00:00:00.000Z"),
+        { ...thread("remote", "2026-03-07T00:00:00.000Z", "project-2"), environmentId: remote },
+        { ...thread("other", "2026-03-06T00:00:00.000Z"), environmentId: remote },
+      ],
+      [
+        {
+          ...projects[1]!,
+          memberProjectRefs: [
+            ...projects[1]!.memberProjectRefs,
+            { environmentId: remote, projectId: ProjectId.make("project-2") },
+          ],
+        },
+      ],
+      now,
+    );
+    expect(result.projectGroups.map((group) => group.threads.map((entry) => entry.id))).toEqual([
+      ["local", "remote"],
+      ["other"],
+    ]);
+  });
+
+  it("moves a recent thread into its project as the clock passes the boundary", () => {
+    const threads = [thread("aging", "2026-03-09T12:00:00.000Z")];
+    expect(groupIdleSidebarThreads(threads, projects, now).recent).toHaveLength(1);
+    const result = groupIdleSidebarThreads(threads, projects, now + 60_000);
+    expect(result.recent).toEqual([]);
+    expect(result.projectGroups[0]?.threads.map((entry) => entry.id)).toEqual(["aging"]);
+  });
+
+  it("ignores invalid timestamps and keeps ties deterministic", () => {
+    const threads = [thread("b", "invalid"), thread("a", "invalid")];
+    expect(
+      groupIdleSidebarThreads(threads, projects, now).projectGroups[0]?.threads.map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["a", "b"]);
+    expect(groupIdleSidebarThreads([], projects, now)).toEqual({ recent: [], projectGroups: [] });
+  });
+});
+
 describe("getFallbackThreadIdAfterDelete", () => {
   it("skips other threads being deleted in the same action", () => {
     const fallbackThreadId = getFallbackThreadIdAfterDelete({
@@ -1082,6 +1239,34 @@ describe("Working shelf (beta)", () => {
     ).toBe(false);
   });
 
+  it("hides the open working thread when the MGGM shelf is collapsed", () => {
+    const openThread = { environmentId: localEnvironmentId, id: ThreadId.make("working") };
+    const otherEnvironmentThread = {
+      ...openThread,
+      environmentId: EnvironmentId.make("environment-remote"),
+    };
+    const threads = [otherEnvironmentThread, openThread];
+    const input = {
+      threads,
+      routeThreadKey: scopedThreadKey(scopeThreadRef(openThread.environmentId, openThread.id)),
+      mggmThreadSidebarEnabled: true,
+    };
+
+    expect(resolveWorkingShelfThreads({ ...input, expanded: true })).toBe(threads);
+    expect(resolveWorkingShelfThreads({ ...input, expanded: false })).toEqual([]);
+    expect(
+      resolveWorkingShelfThreads({ ...input, expanded: false, mggmThreadSidebarEnabled: false }),
+    ).toEqual([openThread]);
+    expect(
+      resolveWorkingShelfThreads({
+        ...input,
+        expanded: false,
+        mggmThreadSidebarEnabled: false,
+        routeThreadKey: null,
+      }),
+    ).toEqual([]);
+  });
+
   describe("sortInboxThreadsByReturn", () => {
     const thread = (
       id: string,
@@ -1140,17 +1325,77 @@ describe("Working shelf (beta)", () => {
       key,
       section,
     });
+    // Pinned p1 | Working w1 | Active a1 a2 | Settled s1
     const items: readonly SidebarListItem[] = [
       marker("pinned-header"),
       row("p1", "pinned"),
+      marker("working-header"),
+      row("w1", "working"),
       marker("pinned-divider"),
       row("a1", "active"),
       row("a2", "active"),
-      marker("working-header"),
-      row("w1", "working"),
       marker("settled-header"),
       row("s1", "settled"),
     ];
+
+    it.each([
+      ["active", "active", "none"],
+      ["active", "settled", "none"],
+      ["pinned", "settled", "none"],
+      ["settled", "active", "none"],
+      ["snoozed", "active", "none"],
+      ["active", "pinned", "pin"],
+      ["working", "pinned", "pin"],
+      ["snoozed", "pinned", "pin"],
+      ["settled", "pinned", "pin"],
+      ["pinned", "pinned", "reorder-pinned"],
+      ["pinned", "active", "move-active"],
+    ] as const)("limits MGGM drops from %s to %s to %s", (from, to, kind) => {
+      const sourceKey = from === "pinned" ? "p1" : "source";
+      const target = {
+        section: to,
+        pinnedOrder: ["p2", sourceKey],
+        activeOrder: ["a2", sourceKey],
+      };
+      const plan = planSidebarThreadDrop({
+        activeKey: sourceKey,
+        activeSection: from,
+        target,
+        pinnedOrder: ["p1", "p2"],
+        pinnedKeysById: new Map([
+          ["p1", "f"],
+          ["p2", "t"],
+        ]),
+        activeOrder: ["a1", "a2"],
+        activeKeysById: new Map(),
+        pinningOnly: true,
+      });
+      expect(plan.kind).toBe(kind);
+      if (plan.kind === "move-active") {
+        expect(plan).toEqual({
+          kind: "move-active",
+          order: null,
+          assignments: [],
+          unpin: true,
+          unsettle: false,
+          unsnooze: false,
+        });
+      }
+      const sourceItems: readonly SidebarListItem[] = [
+        marker("pinned-header"),
+        row("p2", "pinned"),
+        ...(from === "pinned" ? [row(sourceKey, from)] : []),
+        marker("pinned-divider"),
+        ...(from !== "pinned" ? [row(sourceKey, from)] : []),
+        row("a2", "active"),
+        marker("settled-header"),
+        row("s2", "settled"),
+      ];
+      const overKey = to === "pinned" ? "p2" : to === "active" ? "a2" : "s2";
+      expect(resolveSidebarDropTarget(sourceItems, sourceKey, overKey, true)?.section ?? null).toBe(
+        kind === "none" ? null : to,
+      );
+    });
 
     it("never drops into the Working shelf, and keeps it out of the inbox order", () => {
       expect(resolveSidebarDropTarget(items, "a1", "w1")).toBeNull();
@@ -1188,6 +1433,13 @@ describe("Working shelf (beta)", () => {
         ).toEqual({ kind: "none" });
       },
     );
+    it("keeps working rows out of the pinned order when pinning an inbox thread", () => {
+      expect(resolveSidebarDropTarget(items, "a1", "p1")).toEqual({
+        section: "pinned",
+        pinnedOrder: ["a1", "p1"],
+        activeOrder: ["a2"],
+      });
+    });
 
     it("arranges the rows it can write when another row's server cannot store an order", () => {
       const plan = planSidebarThreadDrop({

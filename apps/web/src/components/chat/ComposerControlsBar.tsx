@@ -1,3 +1,4 @@
+import { ComposerWeeklyLimit } from "../usage/WeeklyLimitIndicator";
 import type { ChatComposerProps } from "./ChatComposer";
 import type { PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
@@ -357,6 +358,11 @@ export function ComposerControlsBar(props: {
             onRuntimeModeChange={handleRuntimeModeChange}
           />
         </div>
+        <ComposerWeeklyLimit
+          environmentId={environmentId}
+          instanceId={selectedInstanceId}
+          size={composerControlsCollapsed ? "xs" : "sm"}
+        />
       </>
     </>
   );

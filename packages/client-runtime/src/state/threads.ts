@@ -45,6 +45,9 @@ import {
   EMPTY_THREAD_HISTORY_META,
   isActiveHistoryRequestCursor,
   mergeOlderHistoryIntoProjection,
+  oldestLocalHistoryOrdinal,
+  oldestPendingQuestion,
+  retainPendingQuestionHistory,
   type ThreadHistoryMeta,
 } from "./threadHistoryMerge.ts";
 import * as ThreadSnapshotLoader from "./threadSnapshotHttp.ts";
@@ -87,6 +90,7 @@ function historyMetaFromCachedSnapshot(
     error: null,
     expanded: false,
     latestLocalTurnOrdinal: snapshot.latestLocalTurnOrdinal ?? null,
+    oldestLoadedTurnOrdinal: oldestLocalHistoryOrdinal(snapshot.projection),
   };
 }
 
@@ -406,15 +410,46 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     // state when only the projection changes. Bounded installs pass history so
     // projection + cursor persist together in one enqueue.
     const next = yield* SubscriptionRef.updateAndGet(state, (previous) => {
-      const history =
+      let history =
         options?.history !== undefined
           ? options.history
           : options?.resetHistory === true
             ? EMPTY_THREAD_HISTORY_META
             : previous.history;
+      const previousOldest = previous.history.oldestLoadedTurnOrdinal;
+      const incomingOldest = history.oldestLoadedTurnOrdinal;
+      if (
+        options?.history !== undefined &&
+        Option.isSome(previous.data) &&
+        oldestPendingQuestion(thread) !== undefined &&
+        previousOldest !== null &&
+        incomingOldest !== null &&
+        previousOldest < incomingOldest
+      ) {
+        const incomingIds = new Set(thread.visibleTurnItems.map((row) => row.sourceItemId));
+        if (
+          previous.data.value.visibleTurnItems.some(
+            (row) =>
+              row.sourceThreadId === threadId &&
+              row.item.ordinal >= previousOldest &&
+              incomingIds.has(row.sourceItemId),
+          )
+        ) {
+          history = {
+            ...history,
+            historyCursor: previous.history.historyCursor,
+            hasMoreHistory: previous.history.hasMoreHistory,
+            oldestLoadedTurnOrdinal: previousOldest,
+          };
+        }
+      }
       return {
         ...previous,
-        data: Option.some(thread),
+        data: Option.some(
+          Option.isSome(previous.data)
+            ? retainPendingQuestionHistory(previous.data.value, thread)
+            : thread,
+        ),
         status: Option.isSome(previous.error)
           ? ("cached" as const)
           : waiting
@@ -627,6 +662,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                 error: null,
                 expanded: false,
                 latestLocalTurnOrdinal: item.latestLocalTurnOrdinal ?? null,
+                oldestLoadedTurnOrdinal: oldestLocalHistoryOrdinal(boundedSnapshotProjection(item)),
               },
             }
           : { resetHistory: true },
@@ -664,6 +700,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const loadEarlier = Effect.fn("EnvironmentThreadState.loadEarlier")(function* (
     throughEntryId?: string,
     workAnchorId?: string,
+    pendingQuestionOnly = false,
   ): Effect.fn.Return<ThreadHistoryController.ThreadHistoryLoadEarlierResult> {
     const workCursor = (latest: EnvironmentThreadState) =>
       Option.getOrNull(latest.data)?.visibleTurnItems.find(
@@ -747,6 +784,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           const page = pageResult.success;
           const complete = view !== "conversation";
           const keepPaging =
+            !pendingQuestionOnly &&
             complete &&
             (workAnchorId !== undefined
               ? page.nextCursor !== null
@@ -755,7 +793,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                 !page.items.some(
                   ({ item }) => item.type === "user_message" && item.createdBy === "user",
                 ));
-          if (keepPaging && (page.nextCursor === null || page.nextCursor === requestCursor))
+          if (
+            complete &&
+            (workAnchorId === undefined ? page.hasMoreHistory : keepPaging) &&
+            (page.nextCursor === null || page.nextCursor === requestCursor)
+          )
             return yield* failLoad(
               workAnchorId === undefined
                 ? "History did not advance."
@@ -793,7 +835,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                         : latest.status,
                     history:
                       workAnchorId === undefined && complete
-                        ? { ...applyHistoryPageMeta(latest.history, page), loading: keepPaging }
+                        ? {
+                            ...applyHistoryPageMeta(latest.history, page, threadId),
+                            loading: keepPaging,
+                          }
                         : { ...latest.history, expanded: true },
                   },
                 ];
@@ -899,6 +944,38 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     yield* Effect.addFinalizer(() => historyController.value.unregister(registration));
   }
 
+  if (canLoadHistory) {
+    yield* SubscriptionRef.changes(state).pipe(
+      Stream.runForEach(() =>
+        Effect.gen(function* () {
+          const current = yield* SubscriptionRef.get(state);
+          if (
+            Option.isNone(current.data) ||
+            current.status === "cached" ||
+            current.status === "empty" ||
+            current.status === "deleted" ||
+            Option.isSome(current.error) ||
+            current.history.loading ||
+            current.history.error !== null ||
+            !current.history.hasMoreHistory ||
+            current.history.historyCursor === null
+          )
+            return;
+          const question = oldestPendingQuestion(current.data.value);
+          if (
+            question === undefined ||
+            (current.history.oldestLoadedTurnOrdinal !== null &&
+              current.history.oldestLoadedTurnOrdinal <= question.ordinal)
+          )
+            return;
+          // Recheck pending requests after each page; an answer may arrive during the fetch.
+          yield* loadEarlier(undefined, undefined, true);
+        }),
+      ),
+      Effect.forkScoped,
+    );
+  }
+
   yield* SubscriptionRef.changes(supervisor.state).pipe(
     Stream.runForEach((connectionState) => {
       switch (connectionProjectionPhase(connectionState)) {
@@ -987,6 +1064,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                           error: null,
                           expanded: false,
                           latestLocalTurnOrdinal: httpResult.history.latestLocalTurnOrdinal ?? null,
+                          oldestLoadedTurnOrdinal: oldestLocalHistoryOrdinal(
+                            httpResult.snapshot.projection,
+                          ),
                         }
                       : EMPTY_THREAD_HISTORY_META;
                   yield* setThread(httpResult.snapshot.projection, { history });

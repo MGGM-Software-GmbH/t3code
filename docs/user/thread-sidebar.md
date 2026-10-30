@@ -76,7 +76,12 @@ scroll position instead of following the thread to its new place in the list.
 
 Pinning does not prevent automatic settlement. Settling a thread removes its pin.
 
-On web and desktop, drag a thread between sections to change its state. Drag a thread up into
+With **MGGM thread layout** enabled on web and desktop, drag threads to pin or unpin
+them, or to arrange pinned threads. Automatically sorted sections do not accept manual
+reordering or other state changes by drag and drop. Use the thread's actions to snooze,
+wake, settle, or un-settle it.
+
+With **MGGM thread layout** disabled on web and desktop, drag a thread between sections to change its state. Drag a thread up into
 the pinned section to pin it at the spot you drop it; drag a pinned thread down into the active
 list to unpin it. Dragging a thread onto the **Settled** header settles it, and dragging a settled
 thread into the active list un-settles it. A snoozed thread can be dragged out of the snoozed
@@ -131,7 +136,7 @@ open.
 ### Fold working threads (beta)
 
 Threads that are working or waiting on work they will resume from move into a collapsed
-**Working** section below the active list.
+**Working** section above the active list, below any pinned threads.
 That includes subagents, watched pull requests, and background commands or monitors the agent
 says it is waiting on. A dev server or other process an agent leaves running does not keep a thread
 there. A thread returns to the top of the active list when it finishes, fails, or needs an approval or
@@ -142,8 +147,21 @@ This is on by default. Turn it off with **Settings → General → Working secti
 or **Settings → General → Working section** on iOS and Android. Each device keeps its own
 choice.
 
-While this is on, the active list is ordered by when each thread last came back to you, so you
-cannot drag or move threads within it. Your saved order returns when you turn it off.
+On web and desktop, **Settings → MGGM → MGGM thread layout** enables the grouped sidebar
+by default. Turn it off to use the standard thread list.
+With the MGGM layout enabled, idle threads with activity in the last 24 hours appear in **Idle 24h**,
+with the most recently active first. Older idle threads appear in **Idle Projects**, grouped
+in the same project order as the project filter and sorted by recent activity within each
+project. Messages and run activity determine both the order and the displayed age;
+visiting or changing thread metadata does not make an old conversation recent.
+Each project group shows its thread count and last activity and can be collapsed
+independently. Section and project collapse states are saved locally. Collapsing Working
+hides all its threads, including the currently open thread; other collapsed groups keep
+the open thread visible. Pinned, snoozed, and settled threads retain
+their separate sections. Idle sections use activity order rather than manual thread order.
+
+On iOS and Android, enabling Working orders the active list by when each thread last came
+back to you. Turn it off to restore your saved order there.
 
 ### Group threads by project (beta)
 

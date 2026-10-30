@@ -25,6 +25,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import {
@@ -1159,8 +1160,46 @@ export function createServerEnvironmentAtoms<R, E>(
     concurrency: configConcurrency,
   });
 
+  const pdSecretsStatus = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:pd-secrets:status",
+    tag: WS_METHODS.pdSecretsStatus,
+    refreshIntervalMs: 60 * 60_000,
+    idleTtlMs: 0,
+  });
+  const refreshPdSecrets = (
+    target: { readonly environmentId: EnvironmentId },
+    registry: AtomRegistry.AtomRegistry,
+  ) =>
+    Effect.sync(() =>
+      registry.refresh(pdSecretsStatus({ environmentId: target.environmentId, input: {} })),
+    );
+
   return {
     configValueAtom,
+    pdSecretsStatus,
+    codexResetForecast: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:codex-reset-forecast",
+      tag: WS_METHODS.serverGetCodexResetForecast,
+      staleTimeMs: 60 * 60_000,
+      refreshIntervalMs: 60 * 60_000,
+    }),
+    loginPdSecrets: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:pd-secrets:login",
+      tag: WS_METHODS.pdSecretsLogin,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+      onSettled: refreshPdSecrets,
+    }),
+    respondPdSecrets: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:pd-secrets:respond",
+      tag: WS_METHODS.pdSecretsRespond,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+      onSettled: refreshPdSecrets,
+    }),
+    cancelPdSecrets: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:pd-secrets:cancel",
+      tag: WS_METHODS.pdSecretsCancel,
+      onSettled: refreshPdSecrets,
+    }),
     runStorageCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:run-storage-cleanup",
       tag: WS_METHODS.serverRunStorageCleanup,

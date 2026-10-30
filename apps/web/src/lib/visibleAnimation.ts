@@ -1,6 +1,7 @@
 interface ObservedAnimation {
   element: HTMLElement | SVGElement;
   intersecting: boolean;
+  allowReducedMotion: boolean;
 }
 
 const animations = new Map<Element, ObservedAnimation>();
@@ -9,7 +10,9 @@ let reducedMotion: MediaQueryList | null = null;
 
 function updateAnimation(animation: ObservedAnimation) {
   const running =
-    animation.intersecting && document.visibilityState === "visible" && !reducedMotion?.matches;
+    animation.intersecting &&
+    document.visibilityState === "visible" &&
+    (animation.allowReducedMotion || !reducedMotion?.matches);
   animation.element.style.setProperty("--visible-animation-state", running ? "running" : "paused");
   animation.element.style.setProperty(
     "--visible-animation-will-change",
@@ -21,7 +24,11 @@ function updateAnimations() {
   for (const animation of animations.values()) updateAnimation(animation);
 }
 
-export function observeVisibleAnimation(element: HTMLElement | SVGElement | null) {
+/** Attach to a stable animation container. All refs share visibility and motion listeners. */
+export function observeVisibleAnimation(
+  element: HTMLElement | SVGElement | null,
+  { allowReducedMotion = false }: { allowReducedMotion?: boolean } = {},
+) {
   if (element === null) return;
   element.style.setProperty("--visible-animation-state", "paused");
   element.style.setProperty("--visible-animation-will-change", "auto");
@@ -42,7 +49,7 @@ export function observeVisibleAnimation(element: HTMLElement | SVGElement | null
     });
   }
 
-  const animation = { element, intersecting: false };
+  const animation = { element, intersecting: false, allowReducedMotion };
   animations.set(element, animation);
   observer.observe(element);
 

@@ -1,9 +1,17 @@
-import type { OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
+import {
+  RuntimeRequestId,
+  NodeId,
+  type OrchestrationV2ProjectedTurnItem,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 
 import { v2Projection, v2ThreadId } from "./orchestrationV2TestFixtures.ts";
-import { mergeOlderHistoryIntoProjection } from "./threadHistoryMerge.ts";
+import {
+  mergeOlderHistoryIntoProjection,
+  oldestPendingQuestion,
+  retainPendingQuestionHistory,
+} from "./threadHistoryMerge.ts";
 import { applyOrchestrationV2ProjectionEvent } from "./orchestrationV2Projection.ts";
 
 const NOW = DateTime.makeUnsafe("2026-06-20T00:00:00.000Z");
@@ -39,6 +47,72 @@ function row(index: number): OrchestrationV2ProjectedTurnItem {
 }
 
 describe("threadHistoryMerge", () => {
+  it("keeps the suffix from the oldest pending question across replacement snapshots", () => {
+    const questionRow = (index: number): OrchestrationV2ProjectedTurnItem => ({
+      ...row(index),
+      item: {
+        ...row(index).item,
+        type: "user_input_request",
+        providerThreadId: null,
+        requestId: RuntimeRequestId.make(`question-${index}`),
+        questions: [{ id: "choice", header: "Choice", question: "Continue?", options: [] }],
+      },
+    });
+    const older = questionRow(1);
+    const newer = questionRow(3);
+    const requests = [older, newer].map((entry) => ({
+      id: RuntimeRequestId.make(`question-${entry.position}`),
+      nodeId: NodeId.make(`question-node-${entry.position}`),
+      providerTurnId: null,
+      nativeRequestRef: null,
+      kind: "user_input" as const,
+      status: "pending" as const,
+      responseCapability: { type: "message" as const },
+      createdAt: NOW,
+      resolvedAt: null,
+    }));
+    const previousRows = [row(0), older, row(2), newer, row(4)];
+    const previous = {
+      ...v2Projection,
+      runtimeRequests: requests,
+      turnItems: previousRows.map((entry) => entry.item),
+      visibleTurnItems: previousRows,
+    };
+    const incoming = {
+      ...previous,
+      turnItems: [older.item, newer.item, row(5).item],
+      visibleTurnItems: [row(5)],
+    };
+    const retained = retainPendingQuestionHistory(previous, incoming);
+    expect(oldestPendingQuestion(retained)?.id).toBe(older.item.id);
+    expect(retained.visibleTurnItems.map((entry) => entry.sourceItemId)).toEqual([
+      "item-1",
+      "item-2",
+      "item-3",
+      "item-4",
+      "item-5",
+    ]);
+    const answered = {
+      ...incoming,
+      runtimeRequests: [{ ...requests[0]!, status: "resolved" as const }, requests[1]!],
+    };
+    expect(
+      retainPendingQuestionHistory(previous, answered).visibleTurnItems.map(
+        (entry) => entry.sourceItemId,
+      ),
+    ).toEqual(["item-3", "item-4", "item-5"]);
+    expect(
+      retainPendingQuestionHistory(previous, {
+        ...incoming,
+        runtimeRequests: requests.map((request) => ({ ...request, status: "cancelled" as const })),
+      }).visibleTurnItems,
+    ).toEqual(incoming.visibleTurnItems);
+    const page = mergeOlderHistoryIntoProjection(retained, [row(2), newer, row(4)]);
+    expect(page.visibleTurnItems.map((entry) => entry.sourceItemId)).toEqual(
+      retained.visibleTurnItems.map((entry) => entry.sourceItemId),
+    );
+  });
+
   it("fills activity around partial messages in canonical order and preserves live edits", () => {
     const initial = { ...v2Projection, turnItems: [row(4).item], visibleTurnItems: [row(4)] };
     const preview = [row(1), row(3)];

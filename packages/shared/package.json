@@ -7,6 +7,14 @@
       "types": "./src/changedFileKind.ts",
       "import": "./src/changedFileKind.ts"
     },
+    "./fileReviewComments": {
+      "types": "./src/fileReviewComments.ts",
+      "import": "./src/fileReviewComments.ts"
+    },
+    "./githubMarkdownLinks": {
+      "types": "./src/githubMarkdownLinks.ts",
+      "import": "./src/githubMarkdownLinks.ts"
+    },
     "./authScopeOptions": {
       "types": "./src/authScopeOptions.ts",
       "import": "./src/authScopeOptions.ts"
@@ -520,6 +528,7 @@
     "@noble/curves": "catalog:",
     "@noble/hashes": "catalog:",
     "@t3tools/contracts": "workspace:*",
+    "diff": "9.0.0",
     "effect": "catalog:",
     "jose": "catalog:",
     "mdast-util-directive": "catalog:",

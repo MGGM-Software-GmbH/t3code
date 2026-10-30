@@ -12,6 +12,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
+import { useTouchAlternateSubmit } from "./useTouchAlternateSubmit";
 import {
   alternateComposerDispatchAction,
   resolveComposerDispatchMode,
@@ -45,6 +46,7 @@ interface ComposerPrimaryActionsProps {
   preserveComposerFocusOnPointerDown?: boolean;
   isEditingQueuedMessage?: boolean;
   onSubmitMessage?: MouseEventHandler<HTMLButtonElement>;
+  onSubmitAlternateMessage?: () => void;
   onResume?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
@@ -99,6 +101,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   preserveComposerFocusOnPointerDown = false,
   isEditingQueuedMessage = false,
   onSubmitMessage,
+  onSubmitAlternateMessage,
   onResume,
   onPreviousPendingQuestion,
   onInterrupt,
@@ -123,6 +126,17 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
   const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
+  const touchSubmit = useTouchAlternateSubmit(
+    isRunning &&
+      !pendingAction &&
+      !showPlanFollowUpPrompt &&
+      !isEditingQueuedMessage &&
+      hasSendableContent &&
+      !isSendDisabled &&
+      !isSendBusy &&
+      !isEnvironmentUnavailable,
+    onSubmitAlternateMessage,
+  );
 
   const renderStopGenerationButton = (insidePendingAction: boolean) => (
     <Tooltip key="interrupt">
@@ -297,20 +311,32 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     (compactsBeforeSend
       ? `Summarize ${compactTokens} tokens of history, then send`
       : isRunning && !isEditingQueuedMessage && canSteer
-        ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
+        ? `Tap to ${followUpBehavior}, long press or ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel);
 
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
+        "relative isolate flex h-9 w-9 touch-manipulation select-none items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
         stageBackdropVariant
           ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110 disabled:opacity-64"
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover disabled:bg-foreground/12 disabled:text-muted-foreground",
       )}
-      {...pointerFocusProps}
-      onClick={showResume ? onResume : onSubmitMessage}
+      onPointerDown={(event) => {
+        if (preserveComposerFocusOnPointerDown) preventPointerFocus(event);
+        touchSubmit.onPointerDown(event);
+      }}
+      onPointerMove={touchSubmit.onPointerMove}
+      onPointerUp={touchSubmit.onPointerUp}
+      onPointerCancel={touchSubmit.onPointerCancel}
+      onPointerLeave={touchSubmit.onPointerLeave}
+      onContextMenu={touchSubmit.onContextMenu}
+      onClick={(event) => {
+        if (touchSubmit.consume(event)) return;
+        if (showResume) onResume?.();
+        else onSubmitMessage?.(event);
+      }}
       disabled={
         isSendBusy ||
         isSendDisabled ||
