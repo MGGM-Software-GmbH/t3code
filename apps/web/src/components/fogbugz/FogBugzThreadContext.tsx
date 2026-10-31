@@ -2,9 +2,6 @@ import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ExternalLinkIcon, LinkIcon, UnlinkIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { openUrlInPreview } from "../../browser/openFileInPreview";
-import { useBrowserDefaults } from "../../browser/browserDefaults";
-import { useRenderedAppearance } from "../../hooks/useTheme";
 import { fogbugzEnvironment } from "../../state/fogbugz";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -17,6 +14,7 @@ import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
   THREAD_DETAILS_PANEL_LABEL_CLASS,
 } from "../chat/threadDetailsPanelStyles";
+import { useFogBugzCasePreview } from "./useFogBugzCasePreview";
 
 export function FogBugzThreadContext({
   threadRef,
@@ -31,7 +29,7 @@ export function FogBugzThreadContext({
     fogbugzEnvironment.thread({ environmentId, input: { threadId } }),
   );
   const link = useAtomCommand(fogbugzEnvironment.linkThread);
-  const openPreview = useAtomCommand(fogbugzEnvironment.openCase, { reportFailure: false });
+  const openPreview = useFogBugzCasePreview();
   const permission = useAtomValue(fogbugzEnvironment.linkThread.permissionAtom(environmentId));
   const browserPermission = useAtomValue(fogbugzEnvironment.openCase.permissionAtom(environmentId));
   const prepareCaseGit = useAtomCommand(fogbugzEnvironment.ensureCaseGit, { reportFailure: false });
@@ -42,26 +40,10 @@ export function FogBugzThreadContext({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const opened = useRef<string | null>(null);
   const preparedCase = useRef<number | null>(null);
-  const browserDefaults = useBrowserDefaults();
-  const appearance = useRenderedAppearance();
   async function openCase() {
     if (!linked.data) return;
-    const result = await openUrlInPreview({
-      threadRef,
-      url: linked.data.url,
-      openPreview: (parameters) =>
-        openPreview({
-          ...parameters,
-          input: {
-            ...parameters.input,
-            // A remote headless browser cannot resolve the client's system appearance.
-            colorScheme:
-              browserDefaults.appearance === "system" ? appearance : browserDefaults.appearance,
-          },
-        }),
-    });
+    const result = await openPreview(threadRef, linked.data.url);
     if (result._tag === "Failure") {
       const description = formatEnvironmentQueryError(result.cause);
       if (display === "context") {
@@ -73,17 +55,6 @@ export function FogBugzThreadContext({
       setError(null);
     }
   }
-  const openOnArrival = useEffectEvent(openCase);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Synchronizes the persisted case link with the external Browser panel once on arrival.
-  useEffect(() => {
-    if (display !== "context") return;
-    if (!linked.data) opened.current = null;
-    if (linked.data && browserPermission && opened.current !== linked.data.url) {
-      opened.current = linked.data.url;
-      void openOnArrival();
-    }
-  }, [linked.data, browserPermission, display]);
-
   const prepareOnArrival = useEffectEvent(async () => {
     const result = await prepareCaseGit({ environmentId, input: { threadId } });
     if (result._tag === "Failure")

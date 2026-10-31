@@ -32,7 +32,7 @@ import "~/index.css";
 import { AppRoot } from "~/AppRoot";
 import { getRouter } from "~/router";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import {
   ENVIRONMENT_ID,
@@ -180,7 +180,8 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
   const thread = threadWithHistory("case-details-actions", 1);
   let linked: typeof FogBugzThreadLink.Type | null = null;
   const opened: Array<PreviewOpenInput["url"]> = [];
-  using _environment = installFakeEnvironment([thread], {
+  const otherThread = threadWithHistory("case-details-other", 1);
+  using _environment = installFakeEnvironment([thread, otherThread], {
     [WS_METHODS.fogbugzStatus]: () =>
       Effect.succeed({
         connection: {
@@ -199,7 +200,8 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
           },
         ],
       }),
-    [WS_METHODS.fogbugzThread]: () => Effect.succeed(linked),
+    [WS_METHODS.fogbugzThread]: (input: { threadId: ThreadId }) =>
+      Effect.succeed(input.threadId === thread.id ? linked : null),
     [WS_METHODS.fogbugzThreadCases]: () => Effect.succeed([]),
     [WS_METHODS.fogbugzLinkThread]: (input: typeof FogBugzLinkThreadInput.Type) => {
       if (input.caseId === 999) {
@@ -267,7 +269,11 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
   expect(linked).toBeNull();
   await userEvent.fill(page.getByRole("spinbutton", { name: "FogBugz case number" }), "42");
   await userEvent.click(page.getByRole("button", { name: "Link case", exact: true }));
-  await vi.waitFor(() => expect(opened).toEqual(["http://fogbugz.test/default.asp?42"]));
+  await expect
+    .element(page.getByRole("button", { name: "Open FogBugz case", exact: true }))
+    .toBeVisible();
+  expect(opened).toEqual([]);
+  useRightPanelStore.getState().toggleVisibility(threadRef);
   await userEvent.click(page.getByRole("button", { name: "Add panel surface" }));
   await expect.element(page.getByRole("menuitem", { name: /Fogbugz-Cases/ })).toBeEnabled();
   await userEvent.keyboard("{Escape}");
@@ -280,11 +286,29 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
     .toHaveStyle({ opacity: "1" });
   await page.screenshot({ path: ".t3/fogbugz-details-wide.png" });
   await userEvent.click(page.getByRole("button", { name: "Open FogBugz case", exact: true }));
-  await vi.waitFor(() => expect(opened).toHaveLength(2));
+  await vi.waitFor(() => expect(opened).toEqual(["http://fogbugz.test/default.asp?42"]));
   await userEvent.click(page.getByRole("button", { name: "Toggle thread details panel" }));
   await expect
     .element(page.getByRole("button", { name: "Open FogBugz case", exact: true }))
     .not.toBeInTheDocument();
+
+  useRightPanelStore.getState().close(threadRef);
+  await router.navigate({
+    to: "/$environmentId/$threadId",
+    params: { environmentId: ENVIRONMENT_ID, threadId: otherThread.id },
+  });
+  await expect.element(page.getByTestId("composer-editor")).toBeVisible();
+  await router.navigate({
+    to: "/$environmentId/$threadId",
+    params: { environmentId: ENVIRONMENT_ID, threadId: thread.id },
+  });
+  await expect
+    .element(page.getByRole("button", { name: "Open FogBugz case", exact: true }))
+    .toBeVisible();
+  expect(opened).toHaveLength(1);
+  expect(
+    selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef).isOpen,
+  ).toBe(false);
 
   await page.viewport(390, 900);
   screen.container.className = "h-[900px] w-[390px]";
@@ -303,6 +327,7 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
   await expect.element(page.getByRole("spinbutton", { name: "FogBugz case number" })).toBeVisible();
   await page.screenshot({ path: ".t3/fogbugz-details-link-narrow.png" });
   await userEvent.keyboard("{Escape}");
+  useRightPanelStore.getState().toggleVisibility(threadRef);
   await userEvent.click(page.getByRole("button", { name: "Add panel surface" }));
   await expect.element(page.getByRole("menuitem", { name: /Fogbugz-Cases/ })).toBeDisabled();
   await page.screenshot({ path: ".t3/fogbugz-surface-disabled-narrow.png" });
@@ -747,14 +772,20 @@ it.each(["saved", "draft"])("gates sidepanel cases in a %s thread", async (kind)
   }
 });
 
-it.each(["context", "prp", "implement", "send failure"] as const)(
+it.each(["context", "prp", "implement", "send failure", "preview failure"] as const)(
   "starts the global case %s action in the selected project",
   async (scenario) => {
-    const action = scenario === "send failure" ? "implement" : scenario;
+    const action =
+      scenario === "send failure"
+        ? "implement"
+        : scenario === "preview failure"
+          ? "context"
+          : scenario;
     const projectId = ProjectId.make("project-render");
     const fixtures = [threadWithHistory("global-existing", 1)];
     const created: (typeof FogBugzCreateThreadInput.Type)[] = [];
     const messages: { threadId: ThreadId; text: string }[] = [];
+    const opened: PreviewOpenInput[] = [];
     const item: FogBugzCase = {
       id: 42,
       title: "Order confirmation: create multiple confirmations per customer reference",
@@ -800,6 +831,19 @@ it.each(["context", "prp", "implement", "send failure"] as const)(
           truncated: false,
         }),
       [WS_METHODS.fogbugzThread]: () => Effect.succeed(null),
+      [WS_METHODS.fogbugzOpenCase]: (input: PreviewOpenInput) => {
+        opened.push(input);
+        if (scenario === "preview failure")
+          return Effect.fail(new FogBugzError({ code: "network" }));
+        return Effect.succeed({
+          threadId: input.threadId,
+          tabId: PreviewTabId.make(`case-${input.threadId}`),
+          navStatus: { _tag: "Success", url: input.url, title: "FogBugz case" },
+          canGoBack: false,
+          canGoForward: false,
+          updatedAt: "2026-10-31T10:00:00.000Z",
+        });
+      },
       [WS_METHODS.fogbugzCreateThread]: (input: typeof FogBugzCreateThreadInput.Type) =>
         Effect.sync(() => {
           created.push(input);
@@ -859,8 +903,30 @@ it.each(["context", "prp", "implement", "send failure"] as const)(
     await vi.waitFor(() => expect(created).toHaveLength(1));
     expect(created[0]).toMatchObject({ projectId, caseId: 42 });
     const ref = scopeThreadRef(ENVIRONMENT_ID, created[0]!.threadId);
+    await vi.waitFor(() =>
+      expect(opened).toEqual([
+        expect.objectContaining({
+          threadId: ref.threadId,
+          url: "https://fogbugz.example/default.asp?42",
+        }),
+      ]),
+    );
     const prompt = fogbugzCasePrompt(action, 42, "https://fogbugz.example/");
-    if (action === "context") {
+    if (scenario !== "preview failure") {
+      await vi.waitFor(() =>
+        expect(
+          selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref).isOpen,
+        ).toBe(true),
+      );
+      useRightPanelStore.getState().close(ref);
+    }
+    if (scenario === "preview failure") {
+      await expect
+        .element(page.getByText("Unable to open FogBugz case", { exact: true }))
+        .toBeVisible();
+      expect(useComposerDraftStore.getState().getComposerDraft(ref)?.prompt).toBe(prompt);
+      expect(messages).toEqual([]);
+    } else if (action === "context") {
       await userEvent.click(screen.getByRole("button", { name: "Expand composer" }));
       await expect
         .element(screen.getByTestId("composer-editor").getByRole("link", { name: "FogBugz #42" }))

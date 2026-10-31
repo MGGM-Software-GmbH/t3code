@@ -26,6 +26,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { toastManager } from "../ui/toast";
 import { FogBugzCategoryIcon } from "./FogBugzCategoryIcon";
+import { useFogBugzCasePreview } from "./useFogBugzCasePreview";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import {
   Menu,
@@ -124,6 +125,7 @@ export function FogBugzCases({
       : null,
   );
   const create = useAtomCommand(fogbugzEnvironment.createThread);
+  const openPreview = useFogBugzCasePreview();
   const permission = useAtomValue(fogbugzEnvironment.createThread.permissionAtom(environmentId));
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
 
@@ -157,6 +159,17 @@ export function FogBugzCases({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(ref),
     });
+    const preview = await openPreview(
+      ref,
+      new URL(`default.asp?${item.id}`, connection.baseUrl).href,
+    );
+    if (preview._tag === "Failure") {
+      toastManager.add({
+        type: "error",
+        title: "Unable to open FogBugz case",
+        description: formatEnvironmentQueryError(preview.cause),
+      });
+    }
     if (action !== "context") {
       const sent = await startTurn({
         environmentId,
