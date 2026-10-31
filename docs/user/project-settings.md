@@ -10,6 +10,8 @@ Open **Fogbugz Cases** from the sidebar menu or command palette to see open case
 
 Within a thread in a linked project, open the **Fogbugz-Cases** surface from the side panel. Its case list stays scoped to that thread's T3 project, including all accessible FogBugz projects in a linked group.
 
+For a thread linked to a case, **FogBugz-Case-Git** opens that case's files using the existing file viewer. T3 prepares a separate local clone for each thread under `<T3 home>/case-files/<connection>/<person>/<case>/<thread>/repo`. FogBugz creates a missing repository when your account has write access and the project's case file storage is enabled. The project's working directory stays unchanged. Reopening preserves local edits; it does not pull changes, commit, or upload files automatically. Unlinking preserves the local files and the FogBugz repository.
+
 In either list, **Add to Context** adds a case reference to the composer without starting an agent run. **Create PRP** starts planning; **Implement** starts implementation. The side panel uses the current thread, including a new thread before its first message. These actions pass the case number and instructions to read it through the FogBugz MCP, rather than copying the case history into the prompt. The agent needs access to that MCP.
 
 Cases show category, status, priority, assignee and your latest notification time. The list sorts by that notification time, then by the last case update.

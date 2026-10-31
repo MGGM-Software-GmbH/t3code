@@ -22,6 +22,7 @@ const RIGHT_PANEL_KINDS = [
   "pull-request",
   "pull-requests",
   "fogbugz-cases",
+  "fogbugz-case-git",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -76,7 +77,8 @@ export type RightPanelSurface =
       detailTab?: PullRequestDetailTab;
     }
   | { id: "pull-requests"; kind: "pull-requests" }
-  | { id: "fogbugz-cases"; kind: "fogbugz-cases" };
+  | { id: "fogbugz-cases"; kind: "fogbugz-cases" }
+  | { id: "fogbugz-case-git"; kind: "fogbugz-case-git" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 const RIGHT_PANEL_STORAGE_VERSION = 14;
@@ -215,6 +217,8 @@ const singletonSurface = (
       return { id: "pull-requests", kind };
     case "fogbugz-cases":
       return { id: "fogbugz-cases", kind };
+    case "fogbugz-case-git":
+      return { id: "fogbugz-case-git", kind };
     case "device":
       return { id: "device", kind };
   }

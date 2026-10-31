@@ -33,6 +33,11 @@ const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
+const FogBugzCaseGitPanel = lazy(() =>
+  import("../fogbugz/FogBugzCaseGitPanel").then((module) => ({
+    default: module.FogBugzCaseGitPanel,
+  })),
+);
 const FogBugzCases = lazy(() =>
   import("../fogbugz/FogBugzCasesPage").then((module) => ({ default: module.FogBugzCases })),
 );
@@ -173,6 +178,20 @@ export function RightPanelSurfaceContent(props: {
     }
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
+    case "fogbugz-case-git":
+      return (
+        <Suspense fallback={null}>
+          <FogBugzCaseGitPanel
+            key={scopedThreadKey(threadRef)}
+            threadRef={threadRef}
+            composerDraftTarget={props.composerDraftTarget}
+            keybindings={props.keybindings}
+            availableEditors={props.files.availableEditors}
+            workspaceMutationId={props.workspaceMutationId}
+            openInShortcutEnabled={visible}
+          />
+        </Suspense>
+      );
     case "fogbugz-cases":
       return (
         <Suspense fallback={null}>

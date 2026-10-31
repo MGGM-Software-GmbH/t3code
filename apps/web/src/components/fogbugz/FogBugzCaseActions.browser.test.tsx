@@ -481,6 +481,96 @@ it("saves global and project FogBugz automation choices", async () => {
   await page.screenshot({ path: ".t3/fogbugz-project-settings-wide.png" });
 });
 
+it.each([
+  { width: 1400, height: 900 },
+  { width: 390, height: 844 },
+])(
+  "opens case Git through the surface menu and reads files from its own checkout at $width px",
+  async ({ width, height }) => {
+    const thread = threadWithHistory(`case-git-panel-${width}`, 0);
+    const projectId = ProjectId.make("project-render");
+    const cwd = `/case-files/connection/7/42/${thread.id}/repo`;
+    let failing = true;
+    const readRoots: string[] = [];
+    using _environment = installFakeEnvironment([thread], {
+      [WS_METHODS.fogbugzStatus]: () =>
+        Effect.succeed({
+          connection: {
+            id: "connection",
+            baseUrl: "https://fogbugz.example/",
+            username: "test@example.com",
+            personId: 7,
+            personName: "Test User",
+            authenticated: true,
+          },
+          projects: [{ projectId, fogbugzProjectId: 12, fogbugzProjectGroupId: null }],
+        }),
+      [WS_METHODS.fogbugzThread]: () =>
+        Effect.succeed({
+          threadId: thread.id,
+          projectId,
+          caseId: 42,
+          title: "Case files",
+          url: "https://fogbugz.example/default.asp?42",
+        }),
+      [WS_METHODS.fogbugzEnsureCaseGit]: () =>
+        failing
+          ? Effect.fail(new FogBugzError({ code: "case_git" }))
+          : Effect.succeed({ caseId: 42, repositoryId: "fixture", cwd, canWrite: true }),
+      [WS_METHODS.projectsListEntries]: (input: { cwd: string }) =>
+        Effect.sync(() => {
+          return {
+            entries: input.cwd === cwd ? [{ path: "PRP.md", kind: "file" as const }] : [],
+            truncated: false,
+          };
+        }),
+      [WS_METHODS.projectsReadFile]: (input: { cwd: string; relativePath: string }) =>
+        Effect.sync(() => {
+          if (input.relativePath === "PRP.md") readRoots.push(input.cwd);
+          return {
+            relativePath: input.relativePath,
+            contents: "# Case implementation plan\n\nFiles belong to this case checkout.\n",
+            byteLength: 67,
+            truncated: false,
+          };
+        }),
+    });
+    __setClientSettingsForTests({
+      ...DEFAULT_CLIENT_SETTINGS,
+      onboardingCompletedAt: "2026-01-01T00:00:00Z",
+      panelAnimationDurationMs: 0,
+    });
+    await page.viewport(width, height);
+    const router = getRouter(
+      createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+    );
+    await router.load();
+    const container = document.createElement("div");
+    container.style.width = `${width}px`;
+    container.style.height = `${height}px`;
+    // AppRoot owns the router and the file viewer's composer context.
+    await using screen = await render(<AppRoot router={router} />, { container, router: false });
+    const togglePanel = screen.getByRole("button", { name: "Toggle right panel", exact: true });
+    await expect.element(togglePanel).toBeVisible();
+    await userEvent.click(togglePanel);
+    await userEvent.click(page.getByText("FogBugz-Case-Git", { exact: true }));
+    await expect
+      .element(
+        page.getByRole("alert").filter({ hasText: "Could not prepare the case Git checkout" }),
+      )
+      .toBeVisible();
+    failing = false;
+    await userEvent.click(page.getByRole("button", { name: "Retry", exact: true }));
+    await expect.element(page.getByRole("treeitem", { name: "PRP.md", exact: true })).toBeVisible();
+    await userEvent.click(page.getByRole("treeitem", { name: "PRP.md", exact: true }));
+    await expect
+      .element(page.getByText("Files belong to this case checkout.", { exact: true }))
+      .toBeVisible();
+    expect(readRoots.length).toBeGreaterThan(0);
+    expect(readRoots.every((root) => root === cwd)).toBe(true);
+  },
+);
+
 it.each(["saved", "draft"])("gates sidepanel cases in a %s thread", async (kind) => {
   const thread = threadWithHistory("fogbugz-actions", 1);
   const projectId = ProjectId.make("project-render");

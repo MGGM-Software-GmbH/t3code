@@ -45,6 +45,7 @@ interface FileBrowserPanelProps {
   /** Host-folder entries use absolute paths. Avoid full traversal: disable expand-all and search only
    * loaded folders. */
   hostFolder?: boolean;
+  absoluteFileReferences?: boolean;
   onRefreshSelectedFile?: () => void;
   workspaceMutationId: string | null;
 }
@@ -143,6 +144,7 @@ export default function FileBrowserPanel({
   onRefreshSelectedFile,
   workspaceMutationId,
   hostFolder = false,
+  absoluteFileReferences = false,
 }: FileBrowserPanelProps) {
   const panelPath = (relativePath: string) =>
     hostFolder ? joinHostPath(cwd, relativePath) : relativePath;
@@ -183,7 +185,9 @@ export default function FileBrowserPanel({
         return;
       }
       const relativePath = item.path.replace(/\/$/, "");
-      const mention = serializeComposerFileLink(panelPath(relativePath));
+      const mention = serializeComposerFileLink(
+        absoluteFileReferences ? joinHostPath(cwd, relativePath) : panelPath(relativePath),
+      );
       const pointer = contextMenuPointerRef.current;
       const pointerIsFresh = pointer !== null && performance.now() - pointer.at < 1000;
       const anchorRect = context.anchorElement.getBoundingClientRect();
@@ -254,7 +258,9 @@ export default function FileBrowserPanel({
 
   const loadingDirectoriesRef = useRef(loadingDirectories);
   const dragMention = createFileTreeDragMentionController(
-    hostFolder ? { mentionPath: (path: string) => joinHostPath(cwd, path) } : {},
+    hostFolder || absoluteFileReferences
+      ? { mentionPath: (path: string) => joinHostPath(cwd, path) }
+      : {},
   );
   const { model } = useFileTree({
     composition: {

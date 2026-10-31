@@ -90,7 +90,7 @@ import { DelimitedTablePreview } from "./DelimitedTablePreview";
 import { PreviewImage } from "./PreviewImage";
 import FileBrowserPanel from "./FileBrowserPanel";
 import { FileBreadcrumbs } from "./FileBreadcrumbs";
-import { breadcrumbPathOf, retainedBreadcrumbTrail, trailChildOf } from "./filePath";
+import { breadcrumbPathOf, joinHostPath, retainedBreadcrumbTrail, trailChildOf } from "./filePath";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import {
   type FileCommentAnnotationGroup,
@@ -152,6 +152,8 @@ interface FilePreviewPanelProps {
   onPendingChange: (relativePath: string, pending: boolean) => void;
   selectedFilePending: boolean;
   workspaceMutationId: string | null;
+  absoluteFileReferences?: boolean;
+  singleColumn?: boolean;
 }
 
 const MermaidFilePreview = lazy(() =>
@@ -642,6 +644,7 @@ interface EditableFileSurfaceProps {
   environmentId: EnvironmentId;
   cwd: string;
   relativePath: string;
+  reviewFilePath?: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
   contents: string;
   resolvedTheme: "light" | "dark";
@@ -662,6 +665,7 @@ function EditableFileSurface({
   environmentId,
   cwd,
   relativePath,
+  reviewFilePath = relativePath,
   composerDraftTarget,
   contents,
   resolvedTheme,
@@ -691,7 +695,9 @@ function EditableFileSurface({
     previousContentsRef.current = { path: relativePath, contents };
     const store = useComposerDraftStore.getState();
     const comments = store.getComposerDraft(composerDraftTarget)?.reviewComments ?? [];
-    const fileComments = comments.filter((comment) => comment.sectionId === `file:${relativePath}`);
+    const fileComments = comments.filter(
+      (comment) => comment.sectionId === `file:${reviewFilePath}`,
+    );
     const remapped = remapFileReviewComments(previous, contents, [
       ...fileComments,
       ...(draft ? [draft] : []),
@@ -705,11 +711,11 @@ function EditableFileSurface({
       );
     }
     if (draft) setDraft(remapped.at(-1)!);
-  }, [composerDraftTarget, contents, relativePath, draft]);
+  }, [composerDraftTarget, contents, relativePath, reviewFilePath, draft]);
   const lineAnnotations: FileCommentLineAnnotation[] = (() => {
     const lines = contents.replace(/\r(?=\n|$)/g, "").split("\n");
     const comments = reviewComments.filter(
-      (comment) => comment.sectionId === `file:${relativePath}`,
+      (comment) => comment.sectionId === `file:${reviewFilePath}`,
     );
     return [...comments, ...(draft ? [draft] : [])].reduce<FileCommentLineAnnotation[]>(
       (annotations, comment) => {
@@ -804,7 +810,7 @@ function EditableFileSurface({
     setDraft(
       buildFileReviewComment({
         id: nextFileCommentId(),
-        filePath: relativePath,
+        filePath: reviewFilePath,
         startLine,
         endLine,
         text: "",
@@ -854,7 +860,7 @@ function EditableFileSurface({
         {reviewComments
           .filter(
             (comment) =>
-              comment.sectionId === `file:${relativePath}` &&
+              comment.sectionId === `file:${reviewFilePath}` &&
               (comment.sourceStatus === "removed" || comment.sourceStatus === "unresolved"),
           )
           .map((comment) => (
@@ -1044,6 +1050,8 @@ export default function FilePreviewPanel({
   onPendingChange,
   selectedFilePending,
   workspaceMutationId,
+  absoluteFileReferences = false,
+  singleColumn = false,
 }: FilePreviewPanelProps) {
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
@@ -1109,11 +1117,13 @@ export default function FilePreviewPanel({
   // Everything preview-related keys off previewPath; a folder has no preview.
   const previewPath = isFolder ? null : relativePath;
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
-  const showExplorer = shouldShowFileExplorer({
-    relativePath: previewPath,
-    explorerOpen,
-    attachmentOpen: attachment !== undefined,
-  });
+  const showExplorer =
+    (!singleColumn || previewPath === null) &&
+    shouldShowFileExplorer({
+      relativePath: previewPath,
+      explorerOpen,
+      attachmentOpen: attachment !== undefined,
+    });
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
     RENDER_MARKDOWN_STORAGE_KEY,
     false,
@@ -1356,7 +1366,7 @@ export default function FilePreviewPanel({
               <Globe2 className="size-3.5" />
             </FileSurfaceAction>
           ) : null}
-          {!isHostFile && previewPath !== null ? (
+          {!singleColumn && !isHostFile && previewPath !== null ? (
             <FileSurfaceAction
               label={explorerOpen ? "Hide file explorer" : "Show file explorer"}
               pressed={explorerOpen}
@@ -1553,6 +1563,9 @@ export default function FilePreviewPanel({
                   environmentId={environmentId}
                   cwd={cwd}
                   relativePath={relativePath}
+                  reviewFilePath={
+                    absoluteFileReferences ? joinHostPath(cwd, relativePath) : relativePath
+                  }
                   composerDraftTarget={composerDraftTarget}
                   contents={file.data.contents}
                   resolvedTheme={resolvedTheme}
@@ -1580,6 +1593,7 @@ export default function FilePreviewPanel({
               cwd={hostFolderPath ?? cwd}
               projectName={hostFolderPath ?? projectName}
               hostFolder={hostFolderPath !== null}
+              absoluteFileReferences={absoluteFileReferences}
               selectedPath={
                 hostFolderPath === null
                   ? relativePath

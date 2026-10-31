@@ -34,11 +34,16 @@ export function FogBugzThreadContext({
   const openPreview = useAtomCommand(fogbugzEnvironment.openCase, { reportFailure: false });
   const permission = useAtomValue(fogbugzEnvironment.linkThread.permissionAtom(environmentId));
   const browserPermission = useAtomValue(fogbugzEnvironment.openCase.permissionAtom(environmentId));
+  const prepareCaseGit = useAtomCommand(fogbugzEnvironment.ensureCaseGit, { reportFailure: false });
+  const caseGitPermission = useAtomValue(
+    fogbugzEnvironment.ensureCaseGit.permissionAtom(environmentId),
+  );
   const [caseId, setCaseId] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const opened = useRef<string | null>(null);
+  const preparedCase = useRef<number | null>(null);
   const browserDefaults = useBrowserDefaults();
   const appearance = useRenderedAppearance();
   async function openCase() {
@@ -78,6 +83,25 @@ export function FogBugzThreadContext({
       void openOnArrival();
     }
   }, [linked.data, browserPermission, display]);
+
+  const prepareOnArrival = useEffectEvent(async () => {
+    const result = await prepareCaseGit({ environmentId, input: { threadId } });
+    if (result._tag === "Failure")
+      toastManager.add({
+        type: "error",
+        title: "Unable to prepare FogBugz case files",
+        description: formatEnvironmentQueryError(result.cause),
+      });
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Provision the linked thread's external case checkout on arrival.
+  useEffect(() => {
+    if (display !== "context") return;
+    if (!linked.data) preparedCase.current = null;
+    if (linked.data && caseGitPermission && preparedCase.current !== linked.data.caseId) {
+      preparedCase.current = linked.data.caseId;
+      void prepareOnArrival();
+    }
+  }, [linked.data, caseGitPermission, display]);
 
   if (display === "context") return null;
   if (!status.data?.connection && !linked.data) return null;

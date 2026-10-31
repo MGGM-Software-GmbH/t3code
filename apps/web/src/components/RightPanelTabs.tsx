@@ -32,6 +32,7 @@ import {
   ChevronRight,
   FileDiff,
   Files,
+  FolderGit2,
   Globe2,
   Hash,
   Plus,
@@ -130,6 +131,8 @@ export interface RightPanelTabsProps {
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddFogBugzCases?: () => void;
+  onAddFogBugzCaseGit?: () => void;
+  fogbugzCaseGitAvailable?: boolean;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -306,6 +309,8 @@ export function RightPanelEmptyState(props: {
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddFogBugzCases?: (() => void) | undefined;
+  onAddFogBugzCaseGit?: (() => void) | undefined;
+  fogbugzCaseGitAvailable?: boolean | undefined;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -376,6 +381,19 @@ export function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
       onClick: props.onAddDevice,
     },
+    ...(props.onAddFogBugzCaseGit
+      ? [
+          {
+            label: "FogBugz-Case-Git",
+            icon: FolderGit2,
+            shortcut: "G",
+            available: props.fogbugzCaseGitAvailable === true,
+            disabledReason:
+              "Link this thread to a FogBugz case and allow source control access to open its Git files.",
+            onClick: props.onAddFogBugzCaseGit,
+          },
+        ]
+      : []),
     ...(props.onAddFogBugzCases
       ? [
           {
@@ -573,6 +591,8 @@ function surfaceTitle(
       return "Pull requests";
     case "fogbugz-cases":
       return "Fogbugz-Cases";
+    case "fogbugz-case-git":
+      return "FogBugz-Case-Git";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
@@ -665,6 +685,8 @@ function SurfaceIcon({
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "fogbugz-cases":
       return <Hash className="size-3 shrink-0" />;
+    case "fogbugz-case-git":
+      return <FolderGit2 className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -1086,6 +1108,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.device,
       onClick: props.onAddDevice,
     },
+    ...(props.onAddFogBugzCaseGit
+      ? [
+          {
+            label: "FogBugz-Case-Git",
+            icon: FolderGit2,
+            shortcut: "G",
+            available: props.fogbugzCaseGitAvailable === true,
+            disabledReason:
+              "Link this thread to a FogBugz case and allow source control access to open its Git files.",
+            onClick: props.onAddFogBugzCaseGit,
+          },
+        ]
+      : []),
     ...(props.onAddFogBugzCases
       ? [
           {
@@ -1472,6 +1507,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequest={props.onAddPullRequest}
             onAddPullRequests={props.onAddPullRequests}
             onAddFogBugzCases={props.onAddFogBugzCases}
+            onAddFogBugzCaseGit={props.onAddFogBugzCaseGit}
+            fogbugzCaseGitAvailable={props.fogbugzCaseGitAvailable}
             onAddDevice={props.onAddDevice}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
