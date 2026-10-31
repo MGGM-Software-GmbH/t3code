@@ -182,6 +182,7 @@ it("does not query other projects after the current project's link is removed", 
 
 it.each([390, 700])("shows case dates and actions at %i px", async (width) => {
   setup();
+  const modifiedAt = new Date(2026, 0, 3, 0, 9).toISOString();
   await page.viewport(width, 800);
   const wasDark = document.documentElement.classList.contains("dark");
   document.documentElement.classList.add("dark");
@@ -224,7 +225,7 @@ it.each([390, 700])("shows case dates and actions at %i px", async (width) => {
         id: 23456,
         title: "Restore the case list after a server restart",
         notifiedAt: null,
-        updatedAt: "2026-10-30T08:15:00Z",
+        updatedAt: modifiedAt,
       },
     ],
   };
@@ -252,8 +253,12 @@ it.each([390, 700])("shows case dates and actions at %i px", async (width) => {
     expect(screen.container.querySelectorAll("article button")).toHaveLength(2);
     expect([...screen.container.querySelectorAll("time")].map((time) => time.dateTime)).toEqual([
       "2026-10-29T10:30:00Z",
-      "2026-10-30T08:15:00Z",
+      modifiedAt,
     ]);
+    await expect.element(screen.getByText("03.01.2026 00:09", { exact: true })).toBeVisible();
+    for (const time of screen.container.querySelectorAll("time")) {
+      expect(time.textContent).toMatch(/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
+    }
     await expect.element(screen.getByText("No notification")).not.toBeInTheDocument();
     await expect.element(screen.getByLabelText("Your latest notification")).toBeVisible();
     await expect.element(screen.getByLabelText("Last modified")).toBeVisible();

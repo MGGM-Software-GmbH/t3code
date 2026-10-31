@@ -140,14 +140,18 @@ const germanTimestampFormatter = new Intl.DateTimeFormat("de-DE", {
   hourCycle: "h23",
 });
 
-/** Local usage/reset times in the fork's fixed German weekday and numeric date format. */
-export function formatGermanTimestamp(isoDate: string): string {
+/** Local timestamps in a fixed German numeric date format, optionally with the weekday. */
+export function formatGermanTimestamp(
+  isoDate: string,
+  options: { readonly includeWeekday?: boolean } = {},
+): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
   const parts = new Map(
     germanTimestampFormatter.formatToParts(date).map(({ type, value }) => [type, value]),
   );
-  return `${parts.get("weekday")}, ${parts.get("day")}.${parts.get("month")}.${parts.get("year")} ${parts.get("hour")}:${parts.get("minute")}`;
+  const weekday = options.includeWeekday === false ? "" : `${parts.get("weekday")}, `;
+  return `${weekday}${parts.get("day")}.${parts.get("month")}.${parts.get("year")} ${parts.get("hour")}:${parts.get("minute")}`;
 }
 
 export function formatShortTimestamp(isoDate: string, timestampFormat: TimestampFormat): string {

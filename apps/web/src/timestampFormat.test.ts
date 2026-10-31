@@ -9,6 +9,9 @@ describe("formatGermanTimestamp", () => {
     expect(formatGermanTimestamp(new Date(2027, 0, 3, 0, 9).toISOString())).toBe(
       "Sonntag, 03.01.2027 00:09",
     );
+    expect(
+      formatGermanTimestamp(new Date(2027, 0, 3, 0, 9).toISOString(), { includeWeekday: false }),
+    ).toBe("03.01.2027 00:09");
   });
 
   it("does not invent a timestamp for an invalid date", () => {

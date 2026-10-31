@@ -13,6 +13,7 @@ import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/qu
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { threadEnvironment } from "../../state/threads";
+import { formatGermanTimestamp } from "../../timestampFormat";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
 import { buildThreadRouteParams } from "../../threadRoutes";
@@ -409,7 +410,9 @@ export function FogBugzCases({
                           </TooltipTrigger>
                           <TooltipPopup>{dateLabel}</TooltipPopup>
                         </Tooltip>
-                        <time dateTime={caseDate}>{new Date(caseDate).toLocaleString()}</time>
+                        <time dateTime={caseDate}>
+                          {formatGermanTimestamp(caseDate, { includeWeekday: false })}
+                        </time>
                       </span>
                     )}
                   </div>
