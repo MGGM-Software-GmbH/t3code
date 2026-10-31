@@ -10,6 +10,7 @@ import {
   type FogBugzCase,
   type FogBugzCaseContextInput,
   type FogBugzCreateThreadInput,
+  type FogBugzCaseFilesInput,
   type FogBugzConnectInput,
   type FogBugzConnection,
   type FogBugzThreadLink,
@@ -516,6 +517,8 @@ it.each([
     const projectId = ProjectId.make("project-render");
     const cwd = `/case-files/connection/7/42/${thread.id}/repo`;
     let failing = true;
+    const files = new Set(["PRP.md"]);
+    let createdFolder = false;
     const readRoots: string[] = [];
     using _environment = installFakeEnvironment([thread], {
       [WS_METHODS.fogbugzStatus]: () =>
@@ -551,10 +554,31 @@ it.each([
       [WS_METHODS.projectsListEntries]: (input: { cwd: string }) =>
         Effect.sync(() => {
           return {
-            entries: input.cwd === cwd ? [{ path: "PRP.md", kind: "file" as const }] : [],
+            entries:
+              input.cwd === cwd
+                ? [
+                    ...Array.from(files, (path) => ({ path, kind: "file" as const })),
+                    ...(createdFolder ? [{ path: "design", kind: "directory" as const }] : []),
+                  ]
+                : [],
             truncated: false,
           };
         }),
+      [WS_METHODS.fogbugzMutateCaseFiles]: (input: typeof FogBugzCaseFilesInput.Type) => {
+        expect(input.threadId).toBe(thread.id);
+        const action = input.action;
+        if (action.type === "create-directory") {
+          if (createdFolder) return Effect.fail(new FogBugzError({ code: "case_files_exists" }));
+          expect(action.path).toBe("design");
+          createdFolder = true;
+        } else if (action.type === "create-file") {
+          files.add(action.path);
+        } else if (action.type === "delete") {
+          expect(action.path).toBe("design");
+          createdFolder = false;
+        }
+        return Effect.void;
+      },
       [WS_METHODS.projectsReadFile]: (input: { cwd: string; relativePath: string }) =>
         Effect.sync(() => {
           if (input.relativePath === "PRP.md") readRoots.push(input.cwd);
@@ -596,6 +620,39 @@ it.each([
       .element(page.getByRole("status").filter({ hasText: "Local and remote commits conflict." }))
       .toBeVisible();
     await expect.element(page.getByRole("treeitem", { name: "PRP.md", exact: true })).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "New folder", exact: true }));
+    await userEvent.fill(page.getByRole("textbox", { name: "Name in case root" }), "design");
+    await userEvent.click(page.getByRole("button", { name: "Create", exact: true }));
+    await expect.element(page.getByRole("treeitem", { name: "design", exact: true })).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "New folder", exact: true }));
+    await userEvent.fill(page.getByRole("textbox", { name: "Name in case root" }), "design");
+    await userEvent.click(page.getByRole("button", { name: "Create", exact: true }));
+    await expect
+      .element(
+        page
+          .getByRole("dialog")
+          .getByRole("alert")
+          .filter({ hasText: "destination already exists" }),
+      )
+      .toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Cancel", exact: true }));
+    await userEvent.click(page.getByRole("treeitem", { name: "design", exact: true }));
+    await userEvent.click(page.getByRole("button", { name: "Delete selected", exact: true }));
+    await expect.element(page.getByRole("dialog", { name: "Delete case files" })).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Delete", exact: true }));
+    await expect
+      .element(page.getByRole("dialog", { name: "Delete case files" }))
+      .not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole("treeitem", { name: "design", exact: true }))
+      .not.toBeInTheDocument();
+    await userEvent.click(page.getByRole("button", { name: "New file", exact: true }));
+    await userEvent.fill(page.getByRole("textbox", { name: "Name in case root" }), "notes.md");
+    await userEvent.click(page.getByRole("button", { name: "Create", exact: true }));
+    await userEvent.click(page.getByRole("button", { name: "Case #42", exact: true }));
+    await expect
+      .element(page.getByRole("treeitem", { name: "notes.md", exact: true }))
+      .toBeVisible();
     await userEvent.click(page.getByRole("treeitem", { name: "PRP.md", exact: true }));
     await expect
       .element(page.getByText("Files belong to this case checkout.", { exact: true }))

@@ -13,6 +13,7 @@ import * as CaseGit from "./FogBugzCaseGit.ts";
 import { caseGitPath } from "./caseGitPath.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import { withCaseGitRoot } from "./caseGitInstructions.ts";
+import { createPendingAttachmentId } from "../attachmentStore.ts";
 
 const prepare = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -69,6 +70,106 @@ const prepare = Effect.gen(function* () {
 const runtime = ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("per-thread case Git checkout", () => {
+  it.live("creates, uploads and deletes only inside an idle writable case checkout", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* prepare;
+        const { fs, path, repository, activity } = fixture;
+        yield* Effect.gen(function* () {
+          const service = yield* CaseGit.FogBugzCaseGit;
+          const config = yield* ServerConfig.ServerConfig.pipe(
+            Effect.provide(ServerConfig.layerTest(fixture.root, fixture.root)),
+          );
+          const threadId = ThreadId.make("file-actions");
+          const checkout = yield* service.ensure(threadId);
+          const mutate = (action: Parameters<typeof service.mutateFiles>[0]["action"]) =>
+            service.mutateFiles({ threadId, action });
+          const reject = (action: Parameters<typeof mutate>[0], code: string) =>
+            mutate(action).pipe(
+              Effect.flip,
+              Effect.map((error) => expect(error.code).toBe(code)),
+            );
+          yield* mutate({ type: "create-directory", path: "design" });
+          yield* mutate({ type: "create-file", path: "design/PRP.md" });
+          expect(yield* fs.readFileString(path.join(checkout.cwd, "design/PRP.md"))).toBe("");
+          yield* reject({ type: "create-file", path: "design/PRP.md" }, "case_files_exists");
+          for (const invalid of [
+            "../escape.md",
+            "/absolute",
+            ".git/config",
+            "design/../../escape",
+            "design\\escape",
+            "design/x:y",
+            "design/.",
+          ]) {
+            yield* reject({ type: "create-file", path: invalid }, "case_files_path");
+          }
+          yield* fs.symlink(fixture.root, path.join(checkout.cwd, "outside"));
+          yield* reject({ type: "create-file", path: "outside/escape.md" }, "case_files_path");
+          yield* reject({ type: "delete", path: "outside" }, "case_files_path");
+          yield* fs.makeDirectory(config.attachmentsDir, { recursive: true });
+          const attachmentId = createPendingAttachmentId("bin");
+          yield* fs.writeFileString(
+            path.join(config.attachmentsDir, `${attachmentId}.bin`),
+            "uploaded bytes",
+          );
+          const upload = {
+            type: "upload" as const,
+            files: [{ path: "design/prototype.html", attachmentId }],
+          };
+          repository.limits.fileBytes = 2;
+          yield* reject(upload, "case_files_limit");
+          repository.limits.fileBytes = 100;
+          repository.limits.groupBytes = 2;
+          yield* reject(upload, "case_files_limit");
+          repository.limits.groupBytes = 100;
+          repository.limits.repositoryBytes = 2;
+          yield* reject(upload, "case_files_limit");
+          repository.limits.repositoryBytes = 100;
+          repository.limits.groupFiles = 0;
+          yield* reject(upload, "case_files_limit");
+          repository.limits.groupFiles = 100;
+          yield* reject(
+            {
+              type: "upload",
+              files: [
+                { path: "design/not-created.html", attachmentId },
+                { path: "design/PRP.md", attachmentId },
+              ],
+            },
+            "case_files_exists",
+          );
+          expect(yield* fs.exists(path.join(checkout.cwd, "design/not-created.html"))).toBe(false);
+          yield* mutate({
+            type: "upload",
+            files: [{ path: "design/empty.txt", attachmentId: null }],
+          });
+          expect(yield* fs.readFileString(path.join(checkout.cwd, "design/empty.txt"))).toBe("");
+          yield* mutate(upload);
+          expect(yield* fs.readFileString(path.join(checkout.cwd, "design/prototype.html"))).toBe(
+            "uploaded bytes",
+          );
+          yield* reject(upload, "case_files_exists");
+          repository.canWrite = false;
+          yield* reject({ type: "delete", path: "design" }, "case_files_readonly");
+          repository.canWrite = true;
+          activity.runId = RunId.make("active");
+          yield* reject({ type: "delete", path: "design" }, "case_files_busy");
+          activity.runId = null;
+          yield* mutate({ type: "delete", path: "design/PRP.md" });
+          expect(yield* fs.exists(path.join(checkout.cwd, "design/PRP.md"))).toBe(false);
+          yield* fs.writeFileString(path.join(fixture.root, "keep.txt"), "outside checkout");
+          yield* fs.symlink(fixture.root, path.join(checkout.cwd, "design/link"));
+          yield* mutate({ type: "delete", path: "design" });
+          expect(yield* fs.exists(path.join(checkout.cwd, "design"))).toBe(false);
+          expect(yield* fs.readFileString(path.join(fixture.root, "keep.txt"))).toBe(
+            "outside checkout",
+          );
+          expect((yield* fixture.git(["ls-remote", fixture.remote])).stdout).toBe("");
+        }).pipe(Effect.provide(fixture.serviceLayer));
+      }),
+    ).pipe(Effect.provide(runtime)),
+  );
   it.live(
     "synchronizes committed artifacts without overwriting dirty files or merging conflicts",
     () =>

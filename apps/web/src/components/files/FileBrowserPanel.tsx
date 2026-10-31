@@ -9,7 +9,7 @@ import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
-import { ChevronsDownUp, ChevronsUpDown } from "lucide";
+import { ChevronsDownUp, ChevronsUpDown, FilePlus, FolderPlus, Upload, Trash2 } from "lucide";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -35,6 +35,13 @@ import { loadFileAncestors } from "./loadFileAncestors";
 import { useDirectoryEntries } from "./useDirectoryEntries";
 import { useProjectPathSearch } from "~/state/queries";
 
+export interface FileBrowserActions {
+  disabled: boolean;
+  create: (folder: string, directory: boolean) => void;
+  delete: (path: string) => void;
+  upload: (files: File[], folder: string, containsDirectories?: boolean) => void;
+}
+
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
   cwd: string;
@@ -48,6 +55,7 @@ interface FileBrowserPanelProps {
   absoluteFileReferences?: boolean;
   onRefreshSelectedFile?: () => void;
   workspaceMutationId: string | null;
+  fileActions?: FileBrowserActions | undefined;
 }
 
 function treePath(entry: ProjectEntry): string {
@@ -145,6 +153,7 @@ export default function FileBrowserPanel({
   workspaceMutationId,
   hostFolder = false,
   absoluteFileReferences = false,
+  fileActions,
 }: FileBrowserPanelProps) {
   const panelPath = (relativePath: string) =>
     hostFolder ? joinHostPath(cwd, relativePath) : relativePath;
@@ -162,6 +171,9 @@ export default function FileBrowserPanel({
   } = useDirectoryEntries(environmentId, cwd);
   const [query, setQuery] = useState("");
   const [expandAll, setExpandAll] = useState(false);
+  const [dropFolder, setDropFolder] = useState<string | null>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const uploadFolder = useRef("");
   const pathSearch = useProjectPathSearch(
     { environmentId, cwd: hostFolder ? null : cwd, query: query.slice(0, 256) },
     200,
@@ -200,6 +212,14 @@ export default function FileBrowserPanel({
         const clicked = await api.contextMenu.show(
           [
             ...fileMenuItems,
+            ...(fileActions && !fileActions.disabled
+              ? [
+                  { id: "case-new-file", label: "New file" },
+                  { id: "case-new-folder", label: "New folder" },
+                  { id: "case-upload", label: "Upload files" },
+                  { id: "case-delete", label: "Delete" },
+                ]
+              : []),
             { id: "copy-mention", label: "Copy mention" },
             { id: "add-to-chat", label: "Add to chat" },
           ],
@@ -229,6 +249,20 @@ export default function FileBrowserPanel({
             });
           }
           return;
+        }
+        if (fileActions && clicked?.startsWith("case-")) {
+          if (fileActions.disabled) return;
+          const folder =
+            entryKinds.get(relativePath) === "directory"
+              ? relativePath
+              : relativePath.split("/").slice(0, -1).join("/");
+          if (clicked === "case-delete") fileActions.delete(relativePath);
+          if (clicked === "case-new-file" || clicked === "case-new-folder")
+            fileActions.create(folder, clicked === "case-new-folder");
+          if (clicked === "case-upload") {
+            uploadFolder.current = folder;
+            uploadInput.current?.click();
+          }
         }
         if (clicked === "add-to-chat") {
           const composer = composerRef?.current;
@@ -327,6 +361,10 @@ export default function FileBrowserPanel({
     search.close();
   };
   const expandedPathsRef = useRef(new Set<string>());
+  const openRootUpload = useStableCallback(() => {
+    uploadFolder.current = "";
+    uploadInput.current?.click();
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the Pierre tree model to load directories as they are expanded
   useEffect(() => {
     const currentPaths = new Set(directoryPaths);
@@ -488,12 +526,99 @@ export default function FileBrowserPanel({
       // Capture dragstart before the tree selects the row so selection sees the drag flag.
       onDragStartCapture={(event) => dragMention.handleDragStart(event.nativeEvent)}
       onDragEnd={() => dragMention.handleDragEnd((path) => model.getItem(path)?.deselect())}
+      onDragOver={(event) => {
+        if (!fileActions || !event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = fileActions.disabled ? "none" : "copy";
+        const row = event.nativeEvent
+          .composedPath()
+          .find(
+            (node): node is Element =>
+              node instanceof Element && node.hasAttribute("data-item-path"),
+          );
+        const rowPath = row?.getAttribute("data-item-path")?.replace(/\/$/, "") ?? "";
+        setDropFolder(
+          entryKinds.get(rowPath) === "directory"
+            ? rowPath
+            : rowPath.split("/").slice(0, -1).join("/"),
+        );
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropFolder(null);
+      }}
+      onDrop={(event) => {
+        if (!fileActions || !event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!fileActions.disabled)
+          fileActions.upload(
+            Array.from(event.dataTransfer.files),
+            dropFolder ?? "",
+            Array.from(event.dataTransfer.items).some(
+              (item) => item.webkitGetAsEntry()?.isDirectory,
+            ),
+          );
+        setDropFolder(null);
+      }}
     >
       <div
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-1 in-data-[preview-panel-mode=inline]:h-9 in-data-[preview-panel-mode=inline]:min-h-9 in-data-[preview-panel-mode=inline]:border-b-transparent"
         data-surface-subheader
       >
         <RefreshFilesButton isPending={isPending} onRefresh={handleRefresh} />
+        {fileActions && (
+          <>
+            <input
+              ref={uploadInput}
+              type="file"
+              multiple
+              className="hidden"
+              aria-label="Upload case files"
+              onChange={(event) => {
+                fileActions.upload(
+                  Array.from(event.currentTarget.files ?? []),
+                  uploadFolder.current,
+                );
+                event.currentTarget.value = "";
+              }}
+            />
+            {[
+              { label: "New file", icon: FilePlus, action: () => fileActions.create("", false) },
+              { label: "New folder", icon: FolderPlus, action: () => fileActions.create("", true) },
+              {
+                label: "Upload files",
+                icon: Upload,
+                action: openRootUpload,
+              },
+              {
+                label: "Delete selected",
+                icon: Trash2,
+                action: () => {
+                  const selected = model.getSelectedPaths().at(-1)?.replace(/\/$/, "");
+                  if (selected) fileActions.delete(selected);
+                },
+              },
+            ].map(({ label, icon: Icon, action }) => (
+              <Tooltip key={label}>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={label}
+                      disabled={fileActions.disabled}
+                      onClick={action}
+                    />
+                  }
+                >
+                  <MorphIcon icon={Icon} className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipPopup>{label}</TooltipPopup>
+              </Tooltip>
+            ))}
+          </>
+        )}
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
@@ -529,6 +654,11 @@ export default function FileBrowserPanel({
           </Tooltip>
         ) : null}
       </div>
+      {dropFolder !== null && (
+        <div role="status" className="border-b bg-accent px-3 py-2 text-xs">
+          Drop files into {dropFolder || "case root"}
+        </div>
+      )}
       {error || pathSearch.error ? (
         <button
           type="button"

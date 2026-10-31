@@ -2,6 +2,7 @@ import {
   AuthEnvironmentMaintainScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
+  AuthFilesystemWriteScope,
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
@@ -45,6 +46,9 @@ describe("RPC authorization scopes", () => {
   });
 
   it("guards FogBugz credentials separately from case reads and thread mutations", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzMutateCaseFiles)).toBe(
+      AuthFilesystemWriteScope,
+    );
     expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzOpenCase)).toBe(AuthPreviewOperateScope);
     for (const method of [
       WS_METHODS.fogbugzConnect,

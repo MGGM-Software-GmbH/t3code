@@ -15,6 +15,10 @@ export function createFogBugzEnvironmentAtoms<R, E>(
     registry: AtomRegistry.AtomRegistry,
   ) => Effect.sync(() => registry.update(revisions(environmentId), (revision) => revision + 1));
   return {
+    mutateCaseFiles: createEnvironmentRpcCommand(runtime, {
+      label: "fogbugz:mutate-case-files",
+      tag: WS_METHODS.fogbugzMutateCaseFiles,
+    }),
     ensureCaseGit: createEnvironmentRpcCommand(runtime, {
       label: "fogbugz:ensure-case-git",
       tag: WS_METHODS.fogbugzEnsureCaseGit,

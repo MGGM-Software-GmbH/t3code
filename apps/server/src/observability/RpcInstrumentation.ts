@@ -13,6 +13,7 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 const RPC_AGGREGATES = {
   [WS_METHODS.fogbugzStatus]: "server",
   [WS_METHODS.fogbugzEnsureCaseGit]: "server",
+  [WS_METHODS.fogbugzMutateCaseFiles]: "server",
   [WS_METHODS.fogbugzConnect]: "server",
   [WS_METHODS.fogbugzDisconnect]: "server",
   [WS_METHODS.fogbugzTest]: "server",

@@ -45,6 +45,7 @@ import {
   FogBugzThreadLink,
   FogBugzThreadCase,
   FogBugzCaseGitCheckout,
+  FogBugzCaseFilesInput,
   FogBugzError,
   FogBugzConnectInput,
   FogBugzCasesInput,
@@ -465,6 +466,7 @@ export const WS_METHODS = {
   fogbugzCreateThread: "fogbugz.create-thread",
   fogbugzOpenCase: "fogbugz.open-case",
   fogbugzEnsureCaseGit: "fogbugz.ensure-case-git",
+  fogbugzMutateCaseFiles: "fogbugz.mutate-case-files",
   pdSecretsLogin: "pd-secrets.login",
   pdSecretsRespond: "pd-secrets.respond",
   pdSecretsCancel: "pd-secrets.cancel",
@@ -2001,6 +2003,11 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 ) {}
 
 export const WsRpcGroup = RpcGroup.make(
+  Rpc.make(WS_METHODS.fogbugzMutateCaseFiles, {
+    payload: FogBugzCaseFilesInput,
+    success: Schema.Void,
+    error: FogBugzError,
+  }),
   Rpc.make(WS_METHODS.fogbugzEnsureCaseGit, {
     payload: Schema.Struct({ threadId: ThreadId }),
     success: FogBugzCaseGitCheckout,

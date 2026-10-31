@@ -2464,6 +2464,7 @@ export const layerWsRpc = (
         [WS_METHODS.pdSecretsStatus]: () => pdSecrets.status(),
         [WS_METHODS.fogbugzStatus]: () => fogbugz.status(),
         [WS_METHODS.fogbugzEnsureCaseGit]: (input) => fogbugzCaseGit.ensure(input.threadId),
+        [WS_METHODS.fogbugzMutateCaseFiles]: (input) => fogbugzCaseGit.mutateFiles(input),
         [WS_METHODS.fogbugzThreadCases]: () => fogbugz.threadCases(),
         [WS_METHODS.fogbugzOpenCase]: (input) =>
           FogBugzBrowser.openCase(input).pipe(

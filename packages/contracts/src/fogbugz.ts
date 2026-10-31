@@ -75,6 +75,23 @@ export const FogBugzCaseGitCheckout = Schema.Struct({
   canWrite: Schema.Boolean,
   syncIssue: Schema.optional(Schema.String),
 });
+export const FogBugzCaseFilesInput = Schema.Struct({
+  threadId: ThreadId,
+  action: Schema.Union([
+    Schema.Struct({ type: Schema.Literal("create-file"), path: TrimmedNonEmptyString }),
+    Schema.Struct({ type: Schema.Literal("create-directory"), path: TrimmedNonEmptyString }),
+    Schema.Struct({ type: Schema.Literal("delete"), path: TrimmedNonEmptyString }),
+    Schema.Struct({
+      type: Schema.Literal("upload"),
+      files: Schema.Array(
+        Schema.Struct({
+          path: TrimmedNonEmptyString,
+          attachmentId: Schema.NullOr(TrimmedNonEmptyString),
+        }),
+      ).check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+    }),
+  ]),
+});
 export const FogBugzThreadCase = Schema.Struct({
   threadId: ThreadId,
   case: FogBugzCase,
@@ -109,6 +126,13 @@ export const FogBugzCreateThreadInput = Schema.Struct({
 });
 
 const messages = {
+  case_files_path:
+    "Use a relative case file path without reserved names, traversal, or symbolic links.",
+  case_files_exists: "The destination already exists. Choose another name or delete it first.",
+  case_files_readonly: "This FogBugz account cannot change case files.",
+  case_files_busy: "Wait for the agent's turn to finish before changing case files.",
+  case_files_limit: "The case file size, upload group, or repository limit would be exceeded.",
+  case_files_io: "Could not change case files. Refresh the files and try again.",
   connection_required: "Configure FogBugz in Settings > MGGM first.",
   authentication: "FogBugz sign-in failed or expired. Sign in again in Settings > MGGM.",
   network: "Could not reach the FogBugz API.",

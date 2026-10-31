@@ -154,6 +154,8 @@ interface FilePreviewPanelProps {
   workspaceMutationId: string | null;
   absoluteFileReferences?: boolean;
   singleColumn?: boolean;
+  fileActions?: import("./FileBrowserPanel").FileBrowserActions;
+  readOnly?: boolean;
 }
 
 const MermaidFilePreview = lazy(() =>
@@ -1052,6 +1054,8 @@ export default function FilePreviewPanel({
   workspaceMutationId,
   absoluteFileReferences = false,
   singleColumn = false,
+  fileActions,
+  readOnly = false,
 }: FilePreviewPanelProps) {
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
@@ -1087,7 +1091,8 @@ export default function FilePreviewPanel({
     attachment !== undefined || (relativePath !== null && isHostPath(relativePath));
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
-  const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
+  const hasWriteScope = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
+  const canWriteFiles = hasWriteScope && !readOnly;
   const file = useProjectFileQuery(
     environmentId,
     cwd,
@@ -1594,6 +1599,7 @@ export default function FilePreviewPanel({
               projectName={hostFolderPath ?? projectName}
               hostFolder={hostFolderPath !== null}
               absoluteFileReferences={absoluteFileReferences}
+              fileActions={fileActions}
               selectedPath={
                 hostFolderPath === null
                   ? relativePath

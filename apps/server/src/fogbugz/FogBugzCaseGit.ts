@@ -3,6 +3,7 @@ import {
   type FogBugzCaseGitCheckout,
   type ThreadId,
   type RunId,
+  type FogBugzCaseFilesInput,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -18,6 +19,7 @@ import { FogBugzService } from "./FogBugzService.ts";
 import { caseGitPath } from "./caseGitPath.ts";
 import { caseGitInstructions } from "./caseGitInstructions.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import { mutateCaseFiles } from "./caseFileMutation.ts";
 
 const isFogBugzError = Schema.is(FogBugzError);
 
@@ -30,6 +32,7 @@ export class FogBugzCaseGit extends Context.Service<
       runId: RunId,
     ) => Effect.Effect<{ text: string; cwd: string; canWrite: boolean } | null, FogBugzError>;
     finishTurn: (threadId: ThreadId, runId: RunId) => Effect.Effect<void, FogBugzError>;
+    mutateFiles: (input: typeof FogBugzCaseFilesInput.Type) => Effect.Effect<void, FogBugzError>;
   }
 >()("t3/fogbugz/FogBugzCaseGit") {}
 
@@ -263,6 +266,43 @@ export const layer = Layer.effect(
       );
     });
     return FogBugzCaseGit.of({
+      mutateFiles: Effect.fn("FogBugzCaseGit.mutateFiles")(function* (input) {
+        const { checkout } = yield* synchronize(input.threadId);
+        yield* withWorkspaceLease(
+          `fogbugz:${input.threadId}`,
+          Effect.gen(function* () {
+            const repository = yield* fogbugz.caseGitRepository(input.threadId);
+            if (!repository.canWrite)
+              return yield* new FogBugzError({ code: "case_files_readonly" });
+            const thread = yield* projections.getThreadShell(input.threadId);
+            if (thread?.activeRunId != null)
+              return yield* new FogBugzError({ code: "case_files_busy" });
+            const baseDir = yield* fs.realPath(config.baseDir);
+            if (
+              repository.repositoryId !== checkout.repositoryId ||
+              caseGitPath(
+                path,
+                baseDir,
+                repository.connectionId,
+                repository.personId,
+                repository.caseId,
+                input.threadId,
+              ) !== checkout.cwd
+            )
+              return yield* new FogBugzError({ code: "case_files_path" });
+            yield* mutateCaseFiles(
+              checkout.cwd,
+              config.attachmentsDir,
+              repository.limits,
+              input.action,
+            );
+          }),
+        ).pipe(
+          Effect.mapError((error) =>
+            isFogBugzError(error) ? error : new FogBugzError({ code: "case_files_io" }),
+          ),
+        );
+      }),
       ensure: Effect.fn("FogBugzCaseGit.ensure")((threadId: ThreadId) =>
         synchronize(threadId).pipe(Effect.map((result) => result.checkout)),
       ),
