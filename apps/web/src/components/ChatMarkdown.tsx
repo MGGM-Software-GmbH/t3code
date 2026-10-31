@@ -378,10 +378,9 @@ const GITHUB_ALERT_PRESENTATIONS: Record<
 
 function normalizeMarkdownLinkHrefKey(href: string): string {
   const normalizedHref = normalizeMarkdownLinkDestination(href);
-  const rewrittenHref = rewriteMarkdownFileUriHref(normalizedHref) ?? normalizedHref;
-  return WINDOWS_DRIVE_PATH_REGEX.test(rewrittenHref)
-    ? rewrittenHref.replaceAll("\\", "/")
-    : rewrittenHref;
+  return WINDOWS_DRIVE_PATH_REGEX.test(normalizedHref)
+    ? normalizedHref.replaceAll("\\", "/")
+    : normalizedHref;
 }
 
 // Heading ids are added after sanitizing, which would prefix them a second time.
@@ -644,7 +643,7 @@ function useChatMarkdownState({
     if (parseComposerContextHref(href)) return href;
     if (parseThreadLinkHref(href)) return href;
     if (isWindowsDrivePathHref(href)) return href;
-    return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
+    return rewriteMarkdownFileUriHref(href) !== null ? href : defaultUrlTransform(href);
   };
   const handleCopy = (event: ReactClipboardEvent<HTMLElement>) => {
     const selection = window.getSelection();
