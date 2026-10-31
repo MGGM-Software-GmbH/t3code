@@ -68,6 +68,12 @@ export const FogBugzThreadLink = Schema.Struct({
   title: Schema.String,
   url: Schema.String,
 });
+export const FogBugzCaseGitCheckout = Schema.Struct({
+  caseId: FogBugzId,
+  repositoryId: Schema.String,
+  cwd: Schema.String,
+  canWrite: Schema.Boolean,
+});
 export const FogBugzThreadCase = Schema.Struct({
   threadId: ThreadId,
   case: FogBugzCase,
@@ -111,6 +117,8 @@ const messages = {
   storage: "Could not save or load the FogBugz integration.",
   project: "Link this T3 project to the case's FogBugz project first.",
   thread: "Could not create or load the T3 thread.",
+  case_git:
+    "Could not prepare the case Git checkout. Check the case file storage, permissions, and Git connection.",
 } as const;
 export class FogBugzError extends Schema.TaggedError<FogBugzError>()("FogBugzError", {
   code: Schema.Literals(Object.keys(messages) as Array<keyof typeof messages>),

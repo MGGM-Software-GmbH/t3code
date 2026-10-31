@@ -1,0 +1,173 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { describe, expect, it } from "@effect/vitest";
+import { FogBugzError, ThreadId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as NodeURL from "node:url";
+import * as ServerConfig from "../config.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import { FogBugzService } from "./FogBugzService.ts";
+import * as CaseGit from "./FogBugzCaseGit.ts";
+import { caseGitPath } from "./caseGitPath.ts";
+
+const prepare = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-case-git-" });
+  const remote = path.join(root, "remote.git");
+  const process = yield* ProcessRunner.ProcessRunner;
+  const git = (args: ReadonlyArray<string>, cwd = root) =>
+    process.run({ command: "git", args, cwd });
+  yield* git(["init", "--bare", "--initial-branch=main", remote]);
+  const repository = {
+    connectionId: "connection-fixture",
+    personId: 7,
+    caseId: 42,
+    repositoryId: "f3e37008-65d3-4cd5-8276-6cfdcc8b8901",
+    canWrite: true,
+    remoteUrl: NodeURL.pathToFileURL(remote).href,
+    token: "case-git-secret-fixture",
+  };
+  const serviceLayer = CaseGit.layer.pipe(
+    Layer.provide(
+      Layer.mock(FogBugzService)({ caseGitRepository: () => Effect.succeed(repository) }),
+    ),
+    Layer.provide(ServerConfig.layerTest(root, root)),
+  );
+  return { fs, path, root, remote, git, repository, serviceLayer };
+});
+
+const runtime = ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer));
+
+describe("per-thread case Git checkout", () => {
+  it.live(
+    "clones empty repositories once per thread, preserves local work and reopens existing files",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fixture = yield* prepare;
+          const { fs, path, git, root, repository } = fixture;
+          yield* Effect.gen(function* () {
+            const service = yield* CaseGit.FogBugzCaseGit;
+            const threadId = ThreadId.make("first-thread");
+            const previousGitDirectory = process.env.GIT_DIR;
+            process.env.GIT_DIR = path.join(root, "unrelated.git");
+            const [first, repeated] = yield* Effect.all(
+              [service.ensure(threadId), service.ensure(threadId)],
+              { concurrency: "unbounded" },
+            ).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  if (previousGitDirectory === undefined) delete process.env.GIT_DIR;
+                  else process.env.GIT_DIR = previousGitDirectory;
+                }),
+              ),
+            );
+            expect(first).toEqual(repeated);
+            expect(first.cwd).toBe(
+              path.join(root, "case-files/connection-fixture/7/42/first-thread/repo"),
+            );
+            const config = yield* fs.readFileString(path.join(first.cwd, ".git/config"));
+            expect(config).not.toContain(repository.token);
+            expect((yield* git(["rev-list", "--all"], first.cwd)).stdout).toBe("");
+            yield* fs.writeFileString(path.join(first.cwd, "PRP.md"), "# Local draft\n");
+            expect((yield* service.ensure(threadId)).cwd).toBe(first.cwd);
+            expect(yield* fs.readFileString(path.join(first.cwd, "PRP.md"))).toBe(
+              "# Local draft\n",
+            );
+            yield* git(["add", "PRP.md"], first.cwd);
+            yield* git(
+              [
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-m",
+                "Existing file",
+              ],
+              first.cwd,
+            );
+            yield* git(["push", "origin", "main"], first.cwd);
+            const second = yield* service.ensure(ThreadId.make("second-thread"));
+            expect(second.cwd).not.toBe(first.cwd);
+            expect(yield* fs.readFileString(path.join(second.cwd, "PRP.md"))).toBe(
+              "# Local draft\n",
+            );
+            yield* fs.writeFileString(path.join(first.cwd, "PRP.md"), "Uncommitted changes");
+            expect(yield* fs.readFileString(path.join(second.cwd, "PRP.md"))).toBe(
+              "# Local draft\n",
+            );
+          }).pipe(Effect.provide(fixture.serviceLayer));
+        }),
+      ).pipe(Effect.provide(runtime)),
+  );
+
+  it.live(
+    "rejects changed repository identities and existing directories without overwriting them",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fixture = yield* prepare;
+          yield* Effect.gen(function* () {
+            const service = yield* CaseGit.FogBugzCaseGit;
+            const first = yield* service.ensure(ThreadId.make("thread"));
+            yield* fixture.fs.writeFileString(fixture.path.join(first.cwd, "draft.txt"), "Keep me");
+            fixture.repository.repositoryId = "b92a60a0-28ec-4a2d-808a-48b640470961";
+            expect(yield* service.ensure(ThreadId.make("thread")).pipe(Effect.flip)).toMatchObject({
+              code: "case_git",
+            });
+            expect(
+              yield* fixture.fs.readFileString(fixture.path.join(first.cwd, "draft.txt")),
+            ).toBe("Keep me");
+            expect(
+              caseGitPath(fixture.path, fixture.root, "../outside", 7, 42, "thread"),
+            ).toBeNull();
+            expect(caseGitPath(fixture.path, fixture.root, "connection", 7, 42, "..")).toBeNull();
+          }).pipe(Effect.provide(fixture.serviceLayer));
+        }),
+      ).pipe(Effect.provide(runtime)),
+  );
+
+  it.live("reports missing access and clone failures without publishing a partial checkout", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* prepare;
+        const denied = CaseGit.layer.pipe(
+          Layer.provide(
+            Layer.mock(FogBugzService)({
+              caseGitRepository: () => Effect.fail(new FogBugzError({ code: "access" })),
+            }),
+          ),
+          Layer.provide(ServerConfig.layerTest(fixture.root, fixture.root)),
+        );
+        expect(
+          yield* Effect.flatMap(CaseGit.FogBugzCaseGit, (service) =>
+            service.ensure(ThreadId.make("denied")),
+          ).pipe(Effect.flip, Effect.provide(denied)),
+        ).toMatchObject({ code: "access" });
+        fixture.repository.remoteUrl = NodeURL.pathToFileURL(
+          fixture.path.join(fixture.root, "missing.git"),
+        ).href;
+        yield* Effect.gen(function* () {
+          const service = yield* CaseGit.FogBugzCaseGit;
+          expect(yield* service.ensure(ThreadId.make("failed")).pipe(Effect.flip)).toMatchObject({
+            code: "case_git",
+          });
+          const cwd = caseGitPath(
+            fixture.path,
+            fixture.root,
+            "connection-fixture",
+            7,
+            42,
+            "failed",
+          )!;
+          expect(yield* fixture.fs.exists(cwd)).toBe(false);
+          expect(yield* fixture.fs.readDirectory(fixture.path.dirname(cwd))).toEqual([]);
+        }).pipe(Effect.provide(fixture.serviceLayer));
+      }),
+    ).pipe(Effect.provide(runtime)),
+  );
+});

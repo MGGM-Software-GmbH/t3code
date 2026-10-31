@@ -52,6 +52,18 @@ export class FogBugzService extends Context.Service<
     browserSession: (
       threadId: ThreadId,
     ) => Effect.Effect<{ url: string; baseUrl: string; cookie: string }, FogBugzError>;
+    caseGitRepository: (threadId: ThreadId) => Effect.Effect<
+      {
+        connectionId: string;
+        personId: number;
+        caseId: number;
+        repositoryId: string;
+        canWrite: boolean;
+        remoteUrl: string;
+        token: string;
+      },
+      FogBugzError
+    >;
     projects: () => Effect.Effect<ReadonlyArray<typeof FogBugzProject.Type>, FogBugzError>;
     linkProject: (input: {
       projectId: ProjectId;
@@ -551,6 +563,23 @@ export const layer = Layer.effect(
         return rows[0] ? { ...linked, title: rows[0].title } : null;
       }),
       prepareThread,
+      caseGitRepository: Effect.fn("FogBugz.caseGitRepository")(function* (threadId) {
+        return yield* lock.withPermit(
+          Effect.gen(function* () {
+            const linked = (yield* threadLinks()).find((item) => item.threadId === threadId);
+            if (!linked) return yield* new FogBugzError({ code: "thread" });
+            yield* caseForProject(linked.projectId, linked.caseId);
+            return yield* call(async (api, token, current) => ({
+              ...(await api.caseGitRepository(token, linked.caseId)),
+              connectionId: current.id,
+              personId: current.personId,
+              caseId: linked.caseId,
+              remoteUrl: new URL(`case-git/${linked.caseId}.git`, current.baseUrl).href,
+              token,
+            }));
+          }),
+        );
+      }),
       browserSession: Effect.fn("FogBugz.browserSession")(function* (threadId) {
         return yield* lock.withPermit(
           Effect.gen(function* () {

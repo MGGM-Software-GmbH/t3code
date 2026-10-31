@@ -143,6 +143,33 @@ describe("FogBugz API", () => {
     ]);
   });
 
+  it("requests a case repository by POST and rejects malformed repository identities", async () => {
+    const repositoryId = "3c6f10e1-bc67-4f16-9145-4419476f6fd1";
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(
+        new Response(
+          `<response><caseGit><![CDATA[${JSON.stringify({ repositoryId, canWrite: true })}]]></caseGit></response>`,
+        ),
+      );
+    const api = new FogBugzApi("https://fogbugz.example/subpath/", fetch);
+    expect(await api.caseGitRepository("private-token", 42)).toEqual({
+      repositoryId,
+      canWrite: true,
+    });
+    expect(String(fetch.mock.calls[0]?.[0])).toBe("https://fogbugz.example/subpath/api.asp");
+    expect(fetch.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(new URLSearchParams(String(fetch.mock.calls[0]?.[1]?.body)).get("ixBug")).toBe("42");
+    for (const body of ["{}", "not-json", '{"repositoryId":"../outside","canWrite":true}']) {
+      fetch.mockResolvedValue(
+        new Response(`<response><caseGit><![CDATA[${body}]]></caseGit></response>`),
+      );
+      await expect(api.caseGitRepository("private-token", 42)).rejects.toMatchObject({
+        code: "response",
+      });
+    }
+  });
+
   it("exchanges a token by POST for a separate browser cookie bound to the configured person", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(
       async () =>

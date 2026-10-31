@@ -71,6 +71,7 @@ describe("command permissions", () => {
   it.effect.each([
     [WS_METHODS.previewClose, AuthPreviewOperateScope],
     [WS_METHODS.fogbugzCaseContext, AuthOrchestrationReadScope],
+    [WS_METHODS.fogbugzEnsureCaseGit, AuthSourceControlWriteScope],
   ] as const)("requires the destination grant for %s", ([method, permission]) =>
     Effect.scoped(
       Effect.gen(function* () {

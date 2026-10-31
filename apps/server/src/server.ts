@@ -39,6 +39,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as PdSecrets from "./environment/PdSecrets.ts";
 import * as FogBugz from "./fogbugz/FogBugzService.ts";
+import * as FogBugzCaseGit from "./fogbugz/FogBugzCaseGit.ts";
 import * as FogBugzAutomation from "./fogbugz/FogBugzAutomation.ts";
 import * as PullRequestHttp from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
@@ -703,6 +704,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
 );
 
 const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
+  Layer.provideMerge(FogBugzCaseGit.layer.pipe(Layer.provide(ProcessRunner.layer))),
   Layer.provideMerge(FogBugz.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(layerUsage),
   Layer.provideMerge(CodexResetForecast.layer),

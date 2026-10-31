@@ -14,6 +14,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
+import { caseGitPath } from "../fogbugz/caseGitPath.ts";
 
 export class UnknownWorkspaceError extends Schema.TaggedError<UnknownWorkspaceError>()(
   "UnknownWorkspaceError",
@@ -90,6 +91,46 @@ export const make = Effect.gen(function* () {
       for (const project of projects) {
         if (within(yield* resolveRoot(project.workspaceRoot))) return true;
       }
+
+      // Unlinking a case or changing the account immediately revokes access to its managed root.
+      const checkouts = yield* sql<{
+        connectionId: string;
+        personId: number;
+        caseId: number;
+        threadId: string;
+      }>`
+        SELECT json_extract(connection.payload, '$.id') AS connectionId,
+          json_extract(connection.payload, '$.personId') AS personId,
+          link.case_id AS caseId, link.thread_id AS threadId
+        FROM fogbugz_threads link
+        JOIN orchestration_v2_projection_threads thread ON thread.thread_id = link.thread_id AND thread.deleted_at IS NULL
+        JOIN fogbugz_connection connection ON connection.id = 1
+        WHERE json_extract(connection.payload, '$.authenticated') = 1
+      `.pipe(
+        NodeSqliteClient.readOnly,
+        Effect.orElseSucceed(() => []),
+      );
+      const baseDir = yield* resolveRoot(config.baseDir);
+      if (baseDir)
+        for (const checkout of checkouts) {
+          const root = caseGitPath(
+            path,
+            baseDir,
+            checkout.connectionId,
+            checkout.personId,
+            checkout.caseId,
+            checkout.threadId,
+          );
+          if (
+            root &&
+            within(root) &&
+            (yield* resolveRoot(root)) === root &&
+            (yield* fileSystem
+              .exists(path.join(path.dirname(root), "repository-id"))
+              .pipe(Effect.orElseSucceed(() => false)))
+          )
+            return true;
+        }
 
       const threads = yield* sql<{ readonly worktreePath: string; readonly projectId: string }>`
         SELECT DISTINCT

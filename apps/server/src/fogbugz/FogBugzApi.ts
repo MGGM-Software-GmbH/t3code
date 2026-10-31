@@ -16,6 +16,14 @@ const decodeId = Schema.decodeSync(FogBugzId);
 const decodeProject = Schema.decodeSync(FogBugzProject);
 const decodeCase = Schema.decodeSync(FogBugzCase);
 const isFogBugzError = Schema.is(FogBugzError);
+const decodeCaseGitRepository = Schema.decodeUnknownSync(
+  Schema.Struct({
+    repositoryId: Schema.String.check(
+      Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+    ),
+    canWrite: Schema.Boolean,
+  }),
+);
 const CaseState = Schema.Struct({
   id: FogBugzId,
   projectId: FogBugzId,
@@ -159,6 +167,15 @@ export class FogBugzApi {
 
   async logout(token: string) {
     await this.request({ cmd: "logoff", token });
+  }
+
+  async caseGitRepository(token: string, caseId: number) {
+    const response = await this.request({ cmd: "caseGitRepository", token, ixBug: String(caseId) });
+    try {
+      return decodeCaseGitRepository(JSON.parse(value(response, "caseGit")));
+    } catch {
+      throw new FogBugzError({ code: "response" });
+    }
   }
 
   async browserSession(token: string, personId: number) {

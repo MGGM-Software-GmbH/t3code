@@ -48,19 +48,21 @@ function fixture() {
     requests.push(params);
     const command = params.get("cmd");
     const content =
-      command === "logon"
-        ? "<token>private-token</token>"
-        : command === "viewPerson"
-          ? "<person><ixPerson>7</ixPerson><sFullName>Test Person</sFullName></person>"
-          : command === "listProjects"
-            ? "<projects><project><ixProject>12</ixProject><sProject>Project 12</sProject></project></projects><projectGroups><membership><ixProject>12</ixProject><ixProjectGroup>3</ixProjectGroup><sProjectGroup>MGGM</sProjectGroup></membership></projectGroups>"
-            : command === "listCategories"
-              ? "<categories><category><ixCategory>1</ixCategory><nIconType>1</nIconType></category></categories>"
-              : command === "search"
-                ? params.get("cols") === "ixBug,events"
-                  ? "<cases><case><ixBug>42</ixBug><events><event><ixBugEvent>501</ixBugEvent><sPerson>Test Person</sPerson><dt>2026-10-29T10:00:00Z</dt><s>Required behavior</s></event></events></case></cases>"
-                  : `<cases>${params.get("q") === "42" ? caseXml(42, 12) : caseXml(42, 12) + caseXml(43, 99) + caseXml(44, 12, 8)}</cases>`
-                : "";
+      command === "caseGitRepository"
+        ? '<caseGit><![CDATA[{"repositoryId":"f3e37008-65d3-4cd5-8276-6cfdcc8b8901","canWrite":true}]]></caseGit>'
+        : command === "logon"
+          ? "<token>private-token</token>"
+          : command === "viewPerson"
+            ? "<person><ixPerson>7</ixPerson><sFullName>Test Person</sFullName></person>"
+            : command === "listProjects"
+              ? "<projects><project><ixProject>12</ixProject><sProject>Project 12</sProject></project></projects><projectGroups><membership><ixProject>12</ixProject><ixProjectGroup>3</ixProjectGroup><sProjectGroup>MGGM</sProjectGroup></membership></projectGroups>"
+              : command === "listCategories"
+                ? "<categories><category><ixCategory>1</ixCategory><nIconType>1</nIconType></category></categories>"
+                : command === "search"
+                  ? params.get("cols") === "ixBug,events"
+                    ? "<cases><case><ixBug>42</ixBug><events><event><ixBugEvent>501</ixBugEvent><sPerson>Test Person</sPerson><dt>2026-10-29T10:00:00Z</dt><s>Required behavior</s></event></events></case></cases>"
+                    : `<cases>${params.get("q") === "42" ? caseXml(42, 12) : caseXml(42, 12) + caseXml(43, 99) + caseXml(44, 12, 8)}</cases>`
+                  : "";
     return new Response(`<response>${content}</response>`);
   });
   const dependencies = Layer.merge(Sqlite.layerMemory, secretLayer).pipe(
@@ -82,6 +84,36 @@ const seed = Effect.gen(function* () {
 });
 
 describe("FogBugz integration persistence and access", () => {
+  it.effect(
+    "requires a persisted accessible thread link before preparing a case repository",
+    () => {
+      const test = fixture();
+      return Effect.gen(function* () {
+        using _fetch = vi.spyOn(globalThis, "fetch").mockImplementation(test.fetch);
+        yield* seed;
+        const service = yield* FogBugzService;
+        yield* service.connect(credentials);
+        yield* service.linkProject({ projectId, fogbugzProjectId: 12 });
+        expect((yield* service.caseGitRepository(threadId).pipe(Effect.flip)).code).toBe("thread");
+        expect(test.requests.some((request) => request.get("cmd") === "caseGitRepository")).toBe(
+          false,
+        );
+        yield* service.linkThread({ threadId, caseId: 42 });
+        const repository = yield* service.caseGitRepository(threadId);
+        expect(repository).toMatchObject({
+          caseId: 42,
+          personId: 7,
+          remoteUrl: "https://fogbugz.example/case-git/42.git",
+          token: "private-token",
+        });
+        const request = test.requests.find((item) => item.get("cmd") === "caseGitRepository")!;
+        expect(request.get("token")).toBe("private-token");
+        expect(request.get("ixBug")).toBe("42");
+        yield* service.linkThread({ threadId, caseId: null });
+        expect((yield* service.caseGitRepository(threadId).pipe(Effect.flip)).code).toBe("thread");
+      }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
+    },
+  );
   it.effect("pages automation candidates without truncating at 200 cases", () => {
     const test = fixture();
     const queries: string[] = [];

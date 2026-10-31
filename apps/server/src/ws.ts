@@ -1,5 +1,6 @@
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import { FogBugzService } from "./fogbugz/FogBugzService.ts";
+import { FogBugzCaseGit } from "./fogbugz/FogBugzCaseGit.ts";
 import { FogBugzError } from "@t3tools/contracts";
 import * as FogBugzThreads from "./fogbugz/FogBugzThreads.ts";
 import * as FogBugzBrowser from "./fogbugz/FogBugzBrowser.ts";
@@ -1335,6 +1336,7 @@ export const layerWsRpc = (
       const providerAuth = yield* ProviderAuthService.ProviderAuthService;
       const pdSecrets = yield* PdSecrets.PdSecrets;
       const fogbugz = yield* FogBugzService;
+      const fogbugzCaseGit = yield* FogBugzCaseGit;
       const providerInstallation = yield* makeProviderInstallation();
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
@@ -2461,6 +2463,7 @@ export const layerWsRpc = (
         [WS_METHODS.providerAuthStart]: (input) => providerAuth.start(input, currentSessionId),
         [WS_METHODS.pdSecretsStatus]: () => pdSecrets.status(),
         [WS_METHODS.fogbugzStatus]: () => fogbugz.status(),
+        [WS_METHODS.fogbugzEnsureCaseGit]: (input) => fogbugzCaseGit.ensure(input.threadId),
         [WS_METHODS.fogbugzThreadCases]: () => fogbugz.threadCases(),
         [WS_METHODS.fogbugzOpenCase]: (input) =>
           FogBugzBrowser.openCase(input).pipe(
