@@ -185,6 +185,12 @@ export interface FakeThread {
   readonly title: string;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
+  readonly lifecycle?: Partial<
+    Pick<
+      OrchestrationV2ThreadShell,
+      "unsettledAt" | "unsettledReason" | "settledOverride" | "lastVisitedAt"
+    >
+  >;
 }
 
 /** A thread of `turns` user prompts, each answered in markdown with a list and inline code. */
@@ -244,6 +250,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     settledAt: null,
     lastVisitedAt: AT,
     deletedAt: null,
+    ...thread.lifecycle,
   };
 }
 
@@ -279,8 +286,9 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
       archivedAt: null,
       settledOverride: null,
       settledAt: null,
-      lastVisitedAt: AT,
       deletedAt: null,
+      ...thread.lifecycle,
+      lastVisitedAt: thread.lifecycle?.lastVisitedAt ?? AT,
     },
     runs: [...thread.runs],
     attempts: [],
@@ -307,6 +315,7 @@ const json = (body: unknown, status = 200) =>
 
 // Keyed by thread id: a live thread subscription's queue, for pushing events to it.
 const threadSubscribers = new Map<string, Queue.Queue<OrchestrationV2ThreadStreamItem>>();
+const shellSubscribers = new Set<Queue.Queue<OrchestrationV2ShellStreamItem>>();
 let threads: ReadonlyArray<FakeThread> = [];
 let sequence = 1;
 let extraHandlers: Record<string, (input: never) => unknown> = {};
@@ -326,19 +335,27 @@ const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>
 
 const handlers: Record<string, (input: never) => unknown> = {
   [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: () =>
-    subscribe<OrchestrationV2ShellStreamItem>([
-      {
-        kind: "snapshot",
-        snapshot: {
-          schemaVersion: 1,
-          snapshotSequence: sequence,
-          projects: [project],
-          threads: threads.map(shellOf),
-          archivedThreads: [],
+    subscribe<OrchestrationV2ShellStreamItem>(
+      [
+        {
+          kind: "snapshot",
+          snapshot: {
+            schemaVersion: 1,
+            snapshotSequence: sequence,
+            projects: [project],
+            threads: threads.map(shellOf),
+            archivedThreads: [],
+          },
         },
+        { kind: "synchronized" },
+      ],
+      (queue) => {
+        shellSubscribers.add(queue);
+        return () => {
+          shellSubscribers.delete(queue);
+        };
       },
-      { kind: "synchronized" },
-    ]),
+    ),
   [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input: { readonly threadId: ThreadId }) => {
     const thread = threads.find((candidate) => candidate.id === input.threadId);
     if (!thread) return Stream.never;
@@ -443,6 +460,17 @@ export function installFakeEnvironment(
 }
 
 type ThreadEvent = Extract<OrchestrationV2ThreadStreamItem, { readonly kind: "event" }>["event"];
+
+export async function emitThreadShell(thread: FakeThread): Promise<void> {
+  sequence += 1;
+  const event: OrchestrationV2ShellStreamItem = {
+    kind: "thread.updated",
+    sequence,
+    location: "active",
+    thread: shellOf(thread),
+  };
+  await Effect.runPromise(Effect.forEach(shellSubscribers, (queue) => Queue.offer(queue, event)));
+}
 
 /** Whether the app holds a live subscription to the thread, so events reach it. */
 export function isThreadSubscribed(threadId: ThreadId): boolean {

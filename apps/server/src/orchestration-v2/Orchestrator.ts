@@ -3269,6 +3269,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             settledAt: alreadySettled ? thread.settledAt : (command.settledAt ?? now),
             pullRequests: thread.pullRequests?.map((link) => withPullRequestWatch(link, undefined)),
             unsettledAt: null,
+            unsettledReason: undefined,
             pinnedAt: null,
             pinOrderKey: null,
             activeOrderKey: null,
@@ -3287,6 +3288,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             settledOverride: "active",
             settledAt: null,
             unsettledAt: alreadyPinnedActive ? (thread.unsettledAt ?? null) : now,
+            unsettledReason:
+              alreadyPinnedActive && command.reason === "fogbugz-reactivated"
+                ? thread.unsettledReason
+                : command.reason,
             updatedAt: alreadyPinnedActive ? thread.updatedAt : now,
           };
         }
@@ -5140,6 +5145,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           projection.thread.settledOverride === "active"
             ? (projection.thread.unsettledAt ?? null)
             : now,
+        unsettledReason: "user",
         updatedAt: now,
       };
       yield* emit(

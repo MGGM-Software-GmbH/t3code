@@ -2295,16 +2295,34 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         type: "thread.unsettle",
         commandId: CommandId.make("runtime-layer-lifecycle-unsettle"),
         threadId,
-        reason: "user",
+        reason: "fogbugz-reactivated",
       });
       const activeProjection = yield* orchestrator.getThreadProjection(threadId);
       assert.equal(activeProjection.thread.settledOverride, "active");
       assert.isNull(activeProjection.thread.settledAt);
       assert.isNotNull(activeProjection.thread.unsettledAt);
+      assert.equal(activeProjection.thread.unsettledReason, "fogbugz-reactivated");
       const activeShell = (yield* orchestrator.getShellSnapshot()).threads.find(
         (thread) => thread.id === threadId,
       );
       assert.deepEqual(activeShell?.unsettledAt, activeProjection.thread.unsettledAt);
+      assert.equal(activeShell?.unsettledReason, "fogbugz-reactivated");
+
+      yield* orchestrator.dispatch({
+        type: "thread.unsettle",
+        commandId: CommandId.make("runtime-layer-lifecycle-user-unsettle"),
+        threadId,
+        reason: "user",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.unsettle",
+        commandId: CommandId.make("runtime-layer-lifecycle-already-active"),
+        threadId,
+        reason: "fogbugz-reactivated",
+      });
+      const alreadyActive = yield* orchestrator.getThreadProjection(threadId);
+      assert.equal(alreadyActive.thread.unsettledReason, "user");
+      assert.deepEqual(alreadyActive.thread.unsettledAt, activeProjection.thread.unsettledAt);
 
       const archive = yield* orchestrator.dispatch({
         type: "thread.archive",

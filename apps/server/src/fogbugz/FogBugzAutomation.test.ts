@@ -53,6 +53,7 @@ function fixture(mode: "initial" | "assigned" | "never" = "initial") {
     launches: [] as ThreadLaunchInput[],
     settles: [] as string[],
     unsettles: [] as string[],
+    unsettleReasons: [] as string[],
   };
   const dependencies = Layer.mergeAll(
     Sqlite.layerMemory,
@@ -130,6 +131,7 @@ function fixture(mode: "initial" | "assigned" | "never" = "initial") {
       dispatch: (input) =>
         Effect.sync(() => {
           state.unsettles.push(input.commandId);
+          if (input.type === "thread.unsettle") state.unsettleReasons.push(input.reason);
           return { sequence: 1, storedEvents: [] };
         }),
     }),
@@ -266,6 +268,7 @@ describe("FogBugz automation", () => {
       yield* service.run();
       yield* service.run();
       expect(test.state.unsettles).toHaveLength(1);
+      expect(test.state.unsettleReasons).toEqual(["fogbugz-reactivated"]);
       expect(test.state.launches).toHaveLength(0);
     }).pipe(Effect.provide(test.service));
   });

@@ -216,7 +216,7 @@ const make = Effect.gen(function* () {
             .dispatch({
               type: "thread.unsettle",
               threadId: linked.threadId,
-              reason: "user",
+              reason: "fogbugz-reactivated",
               commandId: CommandId.make(`fogbugz:unsettle:${linked.threadId}:${item.eventId}`),
             })
             .pipe(

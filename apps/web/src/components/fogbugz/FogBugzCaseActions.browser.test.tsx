@@ -21,6 +21,7 @@ import { scopeThreadRef, scopeProjectRef } from "@t3tools/client-runtime/environ
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
@@ -34,6 +35,7 @@ import {
   installFakeEnvironment as installEnvironment,
   threadWithHistory,
   projectionOf,
+  emitThreadShell,
   type FakeDriver,
 } from "../../../test/fakeEnvironment";
 import { render } from "../../../test/render";
@@ -67,7 +69,7 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   trackRpcRequestSent: () => {},
 }));
 
-it("shows case metadata in the sidebar on wide and narrow screens", async () => {
+it("shows case metadata and acknowledges reactivated threads on wide and narrow screens", async () => {
   const thread = {
     ...threadWithHistory("linked-case-sidebar", 1),
     title: "#42 Analyze notification handling",
@@ -89,10 +91,42 @@ it("shows case metadata in the sidebar on wide and narrow screens", async () => 
     notifiedAt: null,
     updatedAt: null,
   };
-  using _environment = installFakeEnvironment([thread], {
+  const reactivatedAt = DateTime.makeUnsafe("2026-10-31T10:00:00.000Z");
+  const reactivatedThread = {
+    ...threadWithHistory("reactivated-case", 1),
+    title: "#43 Investigate reopened case",
+    lifecycle: {
+      unsettledReason: "fogbugz-reactivated" as const,
+      unsettledAt: reactivatedAt,
+      settledOverride: "active" as const,
+    },
+  };
+  const visits: { threadId: ThreadId; visitedAt: string }[] = [];
+  using _environment = installFakeEnvironment([thread, reactivatedThread], {
     [WS_METHODS.fogbugzThreadCases]: () => Effect.succeed([{ threadId: thread.id, case: item }]),
     [WS_METHODS.fogbugzThread]: () => Effect.succeed(null),
     [WS_METHODS.fogbugzStatus]: () => Effect.succeed({ connection: null, projects: [] }),
+    [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (input: {
+      type: string;
+      threadId: ThreadId;
+      visitedAt: string;
+    }) => {
+      if (input.type === "thread.visit") {
+        visits.push(input);
+        if (input.threadId === reactivatedThread.id) {
+          return Effect.promise(() =>
+            emitThreadShell({
+              ...reactivatedThread,
+              lifecycle: {
+                ...reactivatedThread.lifecycle,
+                lastVisitedAt: DateTime.makeUnsafe(input.visitedAt),
+              },
+            }),
+          ).pipe(Effect.as({ sequence: 1, storedEvents: [] }));
+        }
+      }
+      return Effect.succeed({ sequence: 1, storedEvents: [] });
+    },
   });
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
@@ -113,13 +147,29 @@ it("shows case metadata in the sidebar on wide and narrow screens", async () => 
   await expect.element(screen.getByText("Prio 1", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("ToDo", { exact: true })).toBeVisible();
   await expect.element(screen.getByLabelText("Bug", { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByTestId("sidebar-idle-projects-shelf-toggle"));
+  await expect.element(screen.getByText("Reactivated", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Dismiss Reactivated notification" }))
+    .toHaveClass("text-warning-foreground");
   await page.screenshot({ path: ".t3/fogbugz-thread-wide.png" });
   await page.viewport(390, 900);
   screen.container.className = "h-[900px] w-[390px]";
   await userEvent.click(page.getByRole("button", { name: "Toggle main sidebar", exact: true }));
   await expect.element(page.getByText("Prio 1", { exact: true })).toBeVisible();
   await expect.element(page.getByRole("dialog")).toHaveStyle({ opacity: "1" });
+  await expect.element(page.getByText("Reactivated", { exact: true })).toBeVisible();
   await page.screenshot({ path: ".t3/fogbugz-thread-narrow.png" });
+  await userEvent.click(page.getByRole("button", { name: "Dismiss Reactivated notification" }));
+  await expect.element(page.getByText("Reactivated", { exact: true })).not.toBeInTheDocument();
+  await vi.waitFor(() =>
+    expect(visits).toContainEqual(
+      expect.objectContaining({
+        threadId: reactivatedThread.id,
+        visitedAt: DateTime.formatIso(reactivatedAt),
+      }),
+    ),
+  );
 });
 
 it("saves an alternate FogBugz address without asking for the password again", async () => {

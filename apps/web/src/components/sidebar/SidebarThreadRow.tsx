@@ -11,6 +11,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   canSnooze,
   hasQueuedTurnStart,
+  resolveThreadWakeNotification,
   QUEUED_TURN_START_GRACE_MS,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
@@ -43,6 +44,7 @@ import {
   MessageCircleQuestionIcon,
   PinIcon,
   PinOffIcon,
+  RotateCcwIcon,
   ShieldQuestionIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -72,7 +74,7 @@ import { fogbugzEnvironment } from "../../state/fogbugz";
 import { FogBugzCategoryIcon } from "../fogbugz/FogBugzCategoryIcon";
 import { FogBugzThreadMetadata } from "../fogbugz/FogBugzThreadMetadata";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
-import { formatRelativeTimeLabel, parseTimestampDate } from "../../timestampFormat";
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
@@ -534,6 +536,7 @@ const TOP_STATUS_ICONS = {
   failed: CircleAlertIcon,
   done: CircleCheckIcon,
   woke: AlarmClockIcon,
+  reactivated: RotateCcwIcon,
 } as const;
 
 function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: string }) {
@@ -723,12 +726,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
-  const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
-  const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
-  const isWoke =
-    wokeAtDate !== null &&
-    (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
-    thread.settledOverride !== "settled";
+  const wakeNotification = resolveThreadWakeNotification(
+    { ...thread, lastVisitedAt: lastVisitedAt ?? null },
+    props.wokeAt,
+  );
+  const isWoke = wakeNotification !== null;
+  const wakeLabel = wakeNotification?.label ?? "Woke";
+  const wakeIcon = wakeLabel === "Reactivated" ? "reactivated" : "woke";
   const shouldRecede = shouldRecedeSidebarThread({
     status,
     isUnread,
@@ -781,8 +785,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     }
                   : isWoke
                     ? {
-                        label: "Woke",
-                        icon: "woke" as const,
+                        label: wakeLabel,
+                        icon:
+                          wakeLabel === "Reactivated"
+                            ? ("reactivated" as const)
+                            : ("woke" as const),
                         className: "text-warning-foreground",
                       }
                     : isUnread
@@ -792,7 +799,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           className: "text-success-foreground",
                         }
                       : null;
-  const isWokeStatus = topStatus?.icon === "woke";
+  const isWokeStatus = topStatus?.icon === "woke" || topStatus?.icon === "reactivated";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
@@ -841,8 +848,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const handleAcknowledgeWokeClick = (event: ReactMouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    if (props.wokeAt === null) return;
-    onAcknowledgeWoke(threadRef, props.wokeAt);
+    if (wakeNotification === null) return;
+    onAcknowledgeWoke(threadRef, wakeNotification.at);
   };
   const handleContextMenu = (event: ReactMouseEvent) => {
     event.preventDefault();
@@ -1303,16 +1310,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           render={
                             <button
                               type="button"
-                              aria-label="Dismiss Woke notification"
+                              aria-label={`Dismiss ${wakeLabel} notification`}
                               onClick={handleAcknowledgeWokeClick}
                               className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-warning-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                             >
-                              <AlarmClockIcon aria-hidden className="size-3" />
-                              <span role="status">Woke</span>
+                              <TopStatusIcon icon={wakeIcon} className="size-3" />
+                              <span role="status">{wakeLabel}</span>
                             </button>
                           }
                         />
-                        <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
+                        <TooltipPopup side="top">Dismiss {wakeLabel} notification</TooltipPopup>
                       </Tooltip>
                     ) : inFolder && topStatus ? (
                       // Folder rows have no status line, so the status takes the time slot.
@@ -1494,19 +1501,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             render={
                               <button
                                 type="button"
-                                aria-label="Dismiss Woke notification"
+                                aria-label={`Dismiss ${wakeLabel} notification`}
                                 onClick={handleAcknowledgeWokeClick}
                                 className={cn(
                                   "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                                   topStatus.className,
                                 )}
                               >
-                                <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
+                                <TopStatusIcon icon={wakeIcon} className="size-4" />
                                 <span role="status">{topStatus.label}</span>
                               </button>
                             }
                           />
-                          <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
+                          <TooltipPopup side="top">Dismiss {wakeLabel} notification</TooltipPopup>
                         </Tooltip>
                       ) : (
                         <span
