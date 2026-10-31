@@ -3,7 +3,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { CommandId, EnvironmentId, ProjectId, type FogBugzCase } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { MessageSquareIcon, PlusIcon } from "lucide-react";
+import { BellIcon, HistoryIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { fogbugzEnvironment } from "../../state/fogbugz";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
@@ -341,6 +341,9 @@ export function FogBugzCases({
                   (projectId === "all" || link.projectId === projectId),
               ),
             );
+            const caseDate = item.notifiedAt ?? item.updatedAt;
+            const dateLabel = item.notifiedAt ? "Your latest notification" : "Last modified";
+            const DateIcon = item.notifiedAt ? BellIcon : HistoryIcon;
             const actionItems = (target?: ProjectId) =>
               fogbugzCaseActions.map(([action, label]) => (
                 <MenuItem key={action} onClick={() => void processCase(action, item, target)}>
@@ -396,22 +399,19 @@ export function FogBugzCases({
                         <TooltipTrigger render={<span />}>{item.assignedToName}</TooltipTrigger>
                         <TooltipPopup>Assigned to</TooltipPopup>
                       </Tooltip>
-                      <span aria-hidden="true">|</span>
+                      {caseDate && <span aria-hidden="true">|</span>}
                     </span>
-                    <span className="inline-flex max-w-full items-center gap-2">
-                      <Tooltip>
-                        <TooltipTrigger render={<span />}>
-                          {item.notifiedAt ? (
-                            <time dateTime={item.notifiedAt}>
-                              {new Date(item.notifiedAt).toLocaleString()}
-                            </time>
-                          ) : (
-                            "No notification"
-                          )}
-                        </TooltipTrigger>
-                        <TooltipPopup>Your latest notification</TooltipPopup>
-                      </Tooltip>
-                    </span>
+                    {caseDate && (
+                      <span className="inline-flex max-w-full items-center gap-1">
+                        <Tooltip>
+                          <TooltipTrigger render={<span tabIndex={0} aria-label={dateLabel} />}>
+                            <DateIcon aria-hidden className="size-3.5 shrink-0" />
+                          </TooltipTrigger>
+                          <TooltipPopup>{dateLabel}</TooltipPopup>
+                        </Tooltip>
+                        <time dateTime={caseDate}>{new Date(caseDate).toLocaleString()}</time>
+                      </span>
+                    )}
                   </div>
                   <div className="mt-2 flex min-w-0 flex-col gap-1 sm:mt-1">
                     {cases.data?.threads

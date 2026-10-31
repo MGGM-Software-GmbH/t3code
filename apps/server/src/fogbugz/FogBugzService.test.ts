@@ -204,7 +204,7 @@ describe("FogBugz integration persistence and access", () => {
     },
   );
   it.effect(
-    "resolves current readable group members and sorts personal notifications before modification dates",
+    "resolves readable group members and sorts by notification or modification date",
     () => {
       const test = fixture();
       return Effect.gen(function* () {
@@ -241,7 +241,7 @@ describe("FogBugz integration persistence and access", () => {
         });
         const result = yield* service.cases({ query: "", state: "open", assignedToMe: true });
         expect(result.projects).toEqual([{ projectId, fogbugzProjectId: 13 }]);
-        expect(result.cases.map((item) => item.id)).toEqual([43, 42, 41, 40]);
+        expect(result.cases.map((item) => item.id)).toEqual([40, 43, 42, 41]);
         yield* service.linkThread({ threadId, caseId: 43 });
         yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
         expect((yield* service.thread(threadId))?.caseId).toBe(43);

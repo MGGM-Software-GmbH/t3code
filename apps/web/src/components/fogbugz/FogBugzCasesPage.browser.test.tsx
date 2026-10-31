@@ -10,6 +10,7 @@ import "~/index.css";
 import { render } from "../../../test/render";
 import { FogBugzCases } from "./FogBugzCasesPage";
 import { RightPanelEmptyState } from "../RightPanelTabs";
+import { TooltipProvider } from "../ui/tooltip";
 
 const state = vi.hoisted(() => ({
   status: { connection: null, projects: [] } as typeof FogBugzStatus.Type,
@@ -179,7 +180,7 @@ it("does not query other projects after the current project's link is removed", 
   expect(state.requests).toEqual([]);
 });
 
-it.each([390, 700])("keeps case actions in the current project at %i px", async (width) => {
+it.each([390, 700])("shows case dates and actions at %i px", async (width) => {
   setup();
   await page.viewport(width, 800);
   const wasDark = document.documentElement.classList.contains("dark");
@@ -214,17 +215,32 @@ it.each([390, 700])("keeps case actions in the current project at %i px", async 
       { projectId: ProjectId.make("other-project"), fogbugzProjectId: 5 },
     ],
   };
+  state.cases = {
+    ...state.cases,
+    cases: [
+      ...state.cases.cases,
+      {
+        ...state.cases.cases[0]!,
+        id: 23456,
+        title: "Restore the case list after a server restart",
+        notifiedAt: null,
+        updatedAt: "2026-10-30T08:15:00Z",
+      },
+    ],
+  };
   try {
     const onCaseAction = vi.fn(async () => {});
     const container = document.createElement("div");
     container.className = "dark h-[800px] bg-background text-foreground";
     await using screen = await render(
-      <FogBugzCases
-        environmentId={environmentId}
-        projectId={projectId}
-        canProcessCase
-        onCaseAction={onCaseAction}
-      />,
+      <TooltipProvider delay={0}>
+        <FogBugzCases
+          environmentId={environmentId}
+          projectId={projectId}
+          canProcessCase
+          onCaseAction={onCaseAction}
+        />
+      </TooltipProvider>,
       { container },
     );
     await expect
@@ -233,7 +249,16 @@ it.each([390, 700])("keeps case actions in the current project at %i px", async 
     await expect
       .element(screen.getByRole("button", { name: "Case actions for #12345" }))
       .toBeVisible();
-    expect(screen.container.querySelectorAll("article button")).toHaveLength(1);
+    expect(screen.container.querySelectorAll("article button")).toHaveLength(2);
+    expect([...screen.container.querySelectorAll("time")].map((time) => time.dateTime)).toEqual([
+      "2026-10-29T10:30:00Z",
+      "2026-10-30T08:15:00Z",
+    ]);
+    await expect.element(screen.getByText("No notification")).not.toBeInTheDocument();
+    await expect.element(screen.getByLabelText("Your latest notification")).toBeVisible();
+    await expect.element(screen.getByLabelText("Last modified")).toBeVisible();
+    await userEvent.hover(screen.getByLabelText("Last modified"));
+    await expect.element(page.getByText("Last modified", { exact: true })).toBeVisible();
     expect(screen.container.scrollWidth).toBeLessThanOrEqual(width);
     for (const [label, action] of [
       ["Add to Context", "context"],
@@ -245,6 +270,7 @@ it.each([390, 700])("keeps case actions in the current project at %i px", async 
       await userEvent.click(page.getByRole("menuitem", { name: label, exact: true }));
       expect(onCaseAction).toHaveBeenLastCalledWith(action, state.cases.cases[0]);
     }
+    await page.screenshot({ path: `.t3/fogbugz-case-dates-${width}.png` });
     await screen.rerender(
       <FogBugzCases
         environmentId={environmentId}

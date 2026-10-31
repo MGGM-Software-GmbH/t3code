@@ -527,7 +527,9 @@ export const layer = Layer.effect(
         );
         visible.sort(
           (left, right) =>
-            (right.notifiedAt ?? "").localeCompare(left.notifiedAt ?? "") ||
+            (right.notifiedAt ?? right.updatedAt ?? "").localeCompare(
+              left.notifiedAt ?? left.updatedAt ?? "",
+            ) ||
             (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "") ||
             right.id - left.id,
         );
