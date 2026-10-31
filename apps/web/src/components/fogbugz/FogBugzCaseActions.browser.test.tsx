@@ -12,6 +12,10 @@ import {
   type FogBugzCreateThreadInput,
   type FogBugzConnectInput,
   type FogBugzConnection,
+  type FogBugzThreadLink,
+  type FogBugzLinkThreadInput,
+  type PreviewOpenInput,
+  PreviewTabId,
   FogBugzError,
   ThreadId,
   DEFAULT_SERVER_SETTINGS,
@@ -170,6 +174,115 @@ it("shows case metadata and acknowledges reactivated threads on wide and narrow 
       }),
     ),
   );
+});
+
+it("links, opens and unlinks a case from thread details on wide and narrow screens", async () => {
+  const thread = threadWithHistory("case-details-actions", 1);
+  let linked: typeof FogBugzThreadLink.Type | null = null;
+  const opened: Array<PreviewOpenInput["url"]> = [];
+  using _environment = installFakeEnvironment([thread], {
+    [WS_METHODS.fogbugzStatus]: () =>
+      Effect.succeed({
+        connection: {
+          id: "connection",
+          baseUrl: "http://fogbugz.test/",
+          username: "test@example.com",
+          personId: 7,
+          personName: "Test User",
+          authenticated: true,
+        },
+        projects: [],
+      }),
+    [WS_METHODS.fogbugzThread]: () => Effect.succeed(linked),
+    [WS_METHODS.fogbugzThreadCases]: () => Effect.succeed([]),
+    [WS_METHODS.fogbugzLinkThread]: (input: typeof FogBugzLinkThreadInput.Type) => {
+      if (input.caseId === 999) {
+        return Effect.fail(new FogBugzError({ code: "access" }));
+      }
+      linked =
+        input.caseId === null
+          ? null
+          : {
+              threadId: thread.id,
+              projectId: ProjectId.make("project-render"),
+              caseId: input.caseId,
+              title: "Investigate the assigned case",
+              url: `http://fogbugz.test/default.asp?${input.caseId}`,
+            };
+      return Effect.void;
+    },
+    [WS_METHODS.fogbugzOpenCase]: (input: PreviewOpenInput) => {
+      opened.push(input.url);
+      return Effect.succeed({
+        threadId: thread.id,
+        tabId: PreviewTabId.make("case-details-browser"),
+        navStatus: { _tag: "Success", url: input.url, title: "FogBugz case" },
+        canGoBack: false,
+        canGoForward: false,
+        updatedAt: "2026-10-31T10:00:00.000Z",
+      });
+    },
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    panelAnimationDurationMs: 0,
+  });
+  await page.viewport(1400, 900);
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  const container = document.createElement("div");
+  container.className = "h-[900px] w-[1400px]";
+  // AppRoot owns routing for this integrated thread-details journey.
+  await using screen = await render(<AppRoot router={router} />, { container, router: false });
+  const linkButton = page.getByRole("button", { name: "Link FogBugz case", exact: true });
+  await expect.element(linkButton).toBeVisible();
+  expect(linkButton.element().closest("[data-thread-details-card]")).not.toBeNull();
+  await userEvent.click(linkButton);
+  await userEvent.fill(page.getByRole("spinbutton", { name: "FogBugz case number" }), "999");
+  await userEvent.click(page.getByRole("button", { name: "Link case", exact: true }));
+  await expect
+    .element(
+      page.getByRole("alert").filter({ hasText: new FogBugzError({ code: "access" }).message }),
+    )
+    .toBeVisible();
+  expect(linked).toBeNull();
+  await userEvent.fill(page.getByRole("spinbutton", { name: "FogBugz case number" }), "42");
+  await userEvent.click(page.getByRole("button", { name: "Link case", exact: true }));
+  await vi.waitFor(() => expect(opened).toEqual(["http://fogbugz.test/default.asp?42"]));
+  await userEvent.click(page.getByRole("button", { name: "Toggle thread details panel" }));
+  await expect
+    .element(page.getByRole("button", { name: "Open FogBugz case", exact: true }))
+    .toBeVisible();
+  await expect
+    .element(page.getByRole("dialog", { name: "Thread details", exact: true }))
+    .toHaveStyle({ opacity: "1" });
+  await page.screenshot({ path: ".t3/fogbugz-details-wide.png" });
+  await userEvent.click(page.getByRole("button", { name: "Open FogBugz case", exact: true }));
+  await vi.waitFor(() => expect(opened).toHaveLength(2));
+  await userEvent.click(page.getByRole("button", { name: "Toggle thread details panel" }));
+  await expect
+    .element(page.getByRole("button", { name: "Open FogBugz case", exact: true }))
+    .not.toBeInTheDocument();
+
+  await page.viewport(390, 900);
+  screen.container.className = "h-[900px] w-[390px]";
+  await userEvent.click(page.getByRole("button", { name: "Toggle thread details panel" }));
+  await expect
+    .element(page.getByRole("button", { name: "Unlink FogBugz case", exact: true }))
+    .toBeVisible();
+  await expect
+    .element(page.getByRole("dialog", { name: "Thread details", exact: true }))
+    .toHaveStyle({ opacity: "1" });
+  await page.screenshot({ path: ".t3/fogbugz-details-narrow.png" });
+  await userEvent.click(page.getByRole("button", { name: "Unlink FogBugz case", exact: true }));
+  await expect.element(linkButton).toBeVisible();
+  expect(linked).toBeNull();
+  await userEvent.click(linkButton);
+  await expect.element(page.getByRole("spinbutton", { name: "FogBugz case number" })).toBeVisible();
+  await page.screenshot({ path: ".t3/fogbugz-details-link-narrow.png" });
 });
 
 it("saves an alternate FogBugz address without asking for the password again", async () => {

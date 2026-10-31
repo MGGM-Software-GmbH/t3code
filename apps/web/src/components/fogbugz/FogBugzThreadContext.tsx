@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { ExternalLinkIcon, LinkIcon, UnlinkIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { openUrlInPreview } from "../../browser/openFileInPreview";
 import { useBrowserDefaults } from "../../browser/browserDefaults";
@@ -9,8 +10,21 @@ import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/qu
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { toastManager } from "../ui/toast";
+import { ThreadDetailsControl } from "../chat/ThreadDetailsControl";
+import { ThreadDetailsSection } from "../chat/ThreadDetailsSection";
+import {
+  THREAD_DETAILS_PANEL_ICON_CLASS,
+  THREAD_DETAILS_PANEL_LABEL_CLASS,
+} from "../chat/threadDetailsPanelStyles";
 
-export function FogBugzThreadContext({ threadRef }: { threadRef: ScopedThreadRef }) {
+export function FogBugzThreadContext({
+  threadRef,
+  display = "context",
+}: {
+  threadRef: ScopedThreadRef;
+  display?: "context" | "details";
+}) {
   const { environmentId, threadId } = threadRef;
   const status = useEnvironmentQuery(fogbugzEnvironment.status({ environmentId, input: {} }));
   const linked = useEnvironmentQuery(
@@ -43,37 +57,42 @@ export function FogBugzThreadContext({ threadRef }: { threadRef: ScopedThreadRef
           },
         }),
     });
-    if (result._tag === "Failure") setError(formatEnvironmentQueryError(result.cause));
+    if (result._tag === "Failure") {
+      const description = formatEnvironmentQueryError(result.cause);
+      if (display === "context") {
+        toastManager.add({ type: "error", title: "Unable to open FogBugz case", description });
+      } else {
+        setError(description);
+      }
+    } else {
+      setError(null);
+    }
   }
   const openOnArrival = useEffectEvent(openCase);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Synchronizes the persisted case link with the external Browser panel once on arrival.
   useEffect(() => {
+    if (display !== "context") return;
     if (!linked.data) opened.current = null;
     if (linked.data && browserPermission && opened.current !== linked.data.url) {
       opened.current = linked.data.url;
       void openOnArrival();
     }
-  }, [linked.data, browserPermission]);
+  }, [linked.data, browserPermission, display]);
 
+  if (display === "context") return null;
   if (!status.data?.connection && !linked.data) return null;
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-sm">
+    <ThreadDetailsSection headingId="thread-details-fogbugz-heading" title="FogBugz">
       {linked.data ? (
         <>
-          <span className="min-w-0 flex-1 truncate">
-            FogBugz #{linked.data.caseId}: {linked.data.title}
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={!browserPermission}
-            onClick={() => void openCase()}
-          >
-            Open case
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
+          <p className="mb-1 px-2.5 text-xs break-words text-muted-foreground">
+            #{linked.data.caseId}: {linked.data.title}
+          </p>
+          <ThreadDetailsControl disabled={!browserPermission} onClick={() => void openCase()}>
+            <ExternalLinkIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Open FogBugz case</span>
+          </ThreadDetailsControl>
+          <ThreadDetailsControl
             disabled={!permission || busy}
             onClick={async () => {
               setBusy(true);
@@ -85,22 +104,23 @@ export function FogBugzThreadContext({ threadRef }: { threadRef: ScopedThreadRef
               if (result._tag === "Success") linked.refresh();
             }}
           >
-            Unlink
-          </Button>
+            <UnlinkIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Unlink FogBugz case</span>
+          </ThreadDetailsControl>
         </>
       ) : (
-        <Button
-          size="sm"
-          variant="ghost"
+        <ThreadDetailsControl
           disabled={!permission}
           onClick={() => setEditing(!editing)}
+          aria-expanded={editing}
         >
-          Link FogBugz case
-        </Button>
+          <LinkIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+          <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Link FogBugz case</span>
+        </ThreadDetailsControl>
       )}
       {editing && !linked.data ? (
         <form
-          className="flex items-center gap-2"
+          className="mt-1 flex items-center gap-2 px-2.5"
           onSubmit={async (event) => {
             event.preventDefault();
             setBusy(true);
@@ -116,7 +136,7 @@ export function FogBugzThreadContext({ threadRef }: { threadRef: ScopedThreadRef
             }
           }}
         >
-          <div className="w-28">
+          <div className="min-w-0 flex-1">
             <Input
               aria-label="FogBugz case number"
               type="number"
@@ -133,10 +153,10 @@ export function FogBugzThreadContext({ threadRef }: { threadRef: ScopedThreadRef
         </form>
       ) : null}
       {error || linked.error ? (
-        <span role="alert" className="basis-full text-destructive">
+        <p role="alert" className="mt-1 px-2.5 text-xs break-words text-destructive">
           {error ?? linked.error}
-        </span>
+        </p>
       ) : null}
-    </div>
+    </ThreadDetailsSection>
   );
 }
