@@ -145,22 +145,36 @@ describe("FogBugz API", () => {
 
   it("requests a case repository by POST and rejects malformed repository identities", async () => {
     const repositoryId = "3c6f10e1-bc67-4f16-9145-4419476f6fd1";
+    const limits = {
+      fileBytes: 26214400,
+      groupBytes: 104857600,
+      groupFiles: 100,
+      repositoryBytes: 524288000,
+    };
     const fetch = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValue(
         new Response(
-          `<response><caseGit><![CDATA[${JSON.stringify({ repositoryId, canWrite: true })}]]></caseGit></response>`,
+          `<response><caseGit><![CDATA[${JSON.stringify({ repositoryId, canWrite: true, limits })}]]></caseGit></response>`,
         ),
       );
     const api = new FogBugzApi("https://fogbugz.example/subpath/", fetch);
     expect(await api.caseGitRepository("private-token", 42)).toEqual({
       repositoryId,
       canWrite: true,
+      limits,
     });
     expect(String(fetch.mock.calls[0]?.[0])).toBe("https://fogbugz.example/subpath/api.asp");
     expect(fetch.mock.calls[0]?.[1]?.method).toBe("POST");
     expect(new URLSearchParams(String(fetch.mock.calls[0]?.[1]?.body)).get("ixBug")).toBe("42");
-    for (const body of ["{}", "not-json", '{"repositoryId":"../outside","canWrite":true}']) {
+    for (const body of [
+      "{}",
+      "not-json",
+      '{"repositoryId":"../outside","canWrite":true}',
+      JSON.stringify({ repositoryId, canWrite: true }),
+      JSON.stringify({ repositoryId, canWrite: true, limits: { ...limits, fileBytes: 0 } }),
+      JSON.stringify({ repositoryId, canWrite: true, limits: { ...limits, groupFiles: -1 } }),
+    ]) {
       fetch.mockResolvedValue(
         new Response(`<response><caseGit><![CDATA[${body}]]></caseGit></response>`),
       );

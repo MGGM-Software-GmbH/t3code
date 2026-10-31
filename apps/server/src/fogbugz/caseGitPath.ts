@@ -9,7 +9,8 @@ export const caseGitPath = (
   threadId: string,
 ) => {
   if (
-    ![connectionId, threadId].every((value) => /^[a-zA-Z0-9_-]+$/.test(value)) ||
+    !/^[a-zA-Z0-9_-]+$/.test(connectionId) ||
+    !/^[a-zA-Z0-9_:-]+$/.test(threadId) ||
     !Number.isSafeInteger(personId) ||
     personId < 1 ||
     !Number.isSafeInteger(caseId) ||
@@ -22,7 +23,7 @@ export const caseGitPath = (
     connectionId,
     String(personId),
     String(caseId),
-    threadId,
+    encodeURIComponent(threadId),
     "repo",
   );
 };

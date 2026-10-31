@@ -73,6 +73,7 @@ export const FogBugzCaseGitCheckout = Schema.Struct({
   repositoryId: Schema.String,
   cwd: Schema.String,
   canWrite: Schema.Boolean,
+  syncIssue: Schema.optional(Schema.String),
 });
 export const FogBugzThreadCase = Schema.Struct({
   threadId: ThreadId,

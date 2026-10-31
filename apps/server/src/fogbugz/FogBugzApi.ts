@@ -22,6 +22,12 @@ const decodeCaseGitRepository = Schema.decodeUnknownSync(
       Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
     ),
     canWrite: Schema.Boolean,
+    limits: Schema.Struct({
+      fileBytes: FogBugzId,
+      groupBytes: FogBugzId,
+      groupFiles: FogBugzId,
+      repositoryBytes: FogBugzId,
+    }),
   }),
 );
 const CaseState = Schema.Struct({

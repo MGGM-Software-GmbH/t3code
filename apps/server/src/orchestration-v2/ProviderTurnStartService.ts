@@ -26,6 +26,8 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
+import { withCaseGitRoot } from "../fogbugz/caseGitInstructions.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -128,6 +130,7 @@ export const layer: Layer.Layer<
   ProviderTurnStartServiceV2,
   never,
   | EventSink.EventSinkV2
+  | FogBugzCaseGit.FogBugzCaseGit
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
@@ -146,6 +149,7 @@ export const layer: Layer.Layer<
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
+    const caseGit = yield* FogBugzCaseGit.FogBugzCaseGit;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -1419,12 +1423,20 @@ export const layer: Layer.Layer<
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           const start = compact ? session.compactThread! : session.startTurn;
-          const context = [delivery.context, restartNote]
+          const caseContext =
+            compact || goalCommand
+              ? null
+              : yield* caseGit.prepareTurn(projection.thread.id, run.id);
+          if (!(yield* isCurrentAttemptInStatus("running"))) return;
+          const context = [caseContext?.text ?? "", delivery.context, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
           yield* start({
             ...(noteContinuation ? promptedInput : turnInput),
+            runtimePolicy: caseContext?.canWrite
+              ? withCaseGitRoot(turnInput.runtimePolicy, caseContext.cwd)
+              : turnInput.runtimePolicy,
             message: {
               ...turnInput.message,
               text:
@@ -1468,13 +1480,7 @@ export const layer: Layer.Layer<
               }),
         ),
       );
-      const deliverySession =
-        effectiveHandoffs.length === 0 &&
-        retryHandoff.length === 0 &&
-        restartNote === "" &&
-        !noteContinuation
-          ? session
-          : makeDeliverySession(session, startWithHandoffs);
+      const deliverySession = makeDeliverySession(session, startWithHandoffs);
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,

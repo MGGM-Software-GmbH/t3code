@@ -19,8 +19,10 @@ import * as Layer from "effect/Layer";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
 
 export const layer = Layer.mergeAll(
+  Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({ prepareTurn: () => Effect.succeed(null) }),
   Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
     refreshReviewComments: ({ records }) => Effect.succeed([...records]),
   }),

@@ -3,6 +3,7 @@ import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
 import { assert, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
@@ -88,6 +89,10 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 const layerPlatformTest = Layer.mergeAll(
+  Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({
+    prepareTurn: () => Effect.succeed(null),
+    finishTurn: () => Effect.void,
+  }),
   NodeServices.layer,
   Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
     refreshReviewComments: ({ records }) => Effect.succeed([...records]),

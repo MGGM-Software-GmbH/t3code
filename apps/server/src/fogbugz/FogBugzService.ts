@@ -61,6 +61,7 @@ export class FogBugzService extends Context.Service<
         canWrite: boolean;
         remoteUrl: string;
         token: string;
+        limits: Awaited<ReturnType<FogBugzApi["caseGitRepository"]>>["limits"];
       },
       FogBugzError
     >;

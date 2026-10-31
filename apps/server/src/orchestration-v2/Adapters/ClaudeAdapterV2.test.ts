@@ -245,10 +245,12 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       nativeThreadId: "native-permission-override",
       resume: false,
       cwd: "/workspace",
+      workspaceDirectories: ["/case-files/42/repo"],
       permissionMode: "default",
       settings: { ...AUTO_COMPACT_CLAUDE_SETTINGS, launchArgs },
     });
     assert.equal(options.permissionMode, expected);
+    assert.deepEqual(options.additionalDirectories, ["/workspace", "/case-files/42/repo"]);
     assert.isUndefined(options.extraArgs?.["permission-mode"]);
     assert.isUndefined(options.extraArgs?.["dangerously-skip-permissions"]);
   });

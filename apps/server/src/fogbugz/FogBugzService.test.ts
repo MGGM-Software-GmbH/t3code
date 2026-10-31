@@ -49,7 +49,7 @@ function fixture() {
     const command = params.get("cmd");
     const content =
       command === "caseGitRepository"
-        ? '<caseGit><![CDATA[{"repositoryId":"f3e37008-65d3-4cd5-8276-6cfdcc8b8901","canWrite":true}]]></caseGit>'
+        ? '<caseGit><![CDATA[{"repositoryId":"f3e37008-65d3-4cd5-8276-6cfdcc8b8901","canWrite":true,"limits":{"fileBytes":26214400,"groupBytes":104857600,"groupFiles":100,"repositoryBytes":524288000}}]]></caseGit>'
         : command === "logon"
           ? "<token>private-token</token>"
           : command === "viewPerson"

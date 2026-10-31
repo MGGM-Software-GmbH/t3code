@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import * as CheckpointCapture from "./CheckpointCaptureService.ts";
@@ -23,6 +24,12 @@ it.effect("completes finalization when the post-checkpoint workspace refresh fai
   const layer = RunFinalization.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({
+          finishTurn: () =>
+            Effect.sync(() => {
+              captured.push("case-git");
+            }),
+        }),
         Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
           execute: () =>
             Effect.sync(() => {
@@ -54,7 +61,7 @@ it.effect("completes finalization when the post-checkpoint workspace refresh fai
   return Effect.gen(function* () {
     const service = yield* RunFinalization.RunFinalizationService;
     yield* service.finalize({ threadId, runId, scopeId });
-    assert.deepEqual(captured, ["checkpoint", "refresh"]);
+    assert.deepEqual(captured, ["case-git", "checkpoint", "refresh"]);
   }).pipe(Effect.provide(layer));
 });
 

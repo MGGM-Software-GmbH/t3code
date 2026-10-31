@@ -34,6 +34,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
@@ -65,8 +66,19 @@ const normalize = (target: string) => {
   }
   return `/${parts.join("/")}`;
 };
-const layerWorktreeLocation = (worktreesDir = managedWorktreesDir) =>
+const layerWorktreeLocation = (
+  worktreesDir = managedWorktreesDir,
+  caseContext: { text: string; cwd: string; canWrite: boolean } | null = null,
+  onPrepareCase?: () => void,
+) =>
   Layer.mergeAll(
+    Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({
+      prepareTurn: () =>
+        Effect.sync(() => {
+          onPrepareCase?.();
+          return caseContext;
+        }),
+    }),
     Path.layer,
     Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as ServerConfig.ServerConfig["Service"]),
     ServerSettings.layerTest(),
@@ -161,6 +173,7 @@ function startWithMissingWorktree(
           getById: () =>
             Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
         }),
+        Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({ prepareTurn: () => Effect.succeed(null) }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords: () => {
             projectionReadCount += 1;
@@ -269,6 +282,8 @@ it.each([
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
+  readonly caseContext?: { text: string; cwd: string; canWrite: boolean };
+  readonly onPrepareCase?: () => void;
   readonly contextRecords?: ReadonlyArray<ComposerContextRecord>;
   readonly refreshReviewComments?: WorkspaceFileSystem.WorkspaceFileSystem["Service"]["refreshReviewComments"];
   readonly worktreePath?: string;
@@ -588,6 +603,7 @@ function makeLocalCommandHarness(input: {
       ),
     ensureThread: () => Effect.succeed(providerThread),
   };
+  const nativeStart = vi.fn(() => Effect.void);
   const open = vi.fn(() =>
     input.interruptOpen === true
       ? Effect.interrupt
@@ -626,6 +642,7 @@ function makeLocalCommandHarness(input: {
                   },
                   ensureThread: () => Effect.succeed(providerThread),
                   resumeThread: () => Effect.succeed(projection.providerThreads[0]),
+                  startTurn: nativeStart,
                 } as never)
               : Effect.die("A local command must not open a native session."),
   );
@@ -713,7 +730,7 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
-        layerWorktreeLocation(input.worktreesDir),
+        layerWorktreeLocation(input.worktreesDir, input.caseContext, input.onPrepareCase),
         input.fileSystem === undefined
           ? FileSystem.layerNoop({ exists: () => Effect.succeed(true) })
           : Layer.succeed(FileSystem.FileSystem, input.fileSystem),
@@ -780,6 +797,7 @@ function makeLocalCommandHarness(input: {
     resolveRuntimePolicy,
     createWorktree,
     open,
+    nativeStart,
     writeIfRunCurrent,
     startRootRun,
     interruptTurn,
@@ -1355,6 +1373,48 @@ effectIt.effect("does not overwrite a run interrupted while its provider session
     expect(projection.turnItems).toEqual([]);
     expect(harness.events).toEqual([]);
   }),
+);
+
+effectIt.effect.each([false, true])(
+  "delivers resumed case instructions unless preparation is interrupted: %s",
+  (interrupted) =>
+    Effect.gen(function* () {
+      const text = "Case #42: put PRP.md in /case-files/42/repo, never in docs/prp/.";
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        previousTurn: { runStatus: "completed", turnStatus: "completed" },
+        caseContext: { text, cwd: "/case-files/42/repo", canWrite: true },
+        onPrepareCase: () => {
+          if (!interrupted) return;
+          const projection = harness.projection();
+          harness.setProjection({
+            ...projection,
+            runs: projection.runs.map((run) =>
+              run.status === "running" ? { ...run, status: "interrupted" } : run,
+            ),
+          });
+        },
+      });
+      yield* harness.start;
+      const input = harness.startRootRun.mock.calls[0]![0];
+      yield* input.session.startTurn({
+        message: input.message,
+        runtimePolicy: { runtimeMode: "auto", interactionMode: "default", cwd: "/project" },
+      } as never);
+      if (interrupted) {
+        expect(harness.nativeStart).not.toHaveBeenCalled();
+        return;
+      }
+      expect(harness.nativeStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({ text: `${text}\n\nUser message:\nContinue` }),
+          runtimePolicy: expect.objectContaining({
+            cwd: "/project",
+            sandboxPolicy: { type: "workspaceWrite", writableRoots: ["/case-files/42/repo"] },
+          }),
+        }),
+      );
+    }),
 );
 
 effectIt.effect("does not mistake a failed state read for a superseded run", () =>

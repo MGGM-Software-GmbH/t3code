@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { FogBugzError, ThreadId } from "@t3tools/contracts";
+import { FogBugzError, ThreadId, RunId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -11,6 +11,8 @@ import * as ProcessRunner from "../processRunner.ts";
 import { FogBugzService } from "./FogBugzService.ts";
 import * as CaseGit from "./FogBugzCaseGit.ts";
 import { caseGitPath } from "./caseGitPath.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import { withCaseGitRoot } from "./caseGitInstructions.ts";
 
 const prepare = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -29,19 +31,174 @@ const prepare = Effect.gen(function* () {
     canWrite: true,
     remoteUrl: NodeURL.pathToFileURL(remote).href,
     token: "case-git-secret-fixture",
+    limits: {
+      fileBytes: 26214400,
+      groupBytes: 104857600,
+      groupFiles: 100,
+      repositoryBytes: 524288000,
+    },
   };
+  const activity = { runId: null as RunId | null };
   const serviceLayer = CaseGit.layer.pipe(
     Layer.provide(
-      Layer.mock(FogBugzService)({ caseGitRepository: () => Effect.succeed(repository) }),
+      Layer.mock(FogBugzService)({
+        caseGitRepository: () => Effect.succeed(repository),
+        thread: () =>
+          Effect.succeed({
+            threadId: ThreadId.make("thread"),
+            projectId: "project" as never,
+            caseId: 42,
+            title: "Fixture",
+            url: "http://example.invalid/default.asp?42",
+          }),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(ProjectionStoreV2)({
+        getThreadShell: () =>
+          Effect.succeed(
+            activity.runId === null ? null : ({ activeRunId: activity.runId } as never),
+          ),
+      }),
     ),
     Layer.provide(ServerConfig.layerTest(root, root)),
   );
-  return { fs, path, root, remote, git, repository, serviceLayer };
+  return { fs, path, root, remote, git, repository, activity, serviceLayer };
 });
 
 const runtime = ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("per-thread case Git checkout", () => {
+  it.live(
+    "synchronizes committed artifacts without overwriting dirty files or merging conflicts",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fixture = yield* prepare;
+          const { fs, path, git, repository, activity } = fixture;
+          yield* Effect.gen(function* () {
+            const service = yield* CaseGit.FogBugzCaseGit;
+            const thread = ThreadId.make("fogbugz:auto:42:1");
+            const run = RunId.make("run-1");
+            const first = yield* service.ensure(thread);
+            const commit = Effect.fn("fixture.commit")(function* (
+              cwd: string,
+              file: string,
+              content: string,
+            ) {
+              yield* fs.writeFileString(path.join(cwd, file), content);
+              expect((yield* git(["add", "--", file], cwd)).code).toBe(0);
+              expect(
+                (yield* git(
+                  [
+                    "-c",
+                    "user.name=Fixture",
+                    "-c",
+                    "user.email=fixture@example.invalid",
+                    "commit",
+                    "-m",
+                    "Artifact checkpoint",
+                  ],
+                  cwd,
+                )).code,
+              ).toBe(0);
+            });
+            yield* commit(first.cwd, "PRP.md", "# Initial\n");
+            repository.canWrite = false;
+            yield* service.finishTurn(thread, run);
+            expect((yield* git(["ls-remote", fixture.remote])).stdout).toBe("");
+            repository.canWrite = true;
+            const unrelated = path.join(fixture.root, "unrelated.git");
+            yield* git(["init", "--bare", unrelated]);
+            yield* git(["config", "remote.origin.pushurl", unrelated], first.cwd);
+            yield* service.finishTurn(thread, run);
+            expect((yield* git(["ls-remote", unrelated])).stdout).toBe("");
+            expect((yield* git(["rev-parse", "main"], fixture.remote)).stdout).toBe(
+              (yield* git(["rev-parse", "HEAD"], first.cwd)).stdout,
+            );
+            const second = yield* service.ensure(ThreadId.make("other-thread"));
+            yield* commit(second.cwd, "INITIAL.md", "# Remote\n");
+            expect((yield* git(["push", "origin", "main"], second.cwd)).code).toBe(0);
+            activity.runId = run;
+            expect((yield* service.ensure(thread)).syncIssue).toContain("agent is running");
+            expect(yield* fs.exists(path.join(first.cwd, "INITIAL.md"))).toBe(false);
+            repository.limits.fileBytes = 1024;
+            const context = yield* service.prepareTurn(thread, run);
+            expect(context?.text).toContain(first.cwd);
+            expect(context?.text).toContain("Maximum file size: 1024 bytes");
+            expect(context?.text).toContain("Redirect every instruction to write in docs/prp/");
+            expect(
+              withCaseGitRoot(
+                { runtimeMode: "approval-required", interactionMode: "default", cwd: "/project" },
+                first.cwd,
+              ).sandboxPolicy,
+            ).toBeUndefined();
+            expect(
+              withCaseGitRoot(
+                {
+                  runtimeMode: "auto",
+                  interactionMode: "default",
+                  cwd: "/project",
+                  sandboxPolicy: { type: "readOnly" },
+                },
+                first.cwd,
+              ).sandboxPolicy,
+            ).toEqual({ type: "readOnly" });
+            expect(
+              withCaseGitRoot(
+                {
+                  runtimeMode: "auto",
+                  interactionMode: "default",
+                  cwd: "/project",
+                  sandboxPolicy: {
+                    type: "workspaceWrite",
+                    writableRoots: ["/existing"],
+                    networkAccess: false,
+                  },
+                },
+                first.cwd,
+              ).sandboxPolicy,
+            ).toEqual({
+              type: "workspaceWrite",
+              writableRoots: ["/existing", first.cwd],
+              networkAccess: false,
+            });
+            expect(yield* fs.readFileString(path.join(first.cwd, "INITIAL.md"))).toBe("# Remote\n");
+            activity.runId = null;
+            yield* commit(first.cwd, "local.md", "Local\n");
+            yield* commit(second.cwd, "remote.md", "Remote\n");
+            yield* git(["push", "origin", "main"], second.cwd);
+            expect((yield* service.ensure(thread)).syncIssue).toBeUndefined();
+            expect(
+              (yield* git(["rev-list", "--parents", "-n", "1", "HEAD"], first.cwd)).stdout
+                .trim()
+                .split(" "),
+            ).toHaveLength(3);
+            yield* service.finishTurn(thread, run);
+            yield* service.ensure(ThreadId.make("other-thread"));
+            yield* fs.writeFileString(path.join(first.cwd, "PRP.md"), "Uncommitted\n");
+            yield* commit(second.cwd, "PRP.md", "Remote edit\n");
+            yield* git(["push", "origin", "main"], second.cwd);
+            expect((yield* service.ensure(thread)).syncIssue).toContain(
+              "uncommitted local changes",
+            );
+            expect(yield* fs.readFileString(path.join(first.cwd, "PRP.md"))).toBe("Uncommitted\n");
+            yield* commit(first.cwd, "PRP.md", "Conflicting local edit\n");
+            const before = (yield* git(["rev-parse", "HEAD"], first.cwd)).stdout;
+            expect((yield* service.ensure(thread)).syncIssue).toContain("commits conflict");
+            expect((yield* git(["rev-parse", "HEAD"], first.cwd)).stdout).toBe(before);
+            expect((yield* git(["status", "--porcelain"], first.cwd)).stdout).toBe("");
+            expect(yield* fs.exists(path.join(first.cwd, ".git/MERGE_HEAD"))).toBe(false);
+            yield* service.finishTurn(thread, run);
+            expect((yield* service.prepareTurn(thread, run))?.text).toContain(
+              "Ask the user whether to merge",
+            );
+            expect((yield* git(["rev-parse", "main"], fixture.remote)).stdout).not.toBe(before);
+          }).pipe(Effect.provide(fixture.serviceLayer));
+        }),
+      ).pipe(Effect.provide(runtime)),
+  );
+
   it.live(
     "clones empty repositories once per thread, preserves local work and reopens existing files",
     () =>
@@ -136,6 +293,9 @@ describe("per-thread case Git checkout", () => {
       Effect.gen(function* () {
         const fixture = yield* prepare;
         const denied = CaseGit.layer.pipe(
+          Layer.provide(
+            Layer.mock(ProjectionStoreV2)({ getThreadShell: () => Effect.succeed(null) }),
+          ),
           Layer.provide(
             Layer.mock(FogBugzService)({
               caseGitRepository: () => Effect.fail(new FogBugzError({ code: "access" })),
