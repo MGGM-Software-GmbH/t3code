@@ -516,7 +516,13 @@ it.each([
       [WS_METHODS.fogbugzEnsureCaseGit]: () =>
         failing
           ? Effect.fail(new FogBugzError({ code: "case_git" }))
-          : Effect.succeed({ caseId: 42, repositoryId: "fixture", cwd, canWrite: true }),
+          : Effect.succeed({
+              caseId: 42,
+              repositoryId: "fixture",
+              cwd,
+              canWrite: true,
+              syncIssue: "Local and remote commits conflict. The working tree has been preserved.",
+            }),
       [WS_METHODS.projectsListEntries]: (input: { cwd: string }) =>
         Effect.sync(() => {
           return {
@@ -561,6 +567,9 @@ it.each([
       .toBeVisible();
     failing = false;
     await userEvent.click(page.getByRole("button", { name: "Retry", exact: true }));
+    await expect
+      .element(page.getByRole("status").filter({ hasText: "Local and remote commits conflict." }))
+      .toBeVisible();
     await expect.element(page.getByRole("treeitem", { name: "PRP.md", exact: true })).toBeVisible();
     await userEvent.click(page.getByRole("treeitem", { name: "PRP.md", exact: true }));
     await expect

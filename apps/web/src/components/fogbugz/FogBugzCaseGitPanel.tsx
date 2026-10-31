@@ -94,28 +94,37 @@ function CaseGitFiles(props: Props) {
       </p>
     );
   return (
-    <FilePreviewPanel
-      {...props}
-      absoluteFileReferences
-      singleColumn={singleColumn}
-      environmentId={environmentId}
-      cwd={checkout.cwd}
-      projectName={`Case #${checkout.caseId}`}
-      relativePath={relativePath}
-      revealLine={null}
-      revealRequestId={0}
-      onOpenFile={(file) => {
-        setRelativePath(file);
-        setPending(false);
-      }}
-      onNavigateFolder={(folder, trail) => {
-        setRelativePath(folder);
-        setFolderTrail(trail);
-        setPending(false);
-      }}
-      folderTrail={folderTrail}
-      onPendingChange={(_file, value) => setPending(value)}
-      selectedFilePending={pending}
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      {checkout.syncIssue && (
+        <p role="status" className="border-b px-4 py-2 text-sm text-warning-foreground">
+          {checkout.syncIssue}
+        </p>
+      )}
+      <div className="flex min-h-0 flex-1">
+        <FilePreviewPanel
+          {...props}
+          absoluteFileReferences
+          singleColumn={singleColumn}
+          environmentId={environmentId}
+          cwd={checkout.cwd}
+          projectName={`Case #${checkout.caseId}`}
+          relativePath={relativePath}
+          revealLine={null}
+          revealRequestId={0}
+          onOpenFile={(file) => {
+            setRelativePath(file);
+            setPending(false);
+          }}
+          onNavigateFolder={(folder, trail) => {
+            setRelativePath(folder);
+            setFolderTrail(trail);
+            setPending(false);
+          }}
+          folderTrail={folderTrail}
+          onPendingChange={(_file, value) => setPending(value)}
+          selectedFilePending={pending}
+        />
+      </div>
+    </div>
   );
 }
