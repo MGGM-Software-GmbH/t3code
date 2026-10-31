@@ -478,6 +478,20 @@ it("saves global and project FogBugz automation choices", async () => {
   });
   await expect.element(page.getByRole("combobox", { name: "Auto-Settle on" })).toBeVisible();
   page.getByRole("combobox", { name: "Auto-Settle on" }).element().scrollIntoView();
+  const directoryInput = page.getByRole("textbox", { name: "Case-Git checkout folder" });
+  await userEvent.fill(directoryInput, "docs/case-artifacts");
+  await userEvent.tab();
+  await vi.waitFor(() =>
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        projectSettingsOverrides: expect.objectContaining({
+          [ProjectId.make("project-render")]: expect.objectContaining({
+            fogbugzCaseGitDirectory: "docs/case-artifacts",
+          }),
+        }),
+      }),
+    ),
+  );
   await userEvent.click(page.getByRole("combobox", { name: "Auto-Settle on" }));
   await userEvent.click(page.getByRole("option", { name: "On closed", exact: true }));
   await vi.waitFor(() =>

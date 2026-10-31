@@ -1029,6 +1029,7 @@ export const WorktreeCleanup = Schema.NullOr(
 export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
+  "fogbugzCaseGitDirectory",
   "fogbugzAutoSettle",
   "fogbugzAutoUnsettle",
   "fogbugzAutoAnalyze",
@@ -1069,6 +1070,7 @@ export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOver
 /** Absent keys inherit; null is a value for nullable settings.
  * providerInstances overrides fields per instance; other keys replace the whole setting. */
 export const ProjectSettingsOverrides = Schema.Struct({
+  fogbugzCaseGitDirectory: Schema.optionalKey(TrimmedString),
   fogbugzAutoSettle: Schema.optionalKey(Schema.Literals(["never", "resolved", "closed"])),
   fogbugzAutoUnsettle: Schema.optionalKey(Schema.Boolean),
   fogbugzAutoAnalyze: Schema.optionalKey(Schema.Literals(["never", "initial", "assigned"])),
@@ -1295,6 +1297,7 @@ export const ServerSettings = Schema.Struct({
   fogbugzAutoSettle: Schema.Literals(["never", "resolved", "closed"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("never")),
   ),
+  fogbugzCaseGitDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   fogbugzAutoUnsettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   fogbugzAutoAnalyze: Schema.Literals(["never", "initial", "assigned"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("never")),
@@ -1667,6 +1670,7 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
+  fogbugzCaseGitDirectory: Schema.optionalKey(TrimmedString),
   fogbugzAutoSettle: Schema.optionalKey(Schema.Literals(["never", "resolved", "closed"])),
   fogbugzAutoUnsettle: Schema.optionalKey(Schema.Boolean),
   fogbugzAutoAnalyze: Schema.optionalKey(Schema.Literals(["never", "initial", "assigned"])),

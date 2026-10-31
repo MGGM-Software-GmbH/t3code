@@ -102,10 +102,22 @@ describe("pd-secrets post-login script", () => {
 describe("MGGM defaults", () => {
   it("defaults FogBugz automation off and validates its guarded choices", () => {
     expect(decodeServerSettings({})).toMatchObject({
+      fogbugzCaseGitDirectory: "",
       fogbugzAutoSettle: "never",
       fogbugzAutoUnsettle: false,
       fogbugzAutoAnalyze: "never",
     });
+    const projectId = ProjectId.make("project");
+    const patch = decodeServerSettingsPatch({
+      projectSettingsOverrides: {
+        [projectId]: { fogbugzCaseGitDirectory: "  docs/cases  " },
+      },
+    });
+    expect(patch.projectSettingsOverrides?.[projectId]?.fogbugzCaseGitDirectory).toBe("docs/cases");
+    expect(
+      decodeServerSettings({ ...encodeServerSettings(DEFAULT_SERVER_SETTINGS), ...patch })
+        .projectSettingsOverrides[projectId]?.fogbugzCaseGitDirectory,
+    ).toBe("docs/cases");
     expect(
       decodeServerSettingsPatch({ fogbugzAutoSettle: "closed", fogbugzAutoAnalyze: "initial" }),
     ).toMatchObject({ fogbugzAutoSettle: "closed", fogbugzAutoAnalyze: "initial" });

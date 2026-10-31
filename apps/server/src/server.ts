@@ -708,6 +708,7 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
     FogBugzCaseGit.layer.pipe(
       Layer.provide(ProcessRunner.layer),
       Layer.provide(ProjectionStoreV2.layer),
+      Layer.provide(ProjectStore.layer),
     ),
   ),
   Layer.provideMerge(FogBugz.layer.pipe(Layer.provide(ServerSecretStore.layer))),

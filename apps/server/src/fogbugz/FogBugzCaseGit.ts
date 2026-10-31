@@ -12,11 +12,15 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { ServerConfig } from "../config.ts";
 import { ProcessRunner } from "../processRunner.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { FogBugzService } from "./FogBugzService.ts";
-import { caseGitPath } from "./caseGitPath.ts";
+import { caseGitPath, caseGitMetadataPath } from "./caseGitPath.ts";
 import { caseGitInstructions } from "./caseGitInstructions.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import { mutateCaseFiles } from "./caseFileMutation.ts";
@@ -46,36 +50,146 @@ export const layer = Layer.effect(
     const processes = yield* ProcessRunner;
     const inherited = yield* HostProcess.Environment;
     const projections = yield* ProjectionStoreV2;
+    const projects = yield* ProjectStoreV2;
+    const settings = yield* ServerSettingsService;
+    const locations = new Map<RunId, { cwd: string; shared: boolean }>();
+    const location = Effect.fn("FogBugzCaseGit.location")(
+      function* (
+        threadId: ThreadId,
+        repository: { connectionId: string; personId: number; caseId: number },
+        runId?: RunId,
+      ) {
+        const pinned = runId ? locations.get(runId) : undefined;
+        if (pinned) return pinned;
+        const linked = yield* fogbugz.thread(threadId);
+        if (!linked) return yield* new FogBugzError({ code: "thread" });
+        const project = yield* projects.getShell(linked.projectId);
+        if (Option.isNone(project)) return yield* new FogBugzError({ code: "project" });
+        const directory = resolveProjectSettings(yield* settings.getSettings, linked.projectId)
+          .settings.fogbugzCaseGitDirectory;
+        const cwd = caseGitPath(
+          path,
+          yield* fs.realPath(config.baseDir),
+          repository.connectionId,
+          repository.personId,
+          repository.caseId,
+          threadId,
+          { workspaceRoot: project.value.workspaceRoot, directory },
+        );
+        if (!cwd) return yield* new FogBugzError({ code: "case_git" });
+        return { cwd, shared: directory !== "" };
+      },
+      Effect.mapError((error) =>
+        isFogBugzError(error) ? error : new FogBugzError({ code: "case_git" }),
+      ),
+    );
+    const isBusy = Effect.fn("FogBugzCaseGit.isBusy")(function* (
+      threadId: ThreadId,
+      repository: { connectionId: string; personId: number; caseId: number },
+      target: { cwd: string; shared: boolean },
+      runId?: RunId,
+    ) {
+      const current = yield* projections.getThreadShell(threadId);
+      if (current?.activeRunId != null && current.activeRunId !== runId) return true;
+      if (!target.shared) return false;
+      for (const [ownerRunId, owned] of locations) {
+        if (ownerRunId !== runId && owned.cwd === target.cwd) return true;
+      }
+      const threadIds = yield* fogbugz.caseThreadIds(repository.caseId);
+      if (threadIds.length === 0) return false;
+      const snapshot = yield* projections.getShellSnapshot({ threadIds });
+      for (const thread of snapshot.threads) {
+        if (!thread.activeRunId || thread.activeRunId === runId || thread.id === threadId) continue;
+        const linked = yield* fogbugz.thread(thread.id);
+        if (!linked) continue;
+        const other = yield* location(
+          thread.id,
+          { ...repository, caseId: linked.caseId },
+          thread.activeRunId,
+        );
+        if (other.cwd === target.cwd) return true;
+      }
+      return false;
+    });
+    const ignoreSvnDirectory = Effect.fn("FogBugzCaseGit.ignoreSvnDirectory")(function* (
+      cwd: string,
+    ) {
+      let ancestor = path.dirname(cwd);
+      while (!(yield* fs.exists(path.join(ancestor, ".svn")))) {
+        const parent = path.dirname(ancestor);
+        if (parent === ancestor) return;
+        ancestor = parent;
+      }
+      const svn = Effect.fn("FogBugzCaseGit.svn")(function* (args: ReadonlyArray<string>) {
+        const result = yield* processes.run({
+          command: "svn",
+          args: ["--non-interactive", ...args],
+          cwd: ancestor,
+        });
+        if (result.code !== 0) return yield* new FogBugzError({ code: "case_git_svn" });
+        return result.stdout;
+      });
+      return yield* withWorkspaceLease(
+        `svn:${ancestor}`,
+        Effect.gen(function* () {
+          // Ignore the first unversioned directory; svn:ignore applies to immediate children only.
+          let versioned = ancestor;
+          const segments = path.relative(ancestor, cwd).split(path.sep);
+          for (const segment of segments) {
+            const candidate = path.join(versioned, segment);
+            const info = yield* processes.run({
+              command: "svn",
+              args: ["info", "--non-interactive", "--", `${candidate}@`],
+              cwd: ancestor,
+            });
+            if (info.code !== 0) {
+              const properties = yield* svn(["proplist", "--", `${versioned}@`]);
+              const existing = properties
+                .split(/\r?\n/)
+                .some((line) => line.trim() === "svn:ignore")
+                ? yield* svn(["propget", "--strict", "svn:ignore", "--", `${versioned}@`])
+                : "";
+              if (!existing.split(/\r?\n/).includes(segment))
+                yield* svn([
+                  "propset",
+                  "svn:ignore",
+                  `${existing}${existing && !existing.endsWith("\n") ? "\n" : ""}${segment}\n`,
+                  "--",
+                  `${versioned}@`,
+                ]);
+              return;
+            }
+            versioned = candidate;
+          }
+          return yield* new FogBugzError({ code: "case_git_svn" });
+        }),
+      );
+    });
     const synchronize = Effect.fn("FogBugzCaseGit.synchronize")(function* (
       threadId: ThreadId,
       runId?: RunId,
       push = false,
     ) {
+      const repository = yield* fogbugz.caseGitRepository(threadId);
+      const target = yield* location(threadId, repository, runId);
       return yield* withWorkspaceLease(
-        `fogbugz:${threadId}`,
+        `fogbugz:${target.cwd}`,
         Effect.gen(function* () {
-          const repository = yield* fogbugz.caseGitRepository(threadId);
-          const thread = yield* projections.getThreadShell(threadId);
-          const busy = thread?.activeRunId != null && thread.activeRunId !== runId;
+          const busy = yield* isBusy(threadId, repository, target, runId);
+          if (busy && runId && !push) return yield* new FogBugzError({ code: "case_files_busy" });
           const baseDir = yield* fs.realPath(config.baseDir);
-          const cwd = caseGitPath(
-            path,
-            baseDir,
-            repository.connectionId,
-            repository.personId,
-            repository.caseId,
-            threadId,
-          );
-          if (!cwd) return yield* new FogBugzError({ code: "case_git" });
-          const parent = path.dirname(cwd);
-          let directory = baseDir;
-          for (const segment of path.relative(baseDir, parent).split(path.sep)) {
-            directory = path.join(directory, segment);
-            if (!(yield* fs.exists(directory)))
-              yield* fs.makeDirectory(directory, { recursive: true });
-            if ((yield* fs.realPath(directory)) !== directory)
-              return yield* new FogBugzError({ code: "case_git" });
+          const cwd = target.cwd;
+          const parent = caseGitMetadataPath(path, baseDir, cwd, target.shared);
+          for (const folder of new Set([parent, path.dirname(cwd)])) {
+            let directory = path.parse(folder).root;
+            for (const segment of path.relative(directory, folder).split(path.sep)) {
+              directory = path.join(directory, segment);
+              if (!(yield* fs.exists(directory))) yield* fs.makeDirectory(directory);
+              if ((yield* fs.realPath(directory)) !== directory)
+                return yield* new FogBugzError({ code: "case_git" });
+            }
           }
+          if (target.shared && !busy) yield* ignoreSvnDirectory(cwd);
           // Only this process receives the token. Git never persists it in the remote or its config.
           const env = Object.fromEntries(
             Object.entries(inherited).map(([key, value]) => [
@@ -121,11 +235,14 @@ export const layer = Layer.effect(
             return result.output;
           });
           const identityPath = path.join(parent, "repository-id");
+          const identity = target.shared
+            ? `${repository.connectionId}:${repository.personId}:${repository.repositoryId}`
+            : repository.repositoryId;
           if (yield* fs.exists(cwd)) {
             if (
               (yield* fs.realPath(cwd)) !== cwd ||
               !(yield* fs.exists(identityPath)) ||
-              (yield* fs.readFileString(identityPath)) !== repository.repositoryId
+              (yield* fs.readFileString(identityPath)) !== identity
             )
               return yield* new FogBugzError({ code: "case_git" });
             if (
@@ -136,12 +253,15 @@ export const layer = Layer.effect(
             if (!busy) yield* git(["remote", "set-url", "origin", repository.remoteUrl]);
           } else {
             if (busy) return yield* new FogBugzError({ code: "case_git" });
-            const staging = yield* fs.makeTempDirectory({ directory: parent, prefix: "clone-" });
+            const staging = yield* fs.makeTempDirectory({
+              directory: path.dirname(cwd),
+              prefix: ".t3-case-clone-",
+            });
             const checkout = path.join(staging, "repo");
             yield* git(["clone", "--quiet", "--", repository.remoteUrl, checkout], parent).pipe(
               Effect.onError(() => fs.remove(staging, { recursive: true }).pipe(Effect.ignore)),
             );
-            yield* fs.writeFileString(identityPath, repository.repositoryId);
+            yield* fs.writeFileString(identityPath, identity);
             yield* fs.rename(checkout, cwd);
             yield* fs.remove(staging, { recursive: true });
           }
@@ -151,10 +271,12 @@ export const layer = Layer.effect(
             cwd,
             canWrite: repository.canWrite,
           };
+          if (runId && !push && !busy) locations.set(runId, target);
           if (busy)
             return {
               checkout: {
                 ...checkout,
+                canWrite: false,
                 syncIssue: "The agent is running; synchronization is deferred until its turn ends.",
               },
               limits: repository.limits,
@@ -269,26 +391,15 @@ export const layer = Layer.effect(
       mutateFiles: Effect.fn("FogBugzCaseGit.mutateFiles")(function* (input) {
         const { checkout } = yield* synchronize(input.threadId);
         yield* withWorkspaceLease(
-          `fogbugz:${input.threadId}`,
+          `fogbugz:${checkout.cwd}`,
           Effect.gen(function* () {
             const repository = yield* fogbugz.caseGitRepository(input.threadId);
             if (!repository.canWrite)
               return yield* new FogBugzError({ code: "case_files_readonly" });
-            const thread = yield* projections.getThreadShell(input.threadId);
-            if (thread?.activeRunId != null)
+            const target = yield* location(input.threadId, repository);
+            if (yield* isBusy(input.threadId, repository, target))
               return yield* new FogBugzError({ code: "case_files_busy" });
-            const baseDir = yield* fs.realPath(config.baseDir);
-            if (
-              repository.repositoryId !== checkout.repositoryId ||
-              caseGitPath(
-                path,
-                baseDir,
-                repository.connectionId,
-                repository.personId,
-                repository.caseId,
-                input.threadId,
-              ) !== checkout.cwd
-            )
+            if (repository.repositoryId !== checkout.repositoryId || target.cwd !== checkout.cwd)
               return yield* new FogBugzError({ code: "case_files_path" });
             yield* mutateCaseFiles(
               checkout.cwd,
@@ -316,8 +427,13 @@ export const layer = Layer.effect(
         };
       }),
       finishTurn: Effect.fn("FogBugzCaseGit.finishTurn")(function* (threadId, runId) {
-        if (!(yield* fogbugz.thread(threadId))) return;
-        const { checkout } = yield* synchronize(threadId, runId, true);
+        if (!(yield* fogbugz.thread(threadId))) {
+          locations.delete(runId);
+          return;
+        }
+        const { checkout } = yield* synchronize(threadId, runId, true).pipe(
+          Effect.ensuring(Effect.sync(() => locations.delete(runId))),
+        );
         if (checkout.syncIssue) yield* Effect.logWarning(checkout.syncIssue, { threadId });
       }),
     });

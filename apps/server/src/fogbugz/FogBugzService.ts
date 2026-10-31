@@ -31,6 +31,7 @@ export class FogBugzService extends Context.Service<
   {
     status: () => Effect.Effect<typeof FogBugzStatus.Type, FogBugzError>;
     threadCases: () => Effect.Effect<ReadonlyArray<typeof FogBugzThreadCase.Type>, FogBugzError>;
+    caseThreadIds: (caseId: number) => Effect.Effect<ReadonlyArray<ThreadId>, FogBugzError>;
     automationSnapshot: (projectId: ProjectId) => Effect.Effect<
       {
         connection: FogBugzConnection;
@@ -233,6 +234,14 @@ export const layer = Layer.effect(
       );
     });
     return FogBugzService.of({
+      caseThreadIds: Effect.fn("FogBugz.caseThreadIds")(function* (caseId) {
+        const rows = yield* sql<{ threadId: ThreadId }>`
+          SELECT link.thread_id AS threadId FROM fogbugz_threads link
+          JOIN orchestration_v2_projection_threads thread ON thread.thread_id = link.thread_id
+          WHERE link.case_id = ${caseId} AND thread.deleted_at IS NULL
+        `.pipe(Effect.mapError(storageError));
+        return rows.map((row) => row.threadId);
+      }),
       threadCases: Effect.fn("FogBugz.threadCases")(function* () {
         const threads = yield* threadLinks();
         if (!threads.length) return [];

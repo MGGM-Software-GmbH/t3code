@@ -1,10 +1,18 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { FogBugzError, ThreadId, RunId } from "@t3tools/contracts";
+import {
+  FogBugzError,
+  ThreadId,
+  RunId,
+  ProjectId,
+  DEFAULT_SERVER_SETTINGS as ServerSettingsTestDefaults,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as ServerSettings from "../serverSettings.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import * as NodeURL from "node:url";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -40,13 +48,32 @@ const prepare = Effect.gen(function* () {
     },
   };
   const activity = { runId: null as RunId | null };
+  const project = { id: ProjectId.make("project"), workspaceRoot: path.join(root, "project") };
+  yield* fs.makeDirectory(project.workspaceRoot);
+  const shared = { directory: "", activeThread: null as ThreadId | null };
   const serviceLayer = CaseGit.layer.pipe(
     Layer.provide(
-      Layer.mock(FogBugzService)({
-        caseGitRepository: () => Effect.succeed(repository),
-        thread: () =>
+      Layer.mock(ProjectStoreV2)({ getShell: () => Effect.succeedSome(project as never) }),
+    ),
+    Layer.provide(
+      Layer.mock(ServerSettings.ServerSettingsService)({
+        getSettings: Effect.suspend(() =>
           Effect.succeed({
-            threadId: ThreadId.make("thread"),
+            ...ServerSettingsTestDefaults,
+            projectSettingsOverrides: {
+              [project.id]: { fogbugzCaseGitDirectory: shared.directory },
+            },
+          }),
+        ),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(FogBugzService)({
+        caseThreadIds: () => Effect.succeed(shared.activeThread ? [shared.activeThread] : []),
+        caseGitRepository: () => Effect.succeed(repository),
+        thread: (threadId) =>
+          Effect.succeed({
+            threadId,
             projectId: "project" as never,
             caseId: 42,
             title: "Fixture",
@@ -56,6 +83,12 @@ const prepare = Effect.gen(function* () {
     ),
     Layer.provide(
       Layer.mock(ProjectionStoreV2)({
+        getShellSnapshot: () =>
+          Effect.succeed({
+            threads: shared.activeThread
+              ? [{ id: shared.activeThread, activeRunId: RunId.make("other-run") }]
+              : [],
+          } as never),
         getThreadShell: () =>
           Effect.succeed(
             activity.runId === null ? null : ({ activeRunId: activity.runId } as never),
@@ -64,12 +97,150 @@ const prepare = Effect.gen(function* () {
     ),
     Layer.provide(ServerConfig.layerTest(root, root)),
   );
-  return { fs, path, root, remote, git, repository, activity, serviceLayer };
+  return { fs, path, root, remote, git, repository, activity, shared, project, serviceLayer };
 });
 
 const runtime = ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("per-thread case Git checkout", () => {
+  it.live("shares configured case folders, preserves defaults and blocks concurrent writers", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* prepare;
+        yield* Effect.gen(function* () {
+          const service = yield* CaseGit.FogBugzCaseGit;
+          const firstId = ThreadId.make("first");
+          const secondId = ThreadId.make("second");
+          const original = yield* service.ensure(firstId);
+          fixture.shared.directory = "case-artifacts";
+          const first = yield* service.ensure(firstId);
+          const second = yield* service.ensure(secondId);
+          expect(first.cwd).toBe(
+            fixture.path.join(fixture.project.workspaceRoot, "case-artifacts", "FB42"),
+          );
+          expect(second.cwd).toBe(first.cwd);
+          fixture.repository.personId = 8;
+          expect(yield* service.ensure(secondId).pipe(Effect.flip)).toMatchObject({
+            code: "case_git",
+          });
+          fixture.repository.personId = 7;
+          expect(yield* fixture.fs.exists(original.cwd)).toBe(true);
+          yield* service.mutateFiles({
+            threadId: firstId,
+            action: { type: "create-file", path: "shared.md" },
+          });
+          expect(yield* fixture.fs.exists(fixture.path.join(second.cwd, "shared.md"))).toBe(true);
+          fixture.shared.activeThread = firstId;
+          expect((yield* service.ensure(secondId)).syncIssue).toContain("agent is running");
+          expect((yield* service.ensure(secondId)).canWrite).toBe(false);
+          expect(
+            yield* service
+              .mutateFiles({ threadId: secondId, action: { type: "delete", path: "shared.md" } })
+              .pipe(Effect.flip),
+          ).toMatchObject({ code: "case_files_busy" });
+          expect(
+            yield* service.prepareTurn(secondId, RunId.make("second-run")).pipe(Effect.flip),
+          ).toMatchObject({ code: "case_files_busy" });
+          fixture.shared.activeThread = null;
+          const runId = RunId.make("first-run");
+          expect((yield* service.prepareTurn(firstId, runId))?.cwd).toBe(first.cwd);
+          expect(
+            yield* service.prepareTurn(secondId, RunId.make("competing-run")).pipe(Effect.flip),
+          ).toMatchObject({ code: "case_files_busy" });
+          fixture.shared.directory = "changed-folder";
+          yield* service.finishTurn(firstId, runId);
+          expect(
+            yield* fixture.fs.exists(
+              fixture.path.join(fixture.project.workspaceRoot, "changed-folder"),
+            ),
+          ).toBe(false);
+          fixture.shared.directory = fixture.path.join(fixture.root, "outside-project");
+          expect((yield* service.ensure(secondId)).cwd).toBe(
+            fixture.path.join(fixture.root, "outside-project", "FB42"),
+          );
+          fixture.repository.caseId = 43;
+          expect((yield* service.ensure(secondId)).cwd).toBe(
+            fixture.path.join(fixture.root, "outside-project", "FB43"),
+          );
+          fixture.shared.directory = ".git/cases";
+          expect(yield* service.ensure(secondId).pipe(Effect.flip)).toMatchObject({
+            code: "case_git",
+          });
+        }).pipe(Effect.provide(fixture.serviceLayer));
+      }),
+    ).pipe(Effect.provide(runtime)),
+  );
+
+  it.live(
+    "ignores the shared directory in SVN without replacing existing ignore entries or committing",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fixture = yield* prepare;
+          const runner = yield* ProcessRunner.ProcessRunner;
+          const svn = (args: ReadonlyArray<string>) =>
+            runner.run({ command: "svn", args, cwd: fixture.root });
+          const repository = fixture.path.join(fixture.root, "svn-repository");
+          expect(
+            (yield* runner.run({
+              command: "svnadmin",
+              args: ["create", repository],
+              cwd: fixture.root,
+            })).code,
+          ).toBe(0);
+          expect(
+            (yield* svn([
+              "checkout",
+              NodeURL.pathToFileURL(repository).href,
+              fixture.project.workspaceRoot,
+            ])).code,
+          ).toBe(0);
+          expect(
+            (yield* svn([
+              "propset",
+              "svn:ignore",
+              "existing-entry\n",
+              fixture.project.workspaceRoot,
+            ])).code,
+          ).toBe(0);
+          fixture.shared.directory = "docs/case-artifacts";
+          yield* Effect.gen(function* () {
+            const service = yield* CaseGit.FogBugzCaseGit;
+            yield* service.ensure(ThreadId.make("first"));
+            yield* service.ensure(ThreadId.make("second"));
+          }).pipe(Effect.provide(fixture.serviceLayer));
+          expect(
+            (yield* svn(["propget", "--strict", "svn:ignore", fixture.project.workspaceRoot]))
+              .stdout,
+          ).toBe("existing-entry\ndocs\n");
+          const status = yield* svn(["status", "--no-ignore", fixture.project.workspaceRoot]);
+          expect(status.stdout).toContain("M");
+          expect(status.stdout).toMatch(/I\s+.*docs/);
+          expect(
+            (yield* svn([
+              "info",
+              "--show-item",
+              "revision",
+              fixture.project.workspaceRoot,
+            ])).stdout.trim(),
+          ).toBe("0");
+          fixture.shared.directory = fixture.path.join(fixture.root, "broken-svn");
+          yield* fixture.fs.makeDirectory(fixture.path.join(fixture.shared.directory, ".svn"), {
+            recursive: true,
+          });
+          yield* Effect.gen(function* () {
+            const service = yield* CaseGit.FogBugzCaseGit;
+            expect(yield* service.ensure(ThreadId.make("broken")).pipe(Effect.flip)).toMatchObject({
+              code: "case_git_svn",
+            });
+          }).pipe(Effect.provide(fixture.serviceLayer));
+          expect(
+            yield* fixture.fs.exists(fixture.path.join(fixture.shared.directory, "FB42")),
+          ).toBe(false);
+        }),
+      ).pipe(Effect.provide(runtime)),
+  );
+
   it.live("creates, uploads and deletes only inside an idle writable case checkout", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -394,6 +565,8 @@ describe("per-thread case Git checkout", () => {
       Effect.gen(function* () {
         const fixture = yield* prepare;
         const denied = CaseGit.layer.pipe(
+          Layer.provide(Layer.mock(ProjectStoreV2)({})),
+          Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
           Layer.provide(
             Layer.mock(ProjectionStoreV2)({ getThreadShell: () => Effect.succeed(null) }),
           ),

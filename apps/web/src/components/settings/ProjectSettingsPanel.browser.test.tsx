@@ -127,6 +127,12 @@ vi.mock(import("./FogBugzProjectSettings"), () => ({
     </output>
   ),
 }));
+vi.mock(import("./FogBugzAutomationSettings"), () => ({
+  FogBugzAutomationSettings: () => null,
+}));
+vi.mock(import("./FogBugzCaseGitSettings"), () => ({
+  FogBugzCaseGitSettings: () => null,
+}));
 
 vi.mock(import("../files/projectFilesQueryState"), async (original) => ({
   ...(await original()),

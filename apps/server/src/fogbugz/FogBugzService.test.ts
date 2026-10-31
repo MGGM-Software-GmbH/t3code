@@ -165,6 +165,10 @@ describe("FogBugz integration persistence and access", () => {
           case: { id: 42, projectName: "Project 12", priorityId: 2, categoryIconType: 1 },
         },
       ]);
+      const requestCount = test.requests.length;
+      expect(yield* service.caseThreadIds(42)).toEqual([threadId]);
+      expect(yield* service.caseThreadIds(43)).toEqual([]);
+      expect(test.requests).toHaveLength(requestCount);
       expect(test.requests.at(-1)?.get("q")).toBe("(case:42)");
       fetch.mockImplementation(async (_url, init) => {
         const parameters = new URLSearchParams(String(init?.body));
@@ -177,6 +181,9 @@ describe("FogBugz integration persistence and access", () => {
         new Response('<response><error code="3">Expired</error></response>'),
       );
       expect((yield* Effect.flip(service.threadCases())).code).toBe("authentication");
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE orchestration_v2_projection_threads SET deleted_at = '2026-10-31T00:00:00Z' WHERE thread_id = ${threadId}`;
+      expect(yield* service.caseThreadIds(42)).toEqual([]);
     }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
   });
   it.effect(
