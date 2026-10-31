@@ -1088,7 +1088,16 @@ export default function ChatView(props: ChatViewProps) {
       ? fogbugzEnvironment.status({ environmentId: activeProject.environmentId, input: {} })
       : null,
   );
+  const fogbugzThread = useEnvironmentQuery(
+    isServerThread && activeThreadRef
+      ? fogbugzEnvironment.thread({
+          environmentId: activeThreadRef.environmentId,
+          input: { threadId: activeThreadRef.threadId },
+        })
+      : null,
+  );
   const fogbugzCasesAvailable =
+    fogbugzThread.data !== null &&
     fogbugzStatus.data?.projects.some((link) => link.projectId === activeProject?.id) === true;
   const activeProjectSettings = resolveProjectSettings(
     settings,

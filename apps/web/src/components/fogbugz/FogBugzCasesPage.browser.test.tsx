@@ -96,7 +96,7 @@ function setup() {
   };
 }
 
-it("offers the FogBugz surface only for a linked project and opens it on selection", async () => {
+it("disables the FogBugz surface and its shortcut until the thread is linked", async () => {
   setup();
   const open = vi.fn();
   const ignore = () => {};
@@ -123,11 +123,17 @@ it("offers the FogBugz surface only for a linked project and opens it on selecti
     <RightPanelEmptyState {...props} fogbugzCasesAvailable={false} />,
   );
   await expect
-    .element(screen.getByRole("button", { name: /Fogbugz-Cases/ }))
-    .not.toBeInTheDocument();
+    .element(screen.getByText("Fogbugz-Cases").element().parentElement!)
+    .toHaveAttribute("aria-disabled", "true");
+  await userEvent.keyboard("C");
+  expect(open).not.toHaveBeenCalled();
   await screen.rerender(<RightPanelEmptyState {...props} fogbugzCasesAvailable />);
   await userEvent.click(screen.getByRole("button", { name: /Fogbugz-Cases/ }));
   expect(open).toHaveBeenCalledOnce();
+  await screen.rerender(<RightPanelEmptyState {...props} fogbugzCasesAvailable={false} />);
+  await expect
+    .element(screen.getByText("Fogbugz-Cases").element().parentElement!)
+    .toHaveAttribute("aria-disabled", "true");
 });
 
 it.each(["project", "group"] as const)(

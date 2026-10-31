@@ -191,7 +191,13 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
           personName: "Test User",
           authenticated: true,
         },
-        projects: [],
+        projects: [
+          {
+            projectId: ProjectId.make("project-render"),
+            fogbugzProjectId: 12,
+            fogbugzProjectGroupId: null,
+          },
+        ],
       }),
     [WS_METHODS.fogbugzThread]: () => Effect.succeed(linked),
     [WS_METHODS.fogbugzThreadCases]: () => Effect.succeed([]),
@@ -240,6 +246,16 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
   const linkButton = page.getByRole("button", { name: "Link FogBugz case", exact: true });
   await expect.element(linkButton).toBeVisible();
   expect(linkButton.element().closest("[data-thread-details-card]")).not.toBeNull();
+  const threadRef = scopeThreadRef(ENVIRONMENT_ID, thread.id);
+  useRightPanelStore.getState().toggleVisibility(threadRef);
+  await expect.element(page.getByText("Fogbugz-Cases", { exact: true })).toBeVisible();
+  await expect
+    .element(page.getByText("Fogbugz-Cases", { exact: true }).element().parentElement!)
+    .toHaveAttribute("aria-disabled", "true");
+  await userEvent.keyboard("C");
+  await expect.element(page.getByRole("heading", { name: "Open a surface" })).toBeVisible();
+  useRightPanelStore.getState().toggleVisibility(threadRef);
+  await expect.element(linkButton).toBeVisible();
   await userEvent.click(linkButton);
   await userEvent.fill(page.getByRole("spinbutton", { name: "FogBugz case number" }), "999");
   await userEvent.click(page.getByRole("button", { name: "Link case", exact: true }));
@@ -252,6 +268,9 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
   await userEvent.fill(page.getByRole("spinbutton", { name: "FogBugz case number" }), "42");
   await userEvent.click(page.getByRole("button", { name: "Link case", exact: true }));
   await vi.waitFor(() => expect(opened).toEqual(["http://fogbugz.test/default.asp?42"]));
+  await userEvent.click(page.getByRole("button", { name: "Add panel surface" }));
+  await expect.element(page.getByRole("menuitem", { name: /Fogbugz-Cases/ })).toBeEnabled();
+  await userEvent.keyboard("{Escape}");
   await userEvent.click(page.getByRole("button", { name: "Toggle thread details panel" }));
   await expect
     .element(page.getByRole("button", { name: "Open FogBugz case", exact: true }))
@@ -283,6 +302,10 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
   await userEvent.click(linkButton);
   await expect.element(page.getByRole("spinbutton", { name: "FogBugz case number" })).toBeVisible();
   await page.screenshot({ path: ".t3/fogbugz-details-link-narrow.png" });
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(page.getByRole("button", { name: "Add panel surface" }));
+  await expect.element(page.getByRole("menuitem", { name: /Fogbugz-Cases/ })).toBeDisabled();
+  await page.screenshot({ path: ".t3/fogbugz-surface-disabled-narrow.png" });
 });
 
 it("saves an alternate FogBugz address without asking for the password again", async () => {
@@ -458,7 +481,7 @@ it("saves global and project FogBugz automation choices", async () => {
   await page.screenshot({ path: ".t3/fogbugz-project-settings-wide.png" });
 });
 
-it.each(["saved", "draft"])("processes sidepanel cases in a %s thread", async (kind) => {
+it.each(["saved", "draft"])("gates sidepanel cases in a %s thread", async (kind) => {
   const thread = threadWithHistory("fogbugz-actions", 1);
   const projectId = ProjectId.make("project-render");
   const draftId = DraftId.make("fogbugz-new-draft");
@@ -513,7 +536,18 @@ it.each(["saved", "draft"])("processes sidepanel cases in a %s thread", async (k
         },
         projects: [{ projectId, fogbugzProjectId: 12, fogbugzProjectGroupId: null }],
       }),
-    [WS_METHODS.fogbugzThread]: () => Effect.succeed(null),
+    [WS_METHODS.fogbugzThread]: () =>
+      Effect.succeed(
+        kind === "draft"
+          ? null
+          : {
+              threadId: thread.id,
+              projectId,
+              caseId: item.id,
+              title: item.title,
+              url: "https://fogbugz.example/default.asp?42",
+            },
+      ),
     [WS_METHODS.fogbugzCases]: () =>
       Effect.succeed({
         cases: [item],
@@ -575,6 +609,15 @@ it.each(["saved", "draft"])("processes sidepanel cases in a %s thread", async (k
   await userEvent.click(editor);
   await userEvent.type(editor, "Existing draft. ");
   useRightPanelStore.getState().toggleVisibility(scopeThreadRef(ENVIRONMENT_ID, activeThreadId));
+  if (kind === "draft") {
+    await expect.element(page.getByText("Fogbugz-Cases", { exact: true })).toBeVisible();
+    await expect
+      .element(page.getByText("Fogbugz-Cases", { exact: true }).element().parentElement!)
+      .toHaveAttribute("aria-disabled", "true");
+    expect(messages).toEqual([]);
+    expect(launches).toEqual([]);
+    return;
+  }
   await userEvent.click(page.getByRole("button", { name: /Fogbugz-Cases/ }));
   await userEvent.click(page.getByRole("button", { name: "Case actions for #42" }));
   await userEvent.click(page.getByRole("menuitem", { name: "Add to Context", exact: true }));
@@ -586,35 +629,13 @@ it.each(["saved", "draft"])("processes sidepanel cases in a %s thread", async (k
   });
   expect(requests).toEqual([]);
   expect(
-    useComposerDraftStore
-      .getState()
-      .getComposerDraft(kind === "draft" ? draftId : scopeThreadRef(ENVIRONMENT_ID, thread.id))
+    useComposerDraftStore.getState().getComposerDraft(scopeThreadRef(ENVIRONMENT_ID, thread.id))
       ?.prompt,
   ).toContain("Use the FogBugz MCP");
   await expect.element(editor.getByRole("link", { name: "FogBugz #42" })).toBeVisible();
   expect(messages).toEqual([]);
   expect(launches).toEqual([]);
   const draft = editor.element().textContent;
-  if (kind === "draft") {
-    await page.viewport(390, 900);
-    screen.container.className = "h-[900px] w-[390px]";
-    await expect.element(page.getByRole("button", { name: "Case actions for #42" })).toBeVisible();
-    await page.viewport(1400, 900);
-    screen.container.className = "h-[900px] w-[1400px]";
-    await userEvent.click(page.getByRole("button", { name: "Case actions for #42" }));
-    await userEvent.click(page.getByRole("menuitem", { name: "Implement", exact: true }));
-    await vi.waitFor(() => expect(launches).toHaveLength(1));
-    expect(launches[0]).toMatchObject({
-      threadId: activeThreadId,
-      projectId,
-      workspaceStrategy: { type: "root" },
-      initialMessage: { text: expect.stringContaining("Implement this case") },
-    });
-    expect(launches[0]?.initialMessage?.text).toContain("Existing draft.");
-    expect(launches[0]?.initialMessage?.text).toContain("Use the FogBugz MCP");
-    expect(launches[0]?.initialMessage?.text).not.toContain("Preserve notification preferences.");
-    return;
-  }
   for (const label of ["Create PRP", "Implement"]) {
     await userEvent.click(page.getByRole("button", { name: "Case actions for #42" }));
     await userEvent.click(page.getByRole("menuitem", { name: label, exact: true }));

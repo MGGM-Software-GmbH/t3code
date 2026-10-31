@@ -376,14 +376,14 @@ export function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
       onClick: props.onAddDevice,
     },
-    ...(props.fogbugzCasesAvailable && props.onAddFogBugzCases
+    ...(props.onAddFogBugzCases
       ? [
           {
             label: "Fogbugz-Cases",
             icon: Hash,
             shortcut: "C",
-            available: true,
-            disabledReason: "Link this project to FogBugz to browse cases.",
+            available: props.fogbugzCasesAvailable === true,
+            disabledReason: "Link this thread to a FogBugz case to browse cases.",
             onClick: props.onAddFogBugzCases,
           },
         ]
@@ -1086,14 +1086,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.device,
       onClick: props.onAddDevice,
     },
-    ...(props.fogbugzCasesAvailable && props.onAddFogBugzCases
+    ...(props.onAddFogBugzCases
       ? [
           {
             label: "Fogbugz-Cases",
             icon: Hash,
             shortcut: "C",
-            available: true,
-            disabledReason: "Link this project to FogBugz to browse cases.",
+            available: props.fogbugzCasesAvailable === true,
+            disabledReason: "Link this thread to a FogBugz case to browse cases.",
             onClick: props.onAddFogBugzCases,
           },
         ]
