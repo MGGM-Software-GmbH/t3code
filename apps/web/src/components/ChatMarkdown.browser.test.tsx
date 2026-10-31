@@ -243,6 +243,31 @@ describe("ChatMarkdown workspace file opens", () => {
     threadId: ThreadId.make("thread"),
   };
 
+  it("preserves escaped directory names and decodes explicit file URLs once", async () => {
+    setup();
+    using openFile = vi
+      .spyOn(useRightPanelStore.getState(), "openFile")
+      .mockImplementation(() => {});
+    await using screen = await renderText(
+      "[Artifact](/tmp/mcp%3Alaunch%3A123/PRP.md)\n\n" +
+        "[Encoded artifact](file:///tmp/mcp%253Alaunch%253A123/PRP.md)\n\n" +
+        "[Colon directory](file:///tmp/name%3Apart/PRP.md)",
+      { threadRef },
+    );
+    const links = screen.container.querySelectorAll<HTMLAnchorElement>(".chat-markdown-file-link");
+    expect([...links].map((link) => link.getAttribute("href"))).toEqual([
+      "/tmp/mcp%3Alaunch%3A123/PRP.md",
+      "/tmp/mcp%3Alaunch%3A123/PRP.md",
+      "/tmp/name:part/PRP.md",
+    ]);
+    for (const link of links) await act(async () => link.click());
+    expect(openFile.mock.calls.map((call) => call[1])).toEqual([
+      "/tmp/mcp%3Alaunch%3A123/PRP.md",
+      "/tmp/mcp%3Alaunch%3A123/PRP.md",
+      "/tmp/name:part/PRP.md",
+    ]);
+  });
+
   it("keeps a newer absolute file open when an earlier repo-relative lookup finishes", async () => {
     setup();
     const result = AsyncResult.success({

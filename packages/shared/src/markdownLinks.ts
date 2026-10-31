@@ -208,6 +208,15 @@ export function safeDecodeURIComponent(value: string): string {
   }
 }
 
+function decodeMarkdownPath(value: string, isFileUrl: boolean): string {
+  // Bare host paths can contain literal URI escapes, including encoded thread IDs.
+  try {
+    return isFileUrl ? decodeURIComponent(value) : decodeURI(value);
+  } catch {
+    return value;
+  }
+}
+
 export function normalizeMarkdownLinkDestination(value: string): string {
   const trimmed = value.trim();
   return trimmed.startsWith("<") && trimmed.endsWith(">") ? trimmed.slice(1, -1) : trimmed;
@@ -239,7 +248,7 @@ export function markdownDestinationHostPath(source: string): string | null {
       : stripSlashPrefixedWindowsDrive(safeDecodeURIComponent(target.path));
   }
   return stripSlashPrefixedWindowsDrive(
-    safeDecodeURIComponent(splitMarkdownLinkSearchAndHash(source).path),
+    decodeMarkdownPath(splitMarkdownLinkSearchAndHash(source).path, false),
   );
 }
 
@@ -302,10 +311,10 @@ export function parseMarkdownFileLink(href: string): FilePathPosition | null {
     return null;
   }
 
+  const isFileUrl = normalized.toLowerCase().startsWith("file:");
   const source =
-    (normalized.toLowerCase().startsWith("file:") ? parseFileUrlHref(normalized) : null) ??
-    splitMarkdownLinkSearchAndHash(normalized);
-  const path = stripSlashPrefixedWindowsDrive(safeDecodeURIComponent(source.path.trim()));
+    (isFileUrl ? parseFileUrlHref(normalized) : null) ?? splitMarkdownLinkSearchAndHash(normalized);
+  const path = stripSlashPrefixedWindowsDrive(decodeMarkdownPath(source.path.trim(), isFileUrl));
   const hash = safeDecodeURIComponent(source.hash.trim());
   if (path.length === 0 || hasExternalScheme(path)) return null;
 
