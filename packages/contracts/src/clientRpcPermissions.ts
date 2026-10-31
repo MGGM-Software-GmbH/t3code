@@ -27,6 +27,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.fogbugzOpenCase]: AuthPreviewOperateScope,
   [WS_METHODS.fogbugzEnsureCaseGit]: AuthSourceControlWriteScope,
   [WS_METHODS.fogbugzMutateCaseFiles]: AuthFilesystemWriteScope,
+  [WS_METHODS.fogbugzManageCaseGit]: AuthSourceControlWriteScope,
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   // Stopping a server signals its processes, as closing a terminal does.
   [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,

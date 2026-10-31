@@ -46,6 +46,9 @@ describe("RPC authorization scopes", () => {
   });
 
   it("guards FogBugz credentials separately from case reads and thread mutations", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzManageCaseGit)).toBe(
+      AuthSourceControlWriteScope,
+    );
     expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzMutateCaseFiles)).toBe(
       AuthFilesystemWriteScope,
     );

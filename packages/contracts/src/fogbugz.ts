@@ -75,6 +75,23 @@ export const FogBugzCaseGitCheckout = Schema.Struct({
   canWrite: Schema.Boolean,
   syncIssue: Schema.optional(Schema.String),
 });
+export const FogBugzCaseGitState = Schema.Struct({
+  checkout: FogBugzCaseGitCheckout,
+  revision: Schema.String,
+  paths: Schema.Array(Schema.String),
+});
+export const FogBugzCaseGitInput = Schema.Struct({
+  threadId: ThreadId,
+  action: Schema.Union([
+    Schema.Struct({ type: Schema.Literal("status") }),
+    Schema.Struct({
+      type: Schema.Literal("commit"),
+      revision: TrimmedNonEmptyString,
+      message: TrimmedNonEmptyString.check(Schema.isMaxLength(2000)),
+    }),
+    Schema.Struct({ type: Schema.Literal("revert"), revision: TrimmedNonEmptyString }),
+  ]),
+});
 export const FogBugzCaseFilesInput = Schema.Struct({
   threadId: ThreadId,
   action: Schema.Union([
@@ -126,6 +143,8 @@ export const FogBugzCreateThreadInput = Schema.Struct({
 });
 
 const messages = {
+  case_git_changed:
+    "Case files changed since confirmation. Review the current changes and try again.",
   case_files_path:
     "Use a relative case file path without reserved names, traversal, or symbolic links.",
   case_files_exists: "The destination already exists. Choose another name or delete it first.",

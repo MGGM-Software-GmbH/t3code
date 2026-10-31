@@ -1,5 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { FogBugzCaseGitCheckout, FogBugzCaseFilesInput } from "@t3tools/contracts";
+import type {
+  FogBugzCaseGitCheckout,
+  FogBugzCaseFilesInput,
+  FogBugzCaseGitState,
+  FogBugzCaseGitInput,
+} from "@t3tools/contracts";
+import { GitBranch, GitCommitHorizontal, RotateCcw, RefreshCw } from "lucide";
+import { MorphIcon } from "../MorphIcon";
 import {
   runAttachmentUploadCycle,
   deletePendingAttachmentUpload,
@@ -12,6 +19,8 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "~/state/query";
 import FilePreviewPanel from "../files/FilePreviewPanel";
 import { Button } from "../ui/button";
+import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import {
   Dialog,
   DialogPopup,
@@ -73,6 +82,13 @@ function CaseGitFiles(props: Props) {
   const { environmentId, threadId } = props.threadRef;
   const prepare = useAtomCommand(fogbugzEnvironment.ensureCaseGit, { reportFailure: false });
   const mutate = useAtomCommand(fogbugzEnvironment.mutateCaseFiles, { reportFailure: false });
+  const manageGit = useAtomCommand(fogbugzEnvironment.manageCaseGit, { reportFailure: false });
+  const gitPermission = useAtomValue(
+    fogbugzEnvironment.manageCaseGit.permissionAtom(environmentId),
+  );
+  const [gitDialog, setGitDialog] = useState<"commit" | "revert" | null>(null);
+  const [gitState, setGitState] = useState<typeof FogBugzCaseGitState.Type | null>(null);
+  const [commitMessage, setCommitMessage] = useState("Update case files");
   const writePermission = useAtomValue(
     fogbugzEnvironment.mutateCaseFiles.permissionAtom(environmentId),
   );
@@ -91,6 +107,31 @@ function CaseGitFiles(props: Props) {
   const [pending, setPending] = useState(false);
   const requestId = useRef(0);
   const singleColumn = useMediaQuery("(max-width: 639px)");
+  async function runGit(action: typeof FogBugzCaseGitInput.Type.action) {
+    setMutating(true);
+    setMutationError(null);
+    try {
+      const result = await manageGit({ environmentId, input: { threadId, action } });
+      if (result._tag !== "Success") throw new Error(formatEnvironmentQueryError(result.cause));
+      setGitState(result.value);
+      setCheckout(result.value.checkout);
+      setRevision((value) => value + 1);
+      if (action.type === "revert") {
+        setRelativePath(null);
+        setFolderTrail(undefined);
+      }
+      if (action.type !== "status") setGitDialog(null);
+      return true;
+    } catch (failure) {
+      setMutationError(failure instanceof Error ? failure.message : "Could not update case Git.");
+      return false;
+    } finally {
+      setMutating(false);
+    }
+  }
+  async function openGitDialog(action: "commit" | "revert") {
+    if (await runGit({ type: "status" })) setGitDialog(action);
+  }
   async function change(action: typeof FogBugzCaseFilesInput.Type.action) {
     const result = await mutate({ environmentId, input: { threadId, action } });
     if (result._tag !== "Success") throw new Error(formatEnvironmentQueryError(result.cause));
@@ -262,6 +303,53 @@ function CaseGitFiles(props: Props) {
           workspaceMutationId={`${props.workspaceMutationId ?? ""}:${revision}`}
           readOnly={!checkout.canWrite || mutating}
           fileActions={{
+            toolbar: (
+              <Menu>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <MenuTrigger
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            aria-label="Case Git actions"
+                            disabled={!gitPermission || mutating || pending}
+                          />
+                        }
+                      />
+                    }
+                  >
+                    <MorphIcon icon={GitBranch} className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipPopup>
+                    {pending
+                      ? "Save or discard the open file before using Git actions"
+                      : "Case Git actions"}
+                  </TooltipPopup>
+                </Tooltip>
+                <MenuPopup>
+                  <MenuItem
+                    disabled={!checkout.canWrite}
+                    onClick={() => void openGitDialog("commit")}
+                  >
+                    <MorphIcon icon={GitCommitHorizontal} />
+                    Commit…
+                  </MenuItem>
+                  <MenuItem
+                    disabled={!checkout.canWrite}
+                    onClick={() => void openGitDialog("revert")}
+                  >
+                    <MorphIcon icon={RotateCcw} />
+                    Revert…
+                  </MenuItem>
+                  <MenuItem onClick={() => void runGit({ type: "status" })}>
+                    <MorphIcon icon={RefreshCw} />
+                    Update
+                  </MenuItem>
+                </MenuPopup>
+              </Menu>
+            ),
             disabled: !checkout.canWrite || !writePermission || mutating,
             create: (folder, directory) => {
               setName("");
@@ -296,6 +384,83 @@ function CaseGitFiles(props: Props) {
           selectedFilePending={pending}
         />
       </div>
+      <Dialog
+        open={gitDialog !== null}
+        onOpenChange={(open) => {
+          if (!open && !mutating) setGitDialog(null);
+        }}
+      >
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>
+              {gitDialog === "commit" ? "Commit case files" : "Revert case files"}
+            </DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            {mutationError && (
+              <p role="alert" className="mb-3 text-sm text-destructive">
+                {mutationError}
+              </p>
+            )}
+            <p className="text-sm">
+              {gitDialog === "commit"
+                ? "Commit all local file changes and publish case commits to FogBugz."
+                : "Discard all uncommitted changes in this case checkout, including new files. Existing commits and ignored files are kept."}
+            </p>
+            <p className="mt-2 break-all text-xs text-muted-foreground">{checkout.cwd}</p>
+            <ul className="my-3 max-h-48 overflow-auto text-sm">
+              {gitState?.paths.map((path) => (
+                <li className="break-all" key={path}>
+                  {path}
+                </li>
+              ))}
+            </ul>
+            {gitState?.paths.length === 0 && (
+              <p className="my-3 text-sm text-muted-foreground">No uncommitted changes.</p>
+            )}
+            {gitDialog === "commit" && (
+              <>
+                <label htmlFor="case-commit-message" className="text-sm">
+                  Commit message
+                </label>
+                <Input
+                  id="case-commit-message"
+                  value={commitMessage}
+                  maxLength={2000}
+                  onChange={(event) => setCommitMessage(event.target.value)}
+                />
+              </>
+            )}
+          </DialogPanel>
+          <DialogFooter>
+            <Button variant="outline" disabled={mutating} onClick={() => setGitDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={gitDialog === "revert" ? "destructive" : "default"}
+              disabled={
+                mutating ||
+                !gitState ||
+                (gitDialog === "revert" ? gitState.paths.length === 0 : !commitMessage.trim())
+              }
+              onClick={() => {
+                if (gitState && gitDialog)
+                  void runGit(
+                    gitDialog === "commit"
+                      ? {
+                          type: "commit",
+                          revision: gitState.revision,
+                          message: commitMessage.trim(),
+                        }
+                      : { type: "revert", revision: gitState.revision },
+                  );
+              }}
+            >
+              {gitDialog === "commit" ? "Commit and publish" : "Discard changes"}
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
       <Dialog
         open={dialog !== null}
         onOpenChange={(open) => {

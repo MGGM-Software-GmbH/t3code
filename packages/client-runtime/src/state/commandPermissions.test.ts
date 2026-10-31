@@ -73,6 +73,7 @@ describe("command permissions", () => {
     [WS_METHODS.previewClose, AuthPreviewOperateScope],
     [WS_METHODS.fogbugzCaseContext, AuthOrchestrationReadScope],
     [WS_METHODS.fogbugzEnsureCaseGit, AuthSourceControlWriteScope],
+    [WS_METHODS.fogbugzManageCaseGit, AuthSourceControlWriteScope],
     [WS_METHODS.fogbugzMutateCaseFiles, AuthFilesystemWriteScope],
   ] as const)("requires the destination grant for %s", ([method, permission]) =>
     Effect.scoped(

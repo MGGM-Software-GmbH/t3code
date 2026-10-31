@@ -4,6 +4,8 @@ import {
   type ThreadId,
   type RunId,
   type FogBugzCaseFilesInput,
+  type FogBugzCaseGitInput,
+  type FogBugzCaseGitState,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -13,6 +15,8 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
+import * as Crypto from "effect/Crypto";
+import * as Hex from "effect/encoding/Hex";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -37,6 +41,9 @@ export class FogBugzCaseGit extends Context.Service<
     ) => Effect.Effect<{ text: string; cwd: string; canWrite: boolean } | null, FogBugzError>;
     finishTurn: (threadId: ThreadId, runId: RunId) => Effect.Effect<void, FogBugzError>;
     mutateFiles: (input: typeof FogBugzCaseFilesInput.Type) => Effect.Effect<void, FogBugzError>;
+    manage: (
+      input: typeof FogBugzCaseGitInput.Type,
+    ) => Effect.Effect<typeof FogBugzCaseGitState.Type, FogBugzError>;
   }
 >()("t3/fogbugz/FogBugzCaseGit") {}
 
@@ -52,6 +59,7 @@ export const layer = Layer.effect(
     const projections = yield* ProjectionStoreV2;
     const projects = yield* ProjectStoreV2;
     const settings = yield* ServerSettingsService;
+    const crypto = yield* Crypto.Crypto;
     const locations = new Map<RunId, { cwd: string; shared: boolean }>();
     const location = Effect.fn("FogBugzCaseGit.location")(
       function* (
@@ -115,6 +123,7 @@ export const layer = Layer.effect(
       threadId: ThreadId,
       runId?: RunId,
       push = false,
+      action?: typeof FogBugzCaseGitInput.Type.action,
     ) {
       const repository = yield* fogbugz.caseGitRepository(threadId);
       const target = yield* location(threadId, repository, runId);
@@ -160,16 +169,17 @@ export const layer = Layer.effect(
           const runGit = Effect.fn("FogBugzCaseGit.runGit")(function* (
             args: ReadonlyArray<string>,
             workingDirectory: string,
+            index?: string,
           ) {
             const result = yield* processes.run({
               command: "git",
               args,
               cwd: workingDirectory,
-              env,
+              env: index ? { ...env, GIT_INDEX_FILE: index } : env,
               timeout: "90 seconds",
               maxOutputBytes: 128_000,
             });
-            return { code: result.code, output: result.stdout.trim() };
+            return { code: result.code, output: result.stdout.trim(), raw: result.stdout };
           });
           const git = Effect.fn("FogBugzCaseGit.git")(function* (
             args: ReadonlyArray<string>,
@@ -217,6 +227,7 @@ export const layer = Layer.effect(
             canWrite: repository.canWrite,
           };
           if (runId && !push && !busy) locations.set(runId, target);
+          if (busy && action) return yield* new FogBugzError({ code: "case_files_busy" });
           if (busy)
             return {
               checkout: {
@@ -226,6 +237,129 @@ export const layer = Layer.effect(
               },
               limits: repository.limits,
             };
+          const changes = Effect.fn("FogBugzCaseGit.changes")(() =>
+            Effect.scoped(
+              Effect.gen(function* () {
+                // A private index snapshots disk changes without altering the agent's staged files.
+                const temporary = yield* fs.makeTempDirectoryScoped({ prefix: "t3-case-index-" });
+                const index = path.join(temporary, "index");
+                const indexed = Effect.fn("FogBugzCaseGit.indexed")(function* (
+                  args: ReadonlyArray<string>,
+                ) {
+                  const result = yield* runGit(args, cwd, index);
+                  if (result.code !== 0) return yield* new FogBugzError({ code: "case_git" });
+                  return result.output;
+                });
+                const head = yield* runGit(["rev-parse", "--verify", "HEAD"], cwd);
+                yield* indexed(head.code === 0 ? ["read-tree", "HEAD"] : ["read-tree", "--empty"]);
+                const baseTree = yield* indexed(["write-tree"]);
+                yield* indexed(["add", "--all", "--", "."]);
+                const tree = yield* indexed(["write-tree"]);
+                const diff = yield* runGit(
+                  ["diff", "--name-only", "--no-renames", "-z", baseTree, tree],
+                  cwd,
+                );
+                const staged = yield* runGit(
+                  ["diff", "--cached", "--raw", "--no-abbrev", "-z"],
+                  cwd,
+                );
+                const stagedPaths = yield* runGit(
+                  ["diff", "--cached", "--name-only", "--no-renames", "-z"],
+                  cwd,
+                );
+                if (diff.code !== 0 || staged.code !== 0 || stagedPaths.code !== 0)
+                  return yield* new FogBugzError({ code: "case_git" });
+                return {
+                  revision: Hex.encode(
+                    yield* crypto.digest(
+                      "SHA-256",
+                      new TextEncoder().encode(
+                        `${repository.connectionId}:${repository.personId}:${repository.repositoryId}:${cwd}:${head.code === 0 ? head.output : "empty"}:${tree}:${staged.raw}`,
+                      ),
+                    ),
+                  ),
+                  paths: [
+                    ...new Set(
+                      [...diff.raw.split("\0"), ...stagedPaths.raw.split("\0")].filter(Boolean),
+                    ),
+                  ].sort(),
+                  tree,
+                  baseTree,
+                  head: head.code === 0 ? head.output : null,
+                };
+              }),
+            ),
+          );
+          if (action && action.type !== "status") {
+            if (!repository.canWrite)
+              return yield* new FogBugzError({ code: "case_files_readonly" });
+            if ((yield* git(["symbolic-ref", "--quiet", "HEAD"])) !== "refs/heads/main")
+              return yield* new FogBugzError({ code: "case_git" });
+            const snapshot = yield* changes();
+            if (snapshot.revision !== action.revision)
+              return yield* new FogBugzError({ code: "case_git_changed" });
+            if (action.type === "commit" && snapshot.paths.length > 0) {
+              const entries = (yield* git(["ls-tree", "-r", "-l", "-z", snapshot.tree]))
+                .split("\0")
+                .filter(Boolean);
+              let totalBytes = 0;
+              let changedBytes = 0;
+              for (const entry of entries) {
+                const separator = entry.indexOf("\t");
+                const [mode, kind, , size] = entry.slice(0, separator).trim().split(/\s+/);
+                const bytes = Number(size);
+                if (kind !== "blob" || mode === "120000" || !Number.isFinite(bytes))
+                  return yield* new FogBugzError({ code: "case_files_path" });
+                totalBytes += bytes;
+                if (snapshot.paths.includes(entry.slice(separator + 1))) changedBytes += bytes;
+                if (bytes > repository.limits.fileBytes)
+                  return yield* new FogBugzError({ code: "case_files_limit" });
+              }
+              if (
+                totalBytes > repository.limits.repositoryBytes ||
+                changedBytes > repository.limits.groupBytes ||
+                snapshot.paths.length > repository.limits.groupFiles
+              )
+                return yield* new FogBugzError({ code: "case_files_limit" });
+              if (snapshot.tree !== snapshot.baseTree) {
+                const commit = yield* git([
+                  "-c",
+                  "user.name=T3 Code",
+                  "-c",
+                  "user.email=t3-code@localhost",
+                  "commit-tree",
+                  snapshot.tree,
+                  ...(snapshot.head ? ["-p", snapshot.head] : []),
+                  "-m",
+                  action.message,
+                ]);
+                yield* git(["update-ref", "HEAD", commit, snapshot.head ?? "0".repeat(40)]);
+              }
+              yield* git(
+                snapshot.head || snapshot.tree !== snapshot.baseTree
+                  ? ["reset", "--mixed", "HEAD"]
+                  : ["read-tree", "--empty"],
+              );
+            } else if (action.type === "revert" && snapshot.paths.length > 0) {
+              const untracked = yield* runGit(
+                ["ls-files", "--others", "--exclude-standard", "-z"],
+                cwd,
+              );
+              if (untracked.code !== 0) return yield* new FogBugzError({ code: "case_git" });
+              for (const file of untracked.raw.split("\0").filter(Boolean))
+                yield* fs.remove(path.join(cwd, file));
+              if (snapshot.head)
+                yield* git(["restore", "--source=HEAD", "--staged", "--worktree", "--", "."]);
+              else {
+                const tracked = yield* runGit(["ls-files", "-z"], cwd);
+                if (tracked.code !== 0) return yield* new FogBugzError({ code: "case_git" });
+                for (const file of tracked.raw.split("\0").filter(Boolean))
+                  if (yield* fs.exists(path.join(cwd, file)))
+                    yield* fs.remove(path.join(cwd, file));
+                yield* git(["read-tree", "--empty"]);
+              }
+            }
+          }
           const issue = Effect.fn("FogBugzCaseGit.update")(function* () {
             if (
               (yield* git(["ls-remote", "--get-url", repository.remoteUrl])) !==
@@ -312,7 +446,7 @@ export const layer = Layer.effect(
             ),
           );
           const issuePath = path.join(parent, "sync-issue");
-          if (push) yield* fs.writeFileString(issuePath, currentIssue ?? "");
+          if (push || action) yield* fs.writeFileString(issuePath, currentIssue ?? "");
           const previousIssue = yield* fs
             .exists(issuePath)
             .pipe(
@@ -324,6 +458,7 @@ export const layer = Layer.effect(
           return {
             checkout: { ...checkout, ...(syncIssue ? { syncIssue } : {}) },
             limits: repository.limits,
+            ...(action ? { changes: yield* changes() } : {}),
           };
         }),
       ).pipe(
@@ -333,6 +468,21 @@ export const layer = Layer.effect(
       );
     });
     return FogBugzCaseGit.of({
+      manage: Effect.fn("FogBugzCaseGit.manage")(function* (input) {
+        const result = yield* synchronize(
+          input.threadId,
+          undefined,
+          input.action.type === "commit",
+          input.action,
+        );
+        if (!("changes" in result) || !result.changes)
+          return yield* new FogBugzError({ code: "case_git" });
+        return {
+          checkout: result.checkout,
+          revision: result.changes.revision,
+          paths: result.changes.paths,
+        };
+      }),
       mutateFiles: Effect.fn("FogBugzCaseGit.mutateFiles")(function* (input) {
         const { checkout } = yield* synchronize(input.threadId);
         yield* withWorkspaceLease(

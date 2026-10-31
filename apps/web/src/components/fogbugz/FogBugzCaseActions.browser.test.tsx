@@ -525,7 +525,7 @@ it.each([
   { width: 1400, height: 900 },
   { width: 390, height: 844 },
 ])(
-  "opens case Git through the surface menu and reads files from its own checkout at $width px",
+  "opens case Git through thread details and reads files from its own checkout at $width px",
   async ({ width, height }) => {
     const thread = threadWithHistory(`case-git-panel-${width}`, 0);
     const projectId = ProjectId.make("project-render");
@@ -618,11 +618,20 @@ it.each([
     container.style.width = `${width}px`;
     container.style.height = `${height}px`;
     // AppRoot owns the router and the file viewer's composer context.
-    await using screen = await render(<AppRoot router={router} />, { container, router: false });
-    const togglePanel = screen.getByRole("button", { name: "Toggle right panel", exact: true });
-    await expect.element(togglePanel).toBeVisible();
-    await userEvent.click(togglePanel);
-    await userEvent.click(page.getByText("FogBugz-Case-Git", { exact: true }));
+    await using _screen = await render(<AppRoot router={router} />, { container, router: false });
+    if (width < 640)
+      await userEvent.click(
+        page.getByRole("button", { name: "Toggle thread details panel", exact: true }),
+      );
+    const caseGitEntry = page
+      .getByRole("region", { name: "FogBugz", exact: true })
+      .getByRole("button", { name: "FogBugz-Case-Git", exact: true });
+    await expect.element(caseGitEntry).toBeVisible();
+    await userEvent.click(caseGitEntry);
+    if (width < 640)
+      await expect
+        .element(page.getByRole("dialog", { name: "Thread details", exact: true }))
+        .not.toBeInTheDocument();
     await expect
       .element(
         page.getByRole("alert").filter({ hasText: "Could not prepare the case Git checkout" }),
@@ -673,6 +682,16 @@ it.each([
       .toBeVisible();
     expect(readRoots.length).toBeGreaterThan(0);
     expect(readRoots.every((root) => root === cwd)).toBe(true);
+    await userEvent.click(page.getByRole("button", { name: "Case #42", exact: true }));
+    await userEvent.click(page.getByRole("button", { name: "Case Git actions", exact: true }));
+    await expect.element(page.getByRole("menuitem", { name: "Update", exact: true })).toBeVisible();
+    await expect
+      .element(page.getByRole("menuitem", { name: "Commit…", exact: true }))
+      .toBeVisible();
+    await expect
+      .element(page.getByRole("menuitem", { name: "Revert…", exact: true }))
+      .toBeVisible();
+    await userEvent.keyboard("{Escape}");
   },
 );
 

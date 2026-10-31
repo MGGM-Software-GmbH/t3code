@@ -103,6 +103,154 @@ const prepare = Effect.gen(function* () {
 const runtime = ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("per-thread case Git checkout", () => {
+  it.live(
+    "commits and publishes case changes, rejects stale confirmations, and reverts only uncommitted files",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fixture = yield* prepare;
+          yield* Effect.gen(function* () {
+            const service = yield* CaseGit.FogBugzCaseGit;
+            const threadId = ThreadId.make("manual-git");
+            const initial = yield* service.manage({ threadId, action: { type: "status" } });
+            const { checkout } = initial;
+            fixture.shared.directory = "alternate";
+            const otherLocation = yield* service.manage({ threadId, action: { type: "status" } });
+            expect(otherLocation.revision).not.toBe(initial.revision);
+            expect(
+              yield* service
+                .manage({ threadId, action: { type: "revert", revision: initial.revision } })
+                .pipe(Effect.flip),
+            ).toMatchObject({ code: "case_git_changed" });
+            fixture.shared.directory = "";
+            const file = fixture.path.join(checkout.cwd, "PRP.md");
+            yield* fixture.fs.writeFileString(file, "First plan");
+            const first = yield* service.manage({ threadId, action: { type: "status" } });
+            expect(first.paths).toEqual(["PRP.md"]);
+            // Reading status must leave the real Git index unchanged, including on an unborn branch.
+            expect(
+              (yield* fixture.git(["diff", "--cached", "--name-only"], checkout.cwd)).stdout,
+            ).toBe("");
+            const committed = yield* service.manage({
+              threadId,
+              action: { type: "commit", revision: first.revision, message: "Document the case" },
+            });
+            expect(committed.paths).toEqual([]);
+            expect(committed.checkout.syncIssue).toBeUndefined();
+            const head = (yield* fixture.git(["rev-parse", "HEAD"], checkout.cwd)).stdout.trim();
+            expect((yield* fixture.git(["rev-parse", "main"], fixture.remote)).stdout.trim()).toBe(
+              head,
+            );
+            expect(
+              (yield* fixture.git(["log", "-1", "--format=%s"], fixture.remote)).stdout.trim(),
+            ).toBe("Document the case");
+            yield* fixture.fs.writeFileString(file, "Draft");
+            const stale = yield* service.manage({ threadId, action: { type: "status" } });
+            yield* fixture.fs.writeFileString(file, "Newer draft");
+            for (const action of [
+              { type: "revert" as const, revision: stale.revision },
+              { type: "commit" as const, revision: stale.revision, message: "Stale plan" },
+            ])
+              expect(yield* service.manage({ threadId, action }).pipe(Effect.flip)).toMatchObject({
+                code: "case_git_changed",
+              });
+            expect(yield* fixture.fs.readFileString(file)).toBe("Newer draft");
+            yield* fixture.fs.writeFileString(fixture.path.join(checkout.cwd, "new.md"), "New");
+            yield* fixture.fs.writeFileString(
+              fixture.path.join(checkout.cwd, "staged.md"),
+              "Staged",
+            );
+            yield* fixture.git(["add", "staged.md"], checkout.cwd);
+            yield* fixture.fs.writeFileString(
+              fixture.path.join(checkout.cwd, ".git/info/exclude"),
+              "ignored.txt\n",
+            );
+            yield* fixture.fs.writeFileString(
+              fixture.path.join(checkout.cwd, "ignored.txt"),
+              "Keep",
+            );
+            const dirty = yield* service.manage({ threadId, action: { type: "status" } });
+            expect(dirty.paths).toEqual(["PRP.md", "new.md", "staged.md"]);
+            const reverted = yield* service.manage({
+              threadId,
+              action: { type: "revert", revision: dirty.revision },
+            });
+            expect(reverted.paths).toEqual([]);
+            expect(yield* fixture.fs.readFileString(file)).toBe("First plan");
+            expect(yield* fixture.fs.exists(fixture.path.join(checkout.cwd, "new.md"))).toBe(false);
+            expect(yield* fixture.fs.exists(fixture.path.join(checkout.cwd, "staged.md"))).toBe(
+              false,
+            );
+            expect(
+              yield* fixture.fs.readFileString(fixture.path.join(checkout.cwd, "ignored.txt")),
+            ).toBe("Keep");
+            expect((yield* fixture.git(["rev-parse", "HEAD"], checkout.cwd)).stdout.trim()).toBe(
+              head,
+            );
+            yield* fixture.fs.writeFileString(file, "Staged draft");
+            yield* fixture.git(["add", "PRP.md"], checkout.cwd);
+            yield* fixture.fs.writeFileString(file, "First plan");
+            const stagedOnly = yield* service.manage({ threadId, action: { type: "status" } });
+            expect(stagedOnly.paths).toEqual(["PRP.md"]);
+            yield* service.manage({
+              threadId,
+              action: { type: "revert", revision: stagedOnly.revision },
+            });
+            expect((yield* fixture.git(["status", "--porcelain"], checkout.cwd)).stdout).toBe("");
+            yield* fixture.fs.writeFileString(file, "Oversized");
+            fixture.repository.limits.fileBytes = 3;
+            const oversized = yield* service.manage({ threadId, action: { type: "status" } });
+            expect(
+              yield* service
+                .manage({
+                  threadId,
+                  action: { type: "commit", revision: oversized.revision, message: "Too large" },
+                })
+                .pipe(Effect.flip),
+            ).toMatchObject({ code: "case_files_limit" });
+            fixture.repository.canWrite = false;
+            expect(
+              yield* service
+                .manage({ threadId, action: { type: "revert", revision: oversized.revision } })
+                .pipe(Effect.flip),
+            ).toMatchObject({ code: "case_files_readonly" });
+            fixture.repository.canWrite = true;
+            fixture.activity.runId = RunId.make("active");
+            expect(
+              yield* service
+                .manage({ threadId, action: { type: "revert", revision: oversized.revision } })
+                .pipe(Effect.flip),
+            ).toMatchObject({ code: "case_files_busy" });
+          }).pipe(Effect.provide(fixture.serviceLayer));
+        }),
+      ).pipe(Effect.provide(runtime)),
+  );
+  it.live("reverts an unborn checkout without creating or publishing a commit", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* prepare;
+        yield* Effect.gen(function* () {
+          const service = yield* CaseGit.FogBugzCaseGit;
+          const threadId = ThreadId.make("unborn-revert");
+          const checkout = yield* service.ensure(threadId);
+          const file = fixture.path.join(checkout.cwd, "draft.md");
+          yield* fixture.fs.writeFileString(file, "Draft");
+          yield* fixture.git(["add", "."], checkout.cwd);
+          const state = yield* service.manage({ threadId, action: { type: "status" } });
+          expect(
+            (yield* service.manage({
+              threadId,
+              action: { type: "revert", revision: state.revision },
+            })).paths,
+          ).toEqual([]);
+          expect(yield* fixture.fs.exists(file)).toBe(false);
+          expect(
+            (yield* fixture.git(["rev-parse", "--verify", "HEAD"], checkout.cwd)).code,
+          ).not.toBe(0);
+        }).pipe(Effect.provide(fixture.serviceLayer));
+      }),
+    ).pipe(Effect.provide(runtime)),
+  );
   it.live("shares configured case folders, preserves defaults and blocks concurrent writers", () =>
     Effect.scoped(
       Effect.gen(function* () {

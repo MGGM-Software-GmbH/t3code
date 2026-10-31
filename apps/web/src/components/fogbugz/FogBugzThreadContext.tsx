@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { ExternalLinkIcon, LinkIcon, UnlinkIcon } from "lucide-react";
+import { ExternalLinkIcon, FolderGit2Icon, LinkIcon, UnlinkIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { fogbugzEnvironment } from "../../state/fogbugz";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/query";
@@ -15,6 +15,7 @@ import {
   THREAD_DETAILS_PANEL_LABEL_CLASS,
 } from "../chat/threadDetailsPanelStyles";
 import { useFogBugzCasePreview } from "./useFogBugzCasePreview";
+import { useRightPanelStore } from "../../rightPanelStore";
 
 export function FogBugzThreadContext({
   threadRef,
@@ -86,6 +87,17 @@ export function FogBugzThreadContext({
           <ThreadDetailsControl disabled={!browserPermission} onClick={() => void openCase()}>
             <ExternalLinkIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
             <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Open FogBugz case</span>
+          </ThreadDetailsControl>
+          <ThreadDetailsControl
+            disabled={!caseGitPermission}
+            onClick={() => {
+              const panels = useRightPanelStore.getState();
+              panels.open(threadRef, "fogbugz-case-git");
+              panels.setThreadPanelOpen(threadRef, "popover", false);
+            }}
+          >
+            <FolderGit2Icon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>FogBugz-Case-Git</span>
           </ThreadDetailsControl>
           <ThreadDetailsControl
             disabled={!permission || busy}
