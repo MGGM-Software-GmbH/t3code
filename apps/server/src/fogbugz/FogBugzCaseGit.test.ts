@@ -172,7 +172,7 @@ describe("per-thread case Git checkout", () => {
   );
 
   it.live(
-    "ignores the shared directory in SVN without replacing existing ignore entries or committing",
+    "creates shared checkouts without changing SVN properties or requiring a valid SVN working copy",
     () =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -212,10 +212,10 @@ describe("per-thread case Git checkout", () => {
           expect(
             (yield* svn(["propget", "--strict", "svn:ignore", fixture.project.workspaceRoot]))
               .stdout,
-          ).toBe("existing-entry\ndocs\n");
+          ).toBe("existing-entry\n");
           const status = yield* svn(["status", "--no-ignore", fixture.project.workspaceRoot]);
           expect(status.stdout).toContain("M");
-          expect(status.stdout).toMatch(/I\s+.*docs/);
+          expect(status.stdout).toMatch(/\?\s+.*docs/);
           expect(
             (yield* svn([
               "info",
@@ -230,13 +230,13 @@ describe("per-thread case Git checkout", () => {
           });
           yield* Effect.gen(function* () {
             const service = yield* CaseGit.FogBugzCaseGit;
-            expect(yield* service.ensure(ThreadId.make("broken")).pipe(Effect.flip)).toMatchObject({
-              code: "case_git_svn",
-            });
+            expect((yield* service.ensure(ThreadId.make("broken"))).cwd).toBe(
+              fixture.path.join(fixture.shared.directory, "FB42"),
+            );
           }).pipe(Effect.provide(fixture.serviceLayer));
           expect(
             yield* fixture.fs.exists(fixture.path.join(fixture.shared.directory, "FB42")),
-          ).toBe(false);
+          ).toBe(true);
         }),
       ).pipe(Effect.provide(runtime)),
   );

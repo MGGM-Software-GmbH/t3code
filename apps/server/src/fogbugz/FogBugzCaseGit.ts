@@ -111,60 +111,6 @@ export const layer = Layer.effect(
       }
       return false;
     });
-    const ignoreSvnDirectory = Effect.fn("FogBugzCaseGit.ignoreSvnDirectory")(function* (
-      cwd: string,
-    ) {
-      let ancestor = path.dirname(cwd);
-      while (!(yield* fs.exists(path.join(ancestor, ".svn")))) {
-        const parent = path.dirname(ancestor);
-        if (parent === ancestor) return;
-        ancestor = parent;
-      }
-      const svn = Effect.fn("FogBugzCaseGit.svn")(function* (args: ReadonlyArray<string>) {
-        const result = yield* processes.run({
-          command: "svn",
-          args: ["--non-interactive", ...args],
-          cwd: ancestor,
-        });
-        if (result.code !== 0) return yield* new FogBugzError({ code: "case_git_svn" });
-        return result.stdout;
-      });
-      return yield* withWorkspaceLease(
-        `svn:${ancestor}`,
-        Effect.gen(function* () {
-          // Ignore the first unversioned directory; svn:ignore applies to immediate children only.
-          let versioned = ancestor;
-          const segments = path.relative(ancestor, cwd).split(path.sep);
-          for (const segment of segments) {
-            const candidate = path.join(versioned, segment);
-            const info = yield* processes.run({
-              command: "svn",
-              args: ["info", "--non-interactive", "--", `${candidate}@`],
-              cwd: ancestor,
-            });
-            if (info.code !== 0) {
-              const properties = yield* svn(["proplist", "--", `${versioned}@`]);
-              const existing = properties
-                .split(/\r?\n/)
-                .some((line) => line.trim() === "svn:ignore")
-                ? yield* svn(["propget", "--strict", "svn:ignore", "--", `${versioned}@`])
-                : "";
-              if (!existing.split(/\r?\n/).includes(segment))
-                yield* svn([
-                  "propset",
-                  "svn:ignore",
-                  `${existing}${existing && !existing.endsWith("\n") ? "\n" : ""}${segment}\n`,
-                  "--",
-                  `${versioned}@`,
-                ]);
-              return;
-            }
-            versioned = candidate;
-          }
-          return yield* new FogBugzError({ code: "case_git_svn" });
-        }),
-      );
-    });
     const synchronize = Effect.fn("FogBugzCaseGit.synchronize")(function* (
       threadId: ThreadId,
       runId?: RunId,
@@ -189,7 +135,6 @@ export const layer = Layer.effect(
                 return yield* new FogBugzError({ code: "case_git" });
             }
           }
-          if (target.shared && !busy) yield* ignoreSvnDirectory(cwd);
           // Only this process receives the token. Git never persists it in the remote or its config.
           const env = Object.fromEntries(
             Object.entries(inherited).map(([key, value]) => [

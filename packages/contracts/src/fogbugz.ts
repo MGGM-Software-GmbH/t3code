@@ -131,8 +131,6 @@ const messages = {
   case_files_exists: "The destination already exists. Choose another name or delete it first.",
   case_files_readonly: "This FogBugz account cannot change case files.",
   case_files_busy: "Wait for the agent's turn to finish before changing case files.",
-  case_git_svn:
-    "Could not ignore the case checkout in SVN. Check the local working copy and svn command.",
   case_files_limit: "The case file size, upload group, or repository limit would be exceeded.",
   case_files_io: "Could not change case files. Refresh the files and try again.",
   connection_required: "Configure FogBugz in Settings > MGGM first.",
