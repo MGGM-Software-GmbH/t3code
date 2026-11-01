@@ -43,6 +43,34 @@ describe("createInboxReturnTracker", () => {
     vi.clearAllTimers();
     vi.useRealTimers();
   });
+  it.each([
+    { reason: "completion", changes: { runtime: null } },
+    { reason: "a question", changes: { hasPendingUserInput: true } },
+    { reason: "an approval", changes: { hasPendingApprovals: true } },
+  ])("puts a returning thread first for $reason without restamping it", ({ reason, changes }) => {
+    vi.useFakeTimers();
+    const returnedAtMs = 1_780_358_400_000;
+    vi.setSystemTime(returnedAtMs);
+    const tracker = createInboxReturnTracker();
+    const busy = thread("old-working", true);
+    const ready = { ...thread("new-ready", false), createdAt: "2026-06-01T12:00:00.000Z" };
+    tracker.observe([busy, ready]);
+
+    const returned = { ...busy, ...changes };
+    tracker.observe([returned, ready]);
+    if (reason === "completion") vi.advanceTimersByTime(2_000);
+    const inbox = [ready, returned].filter((entry) => !isThreadWorking(entry));
+    expect(sortInboxThreadsByReturn(inbox, tracker.returnedAt).map((entry) => entry.id)).toEqual([
+      "old-working",
+      "new-ready",
+    ]);
+    const returnedAt = tracker.returnedAt(returned);
+    expect(returnedAt).toBe(returnedAtMs + (reason === "completion" ? 2_000 : 0));
+
+    vi.advanceTimersByTime(60_000);
+    tracker.observe([returned, ready]);
+    expect(tracker.returnedAt(returned)).toBe(returnedAt);
+  });
   it("stamps a thread when it stops working, but never on the first observation", () => {
     const tracker = createInboxReturnTracker();
     const first = tracker.observe([thread("a", true), thread("b", false)]);

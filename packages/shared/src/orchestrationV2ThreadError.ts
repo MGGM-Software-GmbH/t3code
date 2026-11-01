@@ -4,6 +4,24 @@ import type {
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
+
+export const MODEL_CAPACITY_ERROR_MESSAGE =
+  "Selected model is at capacity. Please try a different model.";
+
+/** Match only the recoverable capacity rejection, including already-persisted failures. */
+export function isModelCapacityError(message: string | null | undefined): boolean {
+  return message?.trim() === MODEL_CAPACITY_ERROR_MESSAGE;
+}
+
+/** Anchor retries to the failed run, so scheduler sweeps cannot postpone them. */
+export function modelCapacityRetryAt(stoppedAtMs: number, delayMinutes: number): string | null {
+  if (!Number.isInteger(delayMinutes) || delayMinutes <= 0) return null;
+  return DateTime.make(stoppedAtMs + delayMinutes * 60_000).pipe(
+    Option.map(DateTime.formatIso),
+    Option.getOrNull,
+  );
+}
 
 type ErrorTurnItem = Extract<OrchestrationV2TurnItem, { type: "error" }>;
 /** Only error items are read, so callers may pass items stripped of other fields. */

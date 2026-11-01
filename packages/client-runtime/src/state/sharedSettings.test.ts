@@ -5,7 +5,49 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
-import { filterSharedServerPatch } from "./sharedSettings.ts";
+import { filterSharedServerPatch, splitSharedServerPatch } from "./sharedSettings.ts";
+
+describe("splitSharedServerPatch", () => {
+  it.each([
+    {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-sol",
+      options: [{ id: "reasoningEffort", value: "low" }],
+    },
+    {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+      options: [{ id: "effort", value: "high" }],
+    },
+    DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+  ])("shares the text generation model and options, including reset (%j)", (selection) => {
+    const patch = { textGenerationModelSelection: selection };
+    expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
+  });
+
+  it("routes preference keys to the shared patch and machine keys to the local patch", () => {
+    const { sharedPatch, localPatch } = splitSharedServerPatch({
+      sidebarAutoSettleAfterDays: 7,
+      sidebarAutoSettleOnMerge: false,
+      continueThreadsAfterServerUpdate: true,
+      enableAgentBrowserAccess: false,
+      modelCapacityRetryDelayMinutes: 0,
+      defaultThreadEnvMode: "worktree",
+      newWorktreesStartFromOrigin: true,
+    });
+    expect(sharedPatch).toEqual({
+      sidebarAutoSettleAfterDays: 7,
+      sidebarAutoSettleOnMerge: false,
+      continueThreadsAfterServerUpdate: true,
+      newWorktreesStartFromOrigin: true,
+      modelCapacityRetryDelayMinutes: 0,
+    });
+    expect(localPatch).toEqual({
+      enableAgentBrowserAccess: false,
+      defaultThreadEnvMode: "worktree",
+    });
+  });
+});
 
 describe("filterSharedServerPatch", () => {
   it("holds the restart preference until the target's config loads", () => {

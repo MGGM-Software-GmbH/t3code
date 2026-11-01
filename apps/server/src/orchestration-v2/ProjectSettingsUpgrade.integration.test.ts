@@ -26,6 +26,7 @@ import * as SourceControlProviderRegistry from "../sourceControl/SourceControlPr
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as RuntimeLayer from "./runtimeLayer.ts";
 
@@ -115,8 +116,11 @@ const unusedEnrichment = {
 };
 
 const layerRuntime = (dbPath: string) => {
-  const layerPlatform = Layer.merge(
+  const layerPlatform = Layer.mergeAll(
     NodeServices.layer,
+    Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
+      refreshReviewComments: ({ records }) => Effect.succeed([...records]),
+    }),
     Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
       resolveLink: () => Effect.die("unused"),
     }),

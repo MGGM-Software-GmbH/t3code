@@ -1,6 +1,7 @@
 import {
   MessageId,
   NodeId,
+  RuntimeRequestId,
   RunId,
   ThreadId,
   TurnItemId,
@@ -226,6 +227,54 @@ describe("threadHistoryPaging", () => {
       },
     };
     expect(deferWorkHistoryRows([...work, failed])).toHaveLength(152);
+  });
+
+  it("retains pending question forms outside row and byte windows until they resolve", () => {
+    const rows = Array.from({ length: 200 }, (_, index) => makeRow(index, { outputBytes: 16_384 }));
+    const requestId = RuntimeRequestId.make("older-question");
+    const question: OrchestrationV2TurnItem = {
+      ...makeRow(1).item,
+      type: "user_input_request",
+      providerThreadId: null,
+      requestId,
+      nodeId: NODE,
+      questions: [{ id: "choice", header: "Choice", question: "Continue?", options: [] }],
+    };
+    rows[1] = { ...rows[1]!, item: question };
+    const projection = {
+      ...makeProjection(rows),
+      runtimeRequests: [
+        {
+          id: requestId,
+          nodeId: NODE,
+          providerTurnId: null,
+          nativeRequestRef: null,
+          kind: "user_input" as const,
+          status: "pending" as const,
+          responseCapability: { type: "message" as const },
+          createdAt: NOW,
+          resolvedAt: null,
+        },
+      ],
+    };
+    const bounded = buildBoundedThreadProjection({ projection, snapshotSequence: 1 });
+    expect(bounded.projection.turnItems).toContain(question);
+    expect(
+      bounded.projection.visibleTurnItems.some((entry) => entry.sourceItemId === question.id),
+    ).toBe(false);
+    expect(bounded.projection.visibleTurnItems.length).toBeLessThan(75);
+    const resolved = buildBoundedThreadProjection({
+      projection: {
+        ...projection,
+        runtimeRequests: projection.runtimeRequests.map((request) => ({
+          ...request,
+          status: "resolved" as const,
+          resolvedAt: NOW,
+        })),
+      },
+      snapshotSequence: 2,
+    });
+    expect(resolved.projection.turnItems).not.toContain(question);
   });
 
   it("keeps a human turn whole up to the turn row budget and pages a longer one from inside", () => {

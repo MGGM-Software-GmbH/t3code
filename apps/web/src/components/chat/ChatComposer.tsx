@@ -725,6 +725,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (preview) onExpandImage(preview);
     },
     openFile: setPreviewFileId,
+    editReviewComment: (commentId: string, text: string) => {
+      const store = useComposerDraftStore.getState();
+      const comment = store
+        .getComposerDraft(composerDraftTarget)
+        ?.reviewComments.find((candidate) => candidate.id === commentId);
+      if (comment) store.addReviewComment(composerDraftTarget, { ...comment, text });
+    },
+    setReviewCommentEditDraft: (commentId: string, text: string | null) =>
+      useComposerDraftStore
+        .getState()
+        .setReviewCommentEditDraft(composerDraftTarget, commentId, text),
     openMention: (path: string) => useRightPanelStore.getState().openFile(routeThreadRef, path),
     expandVideo: (fileId: string) => {
       const file = composerFiles.find((candidate) => candidate.id === fileId);
@@ -2120,6 +2131,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
   const handleSubmitMessageStable = useStableCallback(handleSubmitMessage);
+  const handleSubmitAlternateMessage = () => {
+    submitComposer(
+      undefined,
+      resolveComposerDispatchMode({
+        running: phase === "running",
+        alternateModifier: true,
+        activeTurnDefault: settings.followUpBehavior,
+      }),
+    );
+  };
+  const handleSubmitAlternateMessageStable = useStableCallback(handleSubmitAlternateMessage);
   const submitCitationAndSend = () => {
     submitComposer(
       undefined,
@@ -3495,6 +3517,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     preserveComposerFocusOnPointerDown={isMobileViewport}
                     isEditingQueuedMessage={isEditingQueuedMessage}
                     onSubmitMessage={handleSubmitMessageStable}
+                    onSubmitAlternateMessage={handleSubmitAlternateMessageStable}
                     onResume={onResume}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryActionStable}

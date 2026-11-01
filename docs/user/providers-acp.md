@@ -18,6 +18,22 @@ Claude Agent uses the ACP v2 preview by default for Registry and local `claude-a
 commands. If you encounter preview issues, set `CLAUDE_AGENT_ACP_EXPERIMENTAL_V2=0` in the
 provider instance's environment overrides to use ACP v1.
 
+## GitHub Copilot
+
+GitHub Copilot is included as a configured provider and uses `copilot` from the connected
+environment's PATH. Install the [Copilot CLI](https://github.com/github/copilot-cli) on each
+environment, then open **Settings → Providers → GitHub Copilot** and complete sign-in if requested.
+Select one of its models in the composer. Sign-in is separate for each environment. You can disable
+the provider without removing your account.
+
+The shipped preset does not install or update the CLI automatically. If `copilot` is missing from
+the environment's PATH, install it or set **Executable override** to its absolute path. Existing
+provider configurations keep their executable selection; set this field to `copilot` to use PATH.
+
+To opt into a T3-managed Registry installation, clear **Executable override**. Managed installations
+honor the environment's npm settings. If a minimum release age blocks the Registry's version, use
+an existing Copilot executable or retry when that version meets your policy.
+
 ## Add an agent
 
 1. Open **Settings → Providers**.
@@ -66,6 +82,10 @@ agent to confirm sign-in before reporting success. You can cancel or retry an ex
 Browser and terminal sign-in leave credentials in the agent's own store. Agents that use API keys
 through environment variables still take those keys in the instance's environment settings.
 A configured environment or agent home applies to both sign-in and chat.
+
+Copilot CLI's **Log in with Copilot CLI** method opens its login command in the in-app terminal.
+On a remote environment, open the displayed GitHub device URL on your own device and enter the
+one-time code. T3 Code reconnects to Copilot after the command exits to verify the account.
 
 If the agent advertises logout, choose **Sign out**. Changing a shared agent login stops running
 threads for instances of that same agent on the environment. Thread history and workspace files

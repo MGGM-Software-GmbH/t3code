@@ -1,8 +1,7 @@
 diff --git a/dist/components/CodeView.d.ts b/dist/components/CodeView.d.ts
-index 234ec4baa4..274ff5e32b 100644
 --- a/dist/components/CodeView.d.ts
 +++ b/dist/components/CodeView.d.ts
-@@ -158,6 +158,12 @@ interface CodeViewOptions<LAnnotation, Caret> extends CodeViewPassThroughOptions
+@@ -158,6 +158,12 @@
     * final pre-detach state.
     */
    onItemEditComplete?: CodeViewItemEditCompleteHandler<LAnnotation, Caret>;
@@ -15,25 +14,24 @@ index 234ec4baa4..274ff5e32b 100644
    /** Render a non-virtualized element at the very start of the scroll content,
     * before the first item. It is always rendered and scrolls with the content.
     * Return the same element across calls and mutate it in place to update;
-@@ -269,6 +275,13 @@ declare class CodeView<LAnnotation = undefined, Caret = undefined> {
-   getSelectedLines(): CodeViewLineSelection | null;
+@@ -270,6 +276,13 @@
    clearSelectedLines(options?: SelectionWriteOptions): void;
    getItem(itemId: string): CodeViewItem<LAnnotation> | undefined;
-+  /**
+   /**
 +   * Open the find panel, or refocus it when open. It searches every diff
 +   * item's lines (including folded files and virtualized rows), and is also
 +   * opened by the primary-modifier+F shortcut while focus is in the viewer.
 +   */
 +  openSearch(): void;
 +  closeSearch(): void;
-   /**
++  /**
     * Returns the editor while this item is being edited. Partial diffs get an
     * editor after their files load; scrolling away or collapsing keeps it.
+    */
 diff --git a/dist/components/CodeView.js b/dist/components/CodeView.js
-index ee5c91c5ab..7d0a2901e4 100644
 --- a/dist/components/CodeView.js
 +++ b/dist/components/CodeView.js
-@@ -18,6 +18,7 @@ import { resolvePreferredHighlighter } from "../utils/resolvePreferredHighlighte
+@@ -18,6 +18,7 @@
  import { roundToDevicePixel } from "../utils/roundToDevicePixel.js";
  import { VirtualizedFile } from "./VirtualizedFile.js";
  import { VirtualizedFileDiff } from "./VirtualizedFileDiff.js";
@@ -41,7 +39,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  //#region src/components/CodeView.ts
  const CODE_VIEW_DIFF_OPTION_KEYS = [
  	"theme",
-@@ -116,6 +117,8 @@ function defineItemOption(target, key, get) {
+@@ -116,6 +117,8 @@
  }
  const DEFAULT_SCROLL_INTERACTION_RESTORE_DELAY_MS = 120;
  const SUB_PIXEL_TOLERANCE = 1;
@@ -50,7 +48,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  const SCROLLING_CODE_OVERFLOW_FIX_VARIABLE = "--diffs-overflow-override";
  function createScrollRebaseConfig(containerHeight, triggerTop, targetTop) {
  	return {
-@@ -213,6 +216,8 @@ var CodeView = class CodeView {
+@@ -213,6 +216,8 @@
  	isReadySubscription;
  	pendingHighlighterTheme;
  	isComponentManaged;
@@ -59,7 +57,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  	slotSnapshotStale = false;
  	constructor(options = { theme: DEFAULT_THEMES }, workerManager, isComponentManaged = false) {
  		this.options = options;
-@@ -395,6 +400,7 @@ var CodeView = class CodeView {
+@@ -395,6 +400,7 @@
  		this.root.addEventListener("touchstart", this.clearPendingScroll, { passive: true });
  		this.root.addEventListener("pointerdown", this.clearPendingScroll, { passive: true });
  		this.root.addEventListener("keydown", this.clearPendingScroll, { passive: true });
@@ -67,7 +65,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  		this.resizeObserver.observe(this.root);
  		this.render(true);
  		window.__INSTANCE = this;
-@@ -467,6 +473,7 @@ var CodeView = class CodeView {
+@@ -467,6 +473,7 @@
  		this.heightDirty = true;
  		this.resetRenderState();
  		if (!this.isComponentManaged) this.flushSlotCoordinator();
@@ -75,7 +73,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  		if (failed) throw failure;
  	}
  	cleanUp() {
-@@ -488,6 +495,8 @@ var CodeView = class CodeView {
+@@ -488,6 +495,8 @@
  		this.root?.removeEventListener("touchstart", this.clearPendingScroll);
  		this.root?.removeEventListener("pointerdown", this.clearPendingScroll);
  		this.root?.removeEventListener("keydown", this.clearPendingScroll);
@@ -84,7 +82,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  		this.root?.style.removeProperty("overflow-anchor");
  		this.container?.remove();
  		this.stickyOffset.remove();
-@@ -629,6 +638,137 @@ var CodeView = class CodeView {
+@@ -629,6 +638,137 @@
  	getItem(itemId) {
  		return this.idToItem.get(itemId)?.item;
  	}
@@ -222,7 +220,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  	/**
  	* Returns the editor while this item is being edited. Partial diffs get an
  	* editor after their files load; scrolling away or collapsing keeps it.
-@@ -648,6 +788,7 @@ var CodeView = class CodeView {
+@@ -648,6 +788,7 @@
  		this.render();
  		this.syncItemEditors();
  		this.syncSelection();
@@ -230,7 +228,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  		return true;
  	}
  	updateItemId(oldId, newId) {
-@@ -681,6 +822,7 @@ var CodeView = class CodeView {
+@@ -681,6 +822,7 @@
  		this.renamePendingScrollTarget(oldId, newId);
  		this.renamePendingLayoutAnchor(oldId, newId);
  		this.render();
@@ -238,7 +236,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  		return true;
  	}
  	addItem(input) {
-@@ -690,6 +832,7 @@ var CodeView = class CodeView {
+@@ -690,6 +832,7 @@
  		this.appendItemsInternal(inputs);
  		this.syncItemEditors();
  		this.syncSelection();
@@ -246,7 +244,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  	}
  	removeItem(itemId) {
  		const item = this.idToItem.get(itemId);
-@@ -712,6 +855,7 @@ var CodeView = class CodeView {
+@@ -712,6 +855,7 @@
  			for (const removedItem of removedItemsById?.values() ?? []) removedItem.instance.cleanUp();
  		}
  		this.syncSelection();
@@ -254,7 +252,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  	}
  	/**
  	* Append new records to the viewer while preserving existing layout state.
-@@ -1334,6 +1478,10 @@ var CodeView = class CodeView {
+@@ -1334,6 +1478,10 @@
  		item.item = nextItem;
  		item.version = nextItem.version;
  		item.renderedOptionsRevision = -1;
@@ -265,7 +263,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  		return true;
  	}
  	getMaxScrollTopForHeight(scrollHeight) {
-@@ -1714,6 +1862,10 @@ var CodeView = class CodeView {
+@@ -1714,6 +1862,10 @@
  		this.updateStickyPositioning();
  		this.validateStickyContainerHeight();
  		this.fixContainerFocus();
@@ -276,7 +274,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  		if (fitPerfectly || this.scrollAnimation != null) this.render();
  	};
  	flushManagers(updatedItems) {
-@@ -1808,7 +1960,8 @@ var CodeView = class CodeView {
+@@ -1808,7 +1960,8 @@
  		this.notifyScroll();
  		this.render();
  	};
@@ -286,7 +284,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  		this.pendingScrollTarget = void 0;
  		this.pendingLayoutAnchor = void 0;
  		this.scrollAnimation = void 0;
-@@ -2071,7 +2224,12 @@ var CodeView = class CodeView {
+@@ -2071,7 +2224,12 @@
  			const item = this.items[index];
  			if (item == null) throw new Error("CodeView.recomputeLayout: invalid item index");
  			item.top = runningTop;
@@ -300,7 +298,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  			else item.height = item.instance.updateCodeViewLayout(item.item.file, runningTop, reset, item.item.annotations ?? []);
  			runningTop += item.height;
  			if (index < this.items.length - 1) runningTop += layout.gap;
-@@ -2091,6 +2249,27 @@ var CodeView = class CodeView {
+@@ -2091,6 +2249,27 @@
  		return this.getLayout().gap + this.itemMetricsCache.diffHeaderHeight;
  	}
  };
@@ -330,7 +328,6 @@ index ee5c91c5ab..7d0a2901e4 100644
  	if (item.type === "diff") return item.instance.updateCodeViewLayout(item.item.fileDiff, item.top, void 0, item.item.annotations ?? []);
 diff --git a/dist/components/CodeViewSearch.js b/dist/components/CodeViewSearch.js
 new file mode 100644
-index 0000000000..29370adf88
 --- /dev/null
 +++ b/dist/components/CodeViewSearch.js
 @@ -0,0 +1,360 @@
@@ -695,7 +692,6 @@ index 0000000000..29370adf88
 +
 +//# sourceMappingURL=CodeViewSearch.js.map
 diff --git a/dist/components/FileDiff.js b/dist/components/FileDiff.js
-index 12f4f8949f..e33a5ed319 100644
 --- a/dist/components/FileDiff.js
 +++ b/dist/components/FileDiff.js
 @@ -1,6 +1,7 @@
@@ -707,7 +703,7 @@ index 12f4f8949f..e33a5ed319 100644
  import { getHighlighterIfLoaded, getSharedHighlighter } from "../highlighter/shared_highlighter.js";
  import { dequeueRender, queueRender } from "../managers/UniversalRenderingManager.js";
  import { areThemesEqual } from "../utils/areThemesEqual.js";
-@@ -724,7 +725,7 @@ var FileDiff = class {
+@@ -724,7 +725,7 @@
  		if (expandUnchanged) this.loadFilesIfNecessary();
  		this.hunksRenderer.setOptions(this.getHunksRendererOptions(this.options));
  		this.syncInteractionOptions();
@@ -716,7 +712,7 @@ index 12f4f8949f..e33a5ed319 100644
  		const { disableErrorHandling = false, disableFileHeader = false } = this.options;
  		if (disableFileHeader) {
  			if (this.headerElement != null) {
-@@ -740,11 +741,22 @@ var FileDiff = class {
+@@ -740,11 +741,22 @@
  			this.removeRenderedCode();
  			this.clearAuxiliaryNodes();
  			try {
@@ -744,31 +740,56 @@ index 12f4f8949f..e33a5ed319 100644
  			} catch (error) {
  				if (disableErrorHandling) throw error;
 diff --git a/dist/components/VirtualizedFile.d.ts b/dist/components/VirtualizedFile.d.ts
-index 90ef575932..0fd262cbb7 100644
 --- a/dist/components/VirtualizedFile.d.ts
 +++ b/dist/components/VirtualizedFile.d.ts
-@@ -50,7 +50,7 @@ declare class VirtualizedFile<LAnnotation = undefined, Caret = undefined> extend
+@@ -50,8 +50,9 @@
    rerender(): void;
    protected get isComponentManaged(): boolean;
    syncGhostTextRows(): void;
 -  applyDocumentChange(textDocument: TextDocument<'file', LAnnotation>, newLineAnnotations?: LineAnnotation<LAnnotation>[], shouldUpdateBuffer?: boolean): void;
 +  applyDocumentChange(textDocument: TextDocument<'file', LAnnotation>, newLineAnnotations?: LineAnnotation<LAnnotation>[], shouldUpdateBuffer?: boolean, startLine?: number): void;
    render({ fileContainer, file, forceRender, lineAnnotations, ...props }: FileRenderProps<LAnnotation>): boolean;
++  protected updateFileLayoutCache(previous: FileContents | undefined, file: FileContents, anchorLine?: number): number | undefined;
    protected finalizeRender(): void;
    private updatePendingRender;
+   syncVirtualizedTop(): void;
+@@ -70,4 +71,4 @@
+ }
+ //#endregion
+ export { VirtualizedFile };
+-//# sourceMappingURL=VirtualizedFile.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=VirtualizedFile.d.ts.map
 diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFile.js
-index 95d4ca8fdf..24a980672d 100644
 --- a/dist/components/VirtualizedFile.js
 +++ b/dist/components/VirtualizedFile.js
-@@ -23,6 +23,7 @@ var VirtualizedFile = class extends File {
+@@ -5,6 +5,7 @@
+ import { computeVirtualFileMetrics, getVirtualFileHeaderHeight, getVirtualFileHeaderRegion, getVirtualFilePaddingBottom } from "../utils/computeVirtualFileMetrics.js";
+ import { FILE_ANNOTATION_DOM_KEY, includesFileAnnotations, shouldRenderFileAnnotations } from "../utils/includesFileAnnotations.js";
+ import { File } from "./File.js";
++import { diffArrays } from "diff";
+ //#region src/components/VirtualizedFile.ts
+ const LAYOUT_CHECKPOINT_INTERVAL = 5e3;
+ const NO_GHOST_TEXT_ROWS = /* @__PURE__ */ new Map();
+@@ -21,19 +22,26 @@
+ 	height = 0;
+ 	cache = {
  		heights: /* @__PURE__ */ new Map(),
++		annotationHeights: /* @__PURE__ */ new Map(),
  		checkpoints: [],
  		fileAnnotationHeight: 0,
 +		codeWidth: void 0,
  		ghostTextRows: NO_GHOST_TEXT_ROWS
  	};
  	pendingRender;
-@@ -34,6 +35,8 @@ var VirtualizedFile = class extends File {
+ 	isVisible = false;
+ 	isSetup = false;
+ 	layoutDirty = true;
++	forceRenderOverride;
++	pendingRefreshAnchor;
++	layoutCacheFile;
+ 	currentCollapsed;
+ 	constructor(options, virtualizer, metrics = DEFAULT_VIRTUAL_FILE_METRICS, workerManager, requestOwnerRender) {
  		super(options, workerManager, requestOwnerRender);
  		this.virtualizer = virtualizer;
  		this.metrics = metrics;
@@ -777,7 +798,28 @@ index 95d4ca8fdf..24a980672d 100644
  	}
  	setMetrics(metrics, force = false) {
  		const nextMetrics = computeVirtualFileMetrics(metrics);
-@@ -85,10 +88,12 @@ var VirtualizedFile = class extends File {
+@@ -47,6 +55,20 @@
+ 	syncLineAnnotations(lineAnnotations) {
+ 		if (lineAnnotations == null || !this.isNewAnnotations(lineAnnotations)) return false;
+ 		if (lineAnnotations.length === 0 && this.getLatestAnnotations().length === 0) return false;
++		// Subtract only annotation height on removal, preserving measured wrapped code rows.
++		const nextLines = new Set(lineAnnotations.map((annotation) => annotation.lineNumber));
++		for (const annotation of this.getLatestAnnotations()) {
++			if (nextLines.has(annotation.lineNumber)) continue;
++			if (annotation.lineNumber === 0) this.cache.fileAnnotationHeight = 0;
++			else {
++				const lineIndex = annotation.lineNumber - 1;
++				const annotationHeight = this.cache.annotationHeights.get(lineIndex) ?? 0;
++				const height = this.cache.heights.get(lineIndex);
++				if (height != null) this.cache.heights.set(lineIndex, height - annotationHeight);
++				this.cache.annotationHeights.delete(lineIndex);
++			}
++		}
++		this.cache.checkpoints.length = 0;
+ 		super.setLineAnnotations(lineAnnotations);
+ 		return true;
+ 	}
+@@ -85,10 +107,14 @@
  		if (this.isAdvancedMode()) throw new Error("VirtualizedFile.setThemeType cannot be used inside CodeView. Update CodeView options instead.");
  		super.setThemeType(themeType);
  	}
@@ -790,10 +832,12 @@ index 95d4ca8fdf..24a980672d 100644
 +		// Dropping unchanged wrapped rows moves the viewport before they can be remeasured.
 +		if (startLine === 0) this.cache.heights.clear();
 +		else for (const lineIndex of this.cache.heights.keys()) if (lineIndex >= startLine) this.cache.heights.delete(lineIndex);
++		if (startLine === 0) this.cache.annotationHeights.clear();
++		else for (const lineIndex of this.cache.annotationHeights.keys()) if (lineIndex >= startLine) this.cache.annotationHeights.delete(lineIndex);
  		if (this.cache.checkpoints.length > 0) this.cache.checkpoints.length = 0;
  		this.cache.ghostTextRows = NO_GHOST_TEXT_ROWS;
  		if (this.renderRange != null && resetRenderRange) this.renderRange = void 0;
-@@ -134,6 +139,13 @@ var VirtualizedFile = class extends File {
+@@ -134,6 +160,13 @@
  		if (this.code == null) return hasHeightChange;
  		const content = this.code.children[1];
  		if (!(content instanceof HTMLElement)) return hasHeightChange;
@@ -807,7 +851,35 @@ index 95d4ca8fdf..24a980672d 100644
  		if (this.renderRange != null && shouldRenderFileAnnotations(this.renderRange)) {
  			const nextFileAnnotationHeight = measureFileAnnotationHeight(content) ?? 0;
  			if (nextFileAnnotationHeight !== this.cache.fileAnnotationHeight) {
-@@ -366,12 +378,12 @@ var VirtualizedFile = class extends File {
+@@ -151,9 +184,12 @@
+ 			if (!measureAllRows && (cachedHeight == null || cachedHeight === lineHeight + ghostHeight)) continue;
+ 			let measuredHeight = line.getBoundingClientRect().height + ghostHeight;
+ 			let hasMetadata = false;
++			this.cache.annotationHeights.delete(lineIndex);
+ 			if (line.nextElementSibling instanceof HTMLElement && ("lineAnnotation" in line.nextElementSibling.dataset || "noNewline" in line.nextElementSibling.dataset)) {
+ 				if ("noNewline" in line.nextElementSibling.dataset) hasMetadata = true;
+-				measuredHeight += line.nextElementSibling.getBoundingClientRect().height;
++				const metadataHeight = line.nextElementSibling.getBoundingClientRect().height;
++				measuredHeight += metadataHeight;
++				if ("lineAnnotation" in line.nextElementSibling.dataset) this.cache.annotationHeights.set(lineIndex, metadataHeight);
+ 			}
+ 			const expectedHeight = this.getLineHeight(lineIndex, hasMetadata);
+ 			if (measuredHeight === expectedHeight) continue;
+@@ -171,10 +207,12 @@
+ 		return this.render({ file });
+ 	};
+ 	updateCodeViewLayout(file, top, reset, lineAnnotations) {
++		const previousLayoutFile = this.getLayoutFile();
+ 		const targetChanged = !areFileTargetsEqual(this.getInputFile(), file);
+ 		if (targetChanged) this.updateInputFile(file, lineAnnotations);
+ 		const { pendingRenderFile, layoutFileChanged, renderedFileChanged, annotationsChanged } = this.updatePendingRender(file, lineAnnotations);
+-		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true || layoutFileChanged;
++		if (layoutFileChanged) this.updateFileLayoutCache(previousLayoutFile, pendingRenderFile);
++		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true;
+ 		if (reset?.metrics != null) {
+ 			this.metrics = reset.metrics;
+ 			shouldResetLayoutCache = true;
+@@ -366,12 +404,13 @@
  			codeView.instanceChanged(this, true);
  		} else this.getSimpleVirtualizer()?.requestHeightReconcile(this);
  	}
@@ -816,17 +888,113 @@ index 95d4ca8fdf..24a980672d 100644
  		const { renderRange: previousRenderRange } = this;
  		this.getAdvancedVirtualizer()?.capturePendingLayoutAnchor();
  		super.applyDocumentChange(textDocument, newLineAnnotations);
++		this.layoutCacheFile = this.getWorkingFile();
  		this.getSimpleVirtualizer()?.markDOMDirty();
 -		this.resetLayoutCache(this.isSimpleMode(), false);
 +		this.resetLayoutCache(this.isSimpleMode(), false, startLine);
  		const file = this.getRenderedFile();
  		if (!this.isSimpleMode()) this.computeApproximateSize(true);
  		else if (shouldUpdateBuffer && previousRenderRange != null && file != null) {
+@@ -382,8 +421,46 @@
+ 		this.forceRenderOverride = true;
+ 		this.virtualizer.instanceChanged(this, true);
+ 	}
++	// Measurements of unchanged code rows remain valid across external updates.
++	updateFileLayoutCache(previous, file, anchorLine) {
++		previous = this.layoutCacheFile ?? previous;
++		this.layoutCacheFile = file;
++		if (previous == null || previous.name !== file.name || previous.lang !== file.lang) {
++			this.resetLayoutCache();
++			return;
++		}
++		if (previous.contents === file.contents) return anchorLine;
++		const oldLines = previous.contents.split(/\r\n|\n|\r/);
++		const newLines = file.contents.split(/\r\n|\n|\r/);
++		const heights = new Map();
++		let oldIndex = 0;
++		let newIndex = 0;
++		let nextAnchor;
++		for (const change of diffArrays(oldLines, newLines)) {
++			if (change.added) newIndex += change.count;
++			else if (change.removed) {
++				if (anchorLine >= oldIndex && anchorLine < oldIndex + change.count) nextAnchor = Math.min(newIndex, newLines.length - 1);
++				oldIndex += change.count;
++			} else {
++				if (anchorLine >= oldIndex && anchorLine < oldIndex + change.count) nextAnchor = anchorLine + newIndex - oldIndex;
++				for (let offset = 0; offset < change.count; offset++) {
++					const height = this.cache.heights.get(oldIndex + offset);
++					if (height !== void 0) heights.set(newIndex + offset, height - (this.cache.annotationHeights.get(oldIndex + offset) ?? 0));
++				}
++				oldIndex += change.count;
++				newIndex += change.count;
++			}
++		}
++		this.resetLayoutCache();
++		this.cache.heights = heights;
++		return nextAnchor;
++	}
+ 	render({ fileContainer, file, forceRender = false, lineAnnotations, ...props }) {
++		const previousLayoutFile = this.pendingRender?.file ?? this.getRenderedFile();
+ 		const didFileChange = !areFileTargetsEqual(this.getInputFile(), file);
++		// Replacing an editor session can remove annotation geometry before the next render.
++		const simpleVirtualizer = this.getSimpleVirtualizer();
++		const refreshAnchor = this.isSetup && simpleVirtualizer != null && (didFileChange || !areFileTargetsEqual(previousLayoutFile, this.getWorkingFile(file) ?? file)) ? simpleVirtualizer.getScrollAnchor(simpleVirtualizer.getHeight()) : void 0;
+ 		if (didFileChange) {
+ 			this.updateInputFile(file, lineAnnotations);
+ 			this.cachedHeaderHTML = void 0;
+@@ -399,7 +476,11 @@
+ 		})();
+ 		const { forceRenderOverride, isSetup } = this;
+ 		this.forceRenderOverride = void 0;
+-		if (layoutFileChanged) this.resetLayoutCache();
++		if (layoutFileChanged && this.isSimpleMode()) {
++			const ownAnchor = refreshAnchor?.fileElement === this.fileContainer && refreshAnchor.lineIndex != null ? refreshAnchor : void 0;
++			const nextLine = this.updateFileLayoutCache(previousLayoutFile, pendingRenderFile, ownAnchor == null ? void 0 : Number(ownAnchor.lineIndex));
++			this.pendingRefreshAnchor = ownAnchor != null && nextLine !== void 0 ? { ...ownAnchor, lineIndex: String(nextLine) } : void 0;
++		} else if (layoutFileChanged) this.resetLayoutCache();
+ 		fileContainer = this.getOrCreateFileContainerNode(fileContainer);
+ 		if (!isSetup) {
+ 			this.computeApproximateSize(false, pendingRenderFile);
+@@ -420,7 +501,16 @@
+ 			}
+ 		}
+ 		if (!this.isVisible && this.isSimpleMode() && (!didFileChange || !isSetup)) return this.renderPlaceholder(this.height);
+-		const windowSpecs = this.virtualizer.getWindowSpecs();
++		let windowSpecs = this.virtualizer.getWindowSpecs();
++		if (this.pendingRefreshAnchor != null) {
++			const position = this.getLinePosition(Number(this.pendingRefreshAnchor.lineIndex) + 1);
++			if (position != null) {
++				// Render the mapped row before restoring its measured viewport offset.
++				const anchorTop = (this.top ?? 0) + position.top;
++				const margin = (windowSpecs.bottom - windowSpecs.top) / 2;
++				windowSpecs = { top: anchorTop - margin, bottom: anchorTop + margin };
++			}
++		}
+ 		const fileTop = this.top ?? 0;
+ 		const renderRange = this.computeRenderRangeFromWindow(pendingRenderFile, fileTop, windowSpecs);
+ 		return super.render({
+@@ -435,6 +525,10 @@
+ 	finalizeRender() {
+ 		if (this.getRenderedFile() !== this.pendingRender?.file) throw new Error("VirtualizedFile.render: rendered a different file than its prepared layout");
+ 		this.pendingRender = void 0;
++		if (this.isSimpleMode() && this.pendingRefreshAnchor != null && this.fileContainer?.shadowRoot?.querySelector(`[data-line][data-line-index="${this.pendingRefreshAnchor.lineIndex}"]`) instanceof HTMLElement) {
++			this.getSimpleVirtualizer()?.scrollFix(this.pendingRefreshAnchor);
++			this.pendingRefreshAnchor = void 0;
++		}
+ 		if (this.isSimpleMode()) this.getSimpleVirtualizer()?.requestHeightReconcile(this);
+ 	}
+ 	updatePendingRender(nextFile, lineAnnotations) {
+@@ -643,4 +737,4 @@
+ //#endregion
+ export { VirtualizedFile };
+ 
+-//# sourceMappingURL=VirtualizedFile.js.map
+\ No newline at end of file
++//# sourceMappingURL=VirtualizedFile.js.map
 diff --git a/dist/components/VirtualizedFileDiff.js b/dist/components/VirtualizedFileDiff.js
-index eb34dd4a77..821bb0ab11 100644
 --- a/dist/components/VirtualizedFileDiff.js
 +++ b/dist/components/VirtualizedFileDiff.js
-@@ -551,7 +551,7 @@ var VirtualizedFileDiff = class extends FileDiff {
+@@ -551,7 +551,7 @@
  	rerender() {
  		if (!this.enabled || this.getInputDiff() == null && this.additionFile == null && this.deletionFile == null) return;
  		const workingDiff = this.getWorkingDiff();
@@ -835,7 +1003,7 @@ index eb34dd4a77..821bb0ab11 100644
  		if (this.isSimpleMode()) this.pendingRender = void 0;
  		this.forceRenderOverride = true;
  		if (this.isSimpleMode() && this.requestRender()) return;
-@@ -731,7 +731,7 @@ var VirtualizedFileDiff = class extends FileDiff {
+@@ -731,7 +731,7 @@
  		const previousRenderedDiff = this.getRenderedDiff();
  		const { pendingRender } = this;
  		const previousLayoutDiff = pendingRender?.diff ?? previousRenderedDiff;
@@ -844,11 +1012,55 @@ index eb34dd4a77..821bb0ab11 100644
  		this.pendingRender = {
  			workingDiff,
  			diff: pendingRenderDiff
+diff --git a/dist/components/Virtualizer.js b/dist/components/Virtualizer.js
+--- a/dist/components/Virtualizer.js
++++ b/dist/components/Virtualizer.js
+@@ -25,6 +25,7 @@
+ 	type = "simple";
+ 	intersectionObserver;
+ 	scrollTop = 0;
++	scrollFixVersion = 0;
+ 	height = 0;
+ 	scrollHeight = 0;
+ 	windowSpecs = {
+@@ -245,13 +246,15 @@
+ 		this.visibleInstancesDirty = false;
+ 		this.renderedObservers = this.observers.size;
+ 		const anchor = this.getScrollAnchor(this.height);
++		const scrollFixVersion = this.scrollFixVersion;
+ 		const updatedInstances = /* @__PURE__ */ new Set();
+ 		for (const instance of wrapperDirty ? this.observers.values() : this.visibleInstances.values()) if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		for (const instance of this.instancesChanged) {
+ 			if (updatedInstances.has(instance)) continue;
+ 			if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		}
+-		this.scrollFix(anchor);
++		// A mapped file refresh may already have corrected scroll during onRender.
++		if (this.scrollFixVersion === scrollFixVersion) this.scrollFix(anchor);
+ 		for (const instance of updatedInstances) {
+ 			this.reconcileQueue.delete(instance);
+ 			instance.reconcileHeights();
+@@ -288,6 +291,9 @@
+ 		}
+ 	}
+ 	applyScrollFix(scrollOffset) {
++		this.scrollFixVersion++;
++		// A synchronous follow-up render must use the corrected viewport.
++		this.windowSpecs = { top: 0, bottom: 0 };
+ 		if (this.root == null || this.root instanceof Document) window.scrollTo({
+ 			top: window.scrollY + scrollOffset,
+ 			behavior: "instant"
+@@ -430,4 +436,4 @@
+ //#endregion
+ export { Virtualizer };
+ 
+-//# sourceMappingURL=Virtualizer.js.map
+\ No newline at end of file
++//# sourceMappingURL=Virtualizer.js.map
 diff --git a/dist/components/web-components.js b/dist/components/web-components.js
-index 6e7b486a02..5b7290f181 100644
 --- a/dist/components/web-components.js
 +++ b/dist/components/web-components.js
-@@ -2,8 +2,17 @@ import { DIFFS_TAG_NAME } from "../constants.js";
+@@ -2,8 +2,17 @@
  import style_default from "../style.js";
  import { getMeasuredScrollbarGutter } from "../utils/scrollbarGutter.js";
  //#region src/components/web-components.ts
@@ -866,7 +1078,7 @@ index 6e7b486a02..5b7290f181 100644
  	class FileDiffContainer extends HTMLElement {
  		constructor() {
  			super();
-@@ -12,8 +21,10 @@ if (typeof HTMLElement !== "undefined" && customElements.get("diffs-container")
+@@ -12,8 +21,10 @@
  			if (sheet == null) {
  				sheet = new CSSStyleSheet();
  				sheet.replaceSync(style_default);
@@ -879,10 +1091,17 @@ index 6e7b486a02..5b7290f181 100644
  		connectedCallback() {
  			const shadowRoot = this.shadowRoot ?? this.attachShadow({ mode: "open" });
 diff --git a/dist/editor/editor.js b/dist/editor/editor.js
-index bf17cea32f..671e77b8cd 100644
 --- a/dist/editor/editor.js
 +++ b/dist/editor/editor.js
-@@ -1903,7 +1903,11 @@ var Editor = class {
+@@ -1058,6 +1058,7 @@
+ 				onBlur?.();
+ 			}, { passive: true }),
+ 			addEventListener(contentEl, "pointerdown", (e) => {
++				if (!targetIsContentElement(e)) return;
+ 				this.#canMountSelectionAction = true;
+ 				this.#suppressNativeSelectionSync = false;
+ 				if (e.pointerType !== "mouse") return;
+@@ -1903,7 +1904,11 @@
  			changedDocumentLines: this.#isDiff && !didLineCountChange ? getChangedDocumentLines(textDocument, change) : void 0,
  			documentLineCount: textDocument.lineCount
  		});
@@ -895,11 +1114,17 @@ index bf17cea32f..671e77b8cd 100644
  		if (didLineCountChange || this.#isDiff && this.#diffSyle === "unified") this.#resetCache();
  		if (newLineAnnotations != null) {
  			this.#lineAnnotations = newLineAnnotations;
+@@ -3697,4 +3702,4 @@
+ //#endregion
+ export { Editor };
+ 
+-//# sourceMappingURL=editor.js.map
+\ No newline at end of file
++//# sourceMappingURL=editor.js.map
 diff --git a/dist/editor/searchPanel.d.ts b/dist/editor/searchPanel.d.ts
-index 9542849786..1c1a51f56d 100644
 --- a/dist/editor/searchPanel.d.ts
 +++ b/dist/editor/searchPanel.d.ts
-@@ -15,6 +15,8 @@ interface SearchPanelOptions {
+@@ -15,6 +15,8 @@
    containerElement: HTMLElement;
    defaultQuery: string;
    mode?: SearchPanelMode;
@@ -909,10 +1134,9 @@ index 9542849786..1c1a51f56d 100644
    scrollToMatch: (nextMatch: MatchRange, retainFocus: boolean) => void;
    applyReplace: (edits: ResolvedTextEdit[]) => void;
 diff --git a/dist/editor/searchPanel.js b/dist/editor/searchPanel.js
-index df1ba637c2..676751bb0e 100644
 --- a/dist/editor/searchPanel.js
 +++ b/dist/editor/searchPanel.js
-@@ -12,7 +12,7 @@ var SearchPanelWidget = class {
+@@ -12,7 +12,7 @@
  	#navigate;
  	#close;
  	constructor(options) {
@@ -921,7 +1145,7 @@ index df1ba637c2..676751bb0e 100644
  		const searchParams = {
  			text: defaultQuery,
  			replaceText: "",
-@@ -278,7 +278,7 @@ var SearchPanelWidget = class {
+@@ -278,7 +278,7 @@
  			]
  		});
  		const applyMode = (next) => {
@@ -931,10 +1155,9 @@ index df1ba637c2..676751bb0e 100644
  			this.#inputElement.select();
  		};
 diff --git a/dist/managers/ResizeManager.d.ts b/dist/managers/ResizeManager.d.ts
-index 3efafc4132..9e5b7511f9 100644
 --- a/dist/managers/ResizeManager.d.ts
 +++ b/dist/managers/ResizeManager.d.ts
-@@ -5,6 +5,8 @@ interface ResizeManagerSetupOptions {
+@@ -5,6 +5,8 @@
    columnVariables?: ResizeManagerColumnVariableMode;
  }
  declare class ResizeManager {
@@ -944,10 +1167,9 @@ index 3efafc4132..9e5b7511f9 100644
    private static managersByElement;
    private static getResizeObserver;
 diff --git a/dist/managers/ResizeManager.js b/dist/managers/ResizeManager.js
-index 9724cb1e34..14145d8329 100644
 --- a/dist/managers/ResizeManager.js
 +++ b/dist/managers/ResizeManager.js
-@@ -19,6 +19,7 @@ var ResizeManager = class ResizeManager {
+@@ -19,6 +19,7 @@
  		for (const [manager, managerEntries] of entriesByManager) manager.handleResizeEntries(managerEntries);
  	}
  	observedNodes = /* @__PURE__ */ new Map();
@@ -955,7 +1177,7 @@ index 9724cb1e34..14145d8329 100644
  	setup(pre, { disableAnnotations, columnVariables = "apply" }) {
  		const annotationUpdates = /* @__PURE__ */ new Set();
  		const applyColumnVariables = columnVariables === "apply";
-@@ -212,6 +213,7 @@ var ResizeManager = class ResizeManager {
+@@ -212,6 +213,7 @@
  		this.applyAnnotationUpdates(annotationUpdates);
  		annotationUpdates.clear();
  		this.applyColumnUpdates(codeUpdates);
@@ -964,10 +1186,9 @@ index 9724cb1e34..14145d8329 100644
  	}
  	applyAnnotationUpdates(annotationUpdates) {
 diff --git a/dist/react/CodeView.d.ts b/dist/react/CodeView.d.ts
-index 12e12c50cd..684c7a89fa 100644
 --- a/dist/react/CodeView.d.ts
 +++ b/dist/react/CodeView.d.ts
-@@ -57,6 +57,8 @@ interface CodeViewBaseProps<LAnnotation, Caret> {
+@@ -57,6 +57,8 @@
     * is frozen; re-key the accepted value in place before accepting.
     */
    onItemEditComplete?: CodeViewItemEditCompleteHandler<LAnnotation, Caret>;
@@ -977,10 +1198,9 @@ index 12e12c50cd..684c7a89fa 100644
    renderHeaderPrefix?(item: CodeViewItem<LAnnotation>): ReactNode;
    renderHeaderFilenameSuffix?(item: CodeViewItem<LAnnotation>): ReactNode;
 diff --git a/dist/react/CodeView.js b/dist/react/CodeView.js
-index 4dfed6bd0a..ac35a5a455 100644
 --- a/dist/react/CodeView.js
 +++ b/dist/react/CodeView.js
-@@ -24,7 +24,7 @@ function createDefaultCache(controlled) {
+@@ -24,7 +24,7 @@
  	};
  }
  function CodeViewInner(props, ref) {
@@ -989,7 +1209,7 @@ index 4dfed6bd0a..ac35a5a455 100644
  	const controlled = controlledItems !== void 0;
  	const contextCreateEditor = useCreateEditor();
  	const poolManager = useContext(WorkerPoolContext);
-@@ -52,6 +52,9 @@ function CodeViewInner(props, ref) {
+@@ -52,6 +52,9 @@
  		onItemEditChange?.(event, item);
  	});
  	const emitItemEditComplete = useStableCallback((event, item, nextItem) => onItemEditComplete?.(event, item, nextItem) ?? "reject");
@@ -999,7 +1219,7 @@ index 4dfed6bd0a..ac35a5a455 100644
  	const managedOptions = useMemo(() => createManagedCodeViewOptions({
  		options,
  		hasCustomHeader,
-@@ -63,13 +66,15 @@ function CodeViewInner(props, ref) {
+@@ -63,13 +66,15 @@
  		getEditStateKey,
  		createEditor: contextCreateEditor != null ? createEditor : void 0,
  		onItemEditChange: onItemEditChange != null ? emitItemEditChange : void 0,
@@ -1016,7 +1236,7 @@ index 4dfed6bd0a..ac35a5a455 100644
  		emitSelectedLinesChange,
  		hasCodeViewFooter,
  		hasCodeViewHeader,
-@@ -78,6 +83,7 @@ function CodeViewInner(props, ref) {
+@@ -78,6 +83,7 @@
  		getEditStateKey,
  		onItemEditChange,
  		onItemEditComplete,
@@ -1024,7 +1244,7 @@ index 4dfed6bd0a..ac35a5a455 100644
  		onSelectedLinesChange,
  		options
  	]);
-@@ -302,7 +308,7 @@ function createSlotContentStore() {
+@@ -302,7 +308,7 @@
  		}
  	};
  }
@@ -1033,7 +1253,7 @@ index 4dfed6bd0a..ac35a5a455 100644
  	const managedOptions = {
  		...options,
  		controlledSelection,
-@@ -312,6 +318,7 @@ function createManagedCodeViewOptions({ options, hasCustomHeader, hasGutterRende
+@@ -312,6 +318,7 @@
  	if (getEditStateKey != null) managedOptions.getEditStateKey = getEditStateKey;
  	if (onItemEditChange != null) managedOptions.onItemEditChange = onItemEditChange;
  	if (onItemEditComplete != null) managedOptions.onItemEditComplete = onItemEditComplete;
@@ -1042,10 +1262,9 @@ index 4dfed6bd0a..ac35a5a455 100644
  	if (hasGutterRenderer) managedOptions.renderGutterUtility = noopRender;
  	if (hasCodeViewHeader) managedOptions.renderCodeViewHeader = noopRender;
 diff --git a/dist/utils/createFileHeaderElement.js b/dist/utils/createFileHeaderElement.js
-index 39fe30e47b..600442e3eb 100644
 --- a/dist/utils/createFileHeaderElement.js
 +++ b/dist/utils/createFileHeaderElement.js
-@@ -73,12 +73,12 @@ function createMetadataElement(fileDiff) {
+@@ -73,12 +73,12 @@
  		}
  		if (deletions > 0 || additions === 0) children.push(createHastElement({
  			tagName: "span",
@@ -1061,7 +1280,6 @@ index 39fe30e47b..600442e3eb 100644
  		}));
  	}
 diff --git a/package.json b/package.json
-index 0cc43c4a7d..60b7d17d61 100644
 --- a/package.json
 +++ b/package.json
 @@ -60,6 +60,18 @@

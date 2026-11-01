@@ -14,6 +14,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   defaultInstanceIdForDriver,
   type EnvironmentId,
   type AcpRegistryUrlAuthAction,
@@ -33,6 +34,7 @@ import {
   resolveServerBackgroundActivitySettings,
 } from "@t3tools/shared/backgroundActivitySettings";
 import * as Arr from "effect/Array";
+import * as Equal from "effect/Equal";
 import * as Duration from "effect/Duration";
 import * as Result from "effect/Result";
 import { PlusIcon } from "lucide-react";
@@ -50,6 +52,7 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
+import { isDefaultProviderInstance } from "../../providerInstances";
 import {
   useEnvironments,
   usePrimaryEnvironmentId,
@@ -755,7 +758,10 @@ export function EnvironmentProviderSettings({
         instanceId: id,
         explicitInstance: instance,
         driver: instance.driver,
-        isDefault: false,
+        isDefault: isDefaultProviderInstance(id, instance.driver),
+        isDirty:
+          isDefaultProviderInstance(id, instance.driver) &&
+          !Equal.equals(instance, DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]),
       });
     }
   }
@@ -766,7 +772,12 @@ export function EnvironmentProviderSettings({
         instanceId: id,
         explicitInstance: instance,
         driver: instance.driver,
-        isDefault: defaultSlotIdsBySource.has(String(id)),
+        isDefault:
+          defaultSlotIdsBySource.has(String(id)) ||
+          DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]?.driver === instance.driver,
+        isDirty:
+          DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]?.driver === instance.driver &&
+          !Equal.equals(instance, DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]),
       });
     }
   }
@@ -867,10 +878,10 @@ export function EnvironmentProviderSettings({
     },
   );
 
-  const resetDefaultInstance = useStableCallback(async (driverKind: ProviderDriverKind) => {
+  const resetDefaultInstance = useStableCallback(async (instanceId: ProviderInstanceId) => {
     const result = await persistProviderInstance({
       operation: "remove",
-      instanceId: defaultInstanceIdForDriver(driverKind),
+      instanceId,
     });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
@@ -1191,7 +1202,7 @@ interface ProviderInstanceRowActions {
     instanceId: ProviderInstanceId,
     instance: ProviderInstanceConfig,
   ) => Promise<void>;
-  readonly resetDefaultInstance: (driverKind: ProviderDriverKind) => Promise<void>;
+  readonly resetDefaultInstance: (instanceId: ProviderInstanceId) => Promise<void>;
   readonly writeProjectOverride: (
     instanceId: ProviderInstanceId,
     next: boolean | undefined,
@@ -1379,7 +1390,7 @@ function ProviderInstanceRow({
         mode === "editor" && isDefault && isDirty ? (
           <SettingResetButton
             label={`${resetLabel} provider settings`}
-            onClick={() => actions.resetDefaultInstance(driver)}
+            onClick={() => actions.resetDefaultInstance(instanceId)}
           />
         ) : null
       }
