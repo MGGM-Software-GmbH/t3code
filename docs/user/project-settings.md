@@ -2,7 +2,9 @@
 
 ## FogBugz
 
-In **Settings > MGGM**, select an environment and connect your existing MGGM FogBugz account using its base URL, email and password. The environment stores the API token in its server-side secret store. Use **Test connection**, **Update connection**, or **Disconnect** to manage it.
+In **Settings > MGGM**, select an environment and connect your existing MGGM FogBugz account using its base URL, email and password. The environment stores the API token in its server-side secret store. Use **Test connection**, **Save changes**, or **Disconnect** to manage it.
+
+The FogBugz settings show when your server lacks project groups, automatic browser sign-in, or Case-Git. Individual project links and ordinary threads remain usable. Without automatic browser sign-in, sign in directly in the Browser panel. Existing links and files are preserved; a missing group feature requires a FogBugz update or an explicit change to a single-project link. After updating FogBugz, use **Test connection** to check feature support again.
 
 In **Settings > Projects**, select a T3 project and choose a **FogBugz project or group** visible to your account. A group includes all its currently accessible projects, including later membership changes. Each T3 project has its own assignment. Choose **Not linked** to remove it.
 

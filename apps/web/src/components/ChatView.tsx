@@ -3916,10 +3916,18 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequests={addPullRequestsSurfaceStable}
           onAddFogBugzCases={addFogBugzCasesSurfaceStable}
           onAddFogBugzCaseGit={() => {
-            if (activeThreadRef && fogbugzCasesAvailable)
+            if (
+              activeThreadRef &&
+              fogbugzCasesAvailable &&
+              fogbugzStatus.data?.connection?.capabilities?.caseGit !== false
+            )
               useRightPanelStore.getState().open(activeThreadRef, "fogbugz-case-git");
           }}
-          fogbugzCaseGitAvailable={fogbugzCasesAvailable && canWriteSourceControl}
+          fogbugzCaseGitAvailable={
+            fogbugzCasesAvailable &&
+            canWriteSourceControl &&
+            fogbugzStatus.data?.connection?.capabilities?.caseGit !== false
+          }
           onAddDevice={addDeviceSurfaceStable}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}

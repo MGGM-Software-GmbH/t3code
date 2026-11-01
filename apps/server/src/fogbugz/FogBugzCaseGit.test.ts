@@ -50,7 +50,11 @@ const prepare = Effect.gen(function* () {
   const activity = { runId: null as RunId | null };
   const project = { id: ProjectId.make("project"), workspaceRoot: path.join(root, "project") };
   yield* fs.makeDirectory(project.workspaceRoot);
-  const shared = { directory: "", activeThread: null as ThreadId | null };
+  const shared = {
+    directory: "",
+    activeThread: null as ThreadId | null,
+    repositoryError: null as FogBugzError["code"] | null,
+  };
   const serviceLayer = CaseGit.layer.pipe(
     Layer.provide(
       Layer.mock(ProjectStoreV2)({ getShell: () => Effect.succeedSome(project as never) }),
@@ -70,7 +74,12 @@ const prepare = Effect.gen(function* () {
     Layer.provide(
       Layer.mock(FogBugzService)({
         caseThreadIds: () => Effect.succeed(shared.activeThread ? [shared.activeThread] : []),
-        caseGitRepository: () => Effect.succeed(repository),
+        caseGitRepository: () =>
+          Effect.suspend(() =>
+            shared.repositoryError
+              ? Effect.fail(new FogBugzError({ code: shared.repositoryError }))
+              : Effect.succeed(repository),
+          ),
         thread: (threadId) =>
           Effect.succeed({
             threadId,
@@ -103,6 +112,32 @@ const prepare = Effect.gen(function* () {
 const runtime = ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("per-thread case Git checkout", () => {
+  it.live(
+    "allows ordinary turns without unsupported case storage but preserves real failures",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fixture = yield* prepare;
+          yield* Effect.gen(function* () {
+            const service = yield* CaseGit.FogBugzCaseGit;
+            const thread = ThreadId.make("legacy-fogbugz");
+            const run = RunId.make("legacy-run");
+            fixture.shared.repositoryError = "unsupported";
+            expect(yield* service.prepareTurn(thread, run)).toBeNull();
+            yield* service.finishTurn(thread, run);
+            expect((yield* service.ensure(thread).pipe(Effect.flip)).code).toBe("unsupported");
+            fixture.shared.repositoryError = "network";
+            expect((yield* service.prepareTurn(thread, run).pipe(Effect.flip)).code).toBe(
+              "network",
+            );
+            expect((yield* service.finishTurn(thread, run).pipe(Effect.flip)).code).toBe("network");
+            expect(yield* fixture.fs.exists(fixture.path.join(fixture.root, "case-files"))).toBe(
+              false,
+            );
+          }).pipe(Effect.provide(fixture.serviceLayer));
+        }),
+      ).pipe(Effect.provide(runtime)),
+  );
   it.live(
     "commits and publishes case changes, rejects stale confirmations, and reverts only uncommitted files",
     () =>

@@ -173,6 +173,58 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
                 Sign in again to reconnect FogBugz.
               </p>
             ) : null}
+            {connection?.authenticated ? (
+              <div
+                className="space-y-2 px-3 py-3 text-sm sm:px-4"
+                role="status"
+                aria-label="FogBugz compatibility"
+              >
+                {status.data?.compatibilityError ? (
+                  <p className="text-destructive">
+                    Could not check integration features: {status.data.compatibilityError} Use Test
+                    connection to retry.
+                  </p>
+                ) : !connection.capabilities ? (
+                  <p className="text-muted-foreground">
+                    Integration features have not been checked. Use Test connection to check this
+                    FogBugz version.
+                  </p>
+                ) : (
+                  <>
+                    {!connection.capabilities.projectGroups ? (
+                      <p>
+                        Project groups are not supported by this FogBugz version. You can link
+                        individual projects. Existing group links are preserved but cannot load
+                        cases until FogBugz is updated.
+                      </p>
+                    ) : null}
+                    {!connection.capabilities.browserSession ? (
+                      <p>
+                        Automatic browser sign-in is not supported by this FogBugz version. Sign in
+                        directly in the Browser panel.
+                      </p>
+                    ) : null}
+                    {!connection.capabilities.caseGit ? (
+                      <p>
+                        Case-Git is not supported by this FogBugz version. Threads and cases remain
+                        available; case files and automatic file synchronization require a FogBugz
+                        update.
+                      </p>
+                    ) : null}
+                    {Object.values(connection.capabilities).every(Boolean) ? (
+                      <p className="text-muted-foreground">
+                        All integration features are supported.
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        Update FogBugz to enable these features, then use Test connection to check
+                        again.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : null}
           </SettingsSection>
         </fieldset>
       </form>

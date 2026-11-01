@@ -48,7 +48,7 @@ const Assignment = Schema.Struct({
 });
 const decodeAssignment = Schema.decodeSync(Assignment);
 
-function parseXml(xml: string): XmlNode {
+function parseXml(xml: string, allowError = false): XmlNode {
   const document: XmlNode = { name: "document", text: "", children: [], attributes: {} };
   const stack = [document];
   const parser = new SaxesParser();
@@ -73,9 +73,14 @@ function parseXml(xml: string): XmlNode {
   if (document.children.length !== 1 || root?.name !== "response")
     throw new FogBugzError({ code: "response" });
   const error = root.children.find((node) => node.name === "error");
-  if (error)
+  if (error && !allowError)
     throw new FogBugzError({
-      code: ["1", "2", "3"].includes(error.attributes.code ?? "") ? "authentication" : "access",
+      code:
+        error.attributes.code === "27"
+          ? "unsupported"
+          : ["1", "2", "3"].includes(error.attributes.code ?? "")
+            ? "authentication"
+            : "access",
     });
   return root;
 }
@@ -124,6 +129,7 @@ export class FogBugzApi {
   private async request(
     parameters: Record<string, string>,
     receiveHeaders?: (headers: Headers) => void,
+    allowError = false,
   ): Promise<XmlNode> {
     let response: Response;
     try {
@@ -157,7 +163,7 @@ export class FogBugzApi {
         }
         chunks.push(chunk.value);
       }
-      return parseXml(Buffer.concat(chunks).toString("utf8"));
+      return parseXml(Buffer.concat(chunks).toString("utf8"), allowError);
     } catch (error) {
       if (isFogBugzError(error)) throw error;
       throw new FogBugzError({ code: "response" });
@@ -173,6 +179,32 @@ export class FogBugzApi {
 
   async logout(token: string) {
     await this.request({ cmd: "logoff", token });
+  }
+
+  async capabilities(token: string) {
+    const projects = await this.request({ cmd: "listProjects", token, includeProjectGroups: "1" });
+    child(projects, "projects");
+    // Missing credentials exercise the browser command's POST guard without creating a session.
+    const browser = await this.request({ cmd: "browserSession" }, undefined, true);
+    const browserError = child(browser, "error").attributes.code;
+    if (browserError !== "10" && browserError !== "3" && browserError !== "27")
+      throw new FogBugzError({ code: "response" });
+    // Zero cannot identify a case, so this probes dispatch without provisioning file storage.
+    const repository = await this.request(
+      { cmd: "caseGitRepository", token, ixBug: "0" },
+      undefined,
+      true,
+    );
+    const repositoryError = child(repository, "error").attributes.code;
+    if (["1", "2", "3"].includes(repositoryError ?? ""))
+      throw new FogBugzError({ code: "authentication" });
+    if (repositoryError !== "13" && repositoryError !== "27" && repositoryError !== "90")
+      throw new FogBugzError({ code: "response" });
+    return {
+      projectGroups: projects.children.some((node) => node.name === "projectGroups"),
+      browserSession: browserError === "10",
+      caseGit: repositoryError !== "27",
+    };
   }
 
   async caseGitRepository(token: string, caseId: number) {
@@ -203,10 +235,12 @@ export class FogBugzApi {
     return { id: id(value(person, "ixPerson")), name: value(person, "sFullName") };
   }
 
-  async projects(token: string) {
+  async projects(token: string, requireGroups = false) {
     const response = await this.request({ cmd: "listProjects", token, includeProjectGroups: "1" });
     const projects = child(response, "projects");
-    const memberships = child(response, "projectGroups").children;
+    const groups = response.children.find((node) => node.name === "projectGroups");
+    if (!groups && requireGroups) throw new FogBugzError({ code: "project_groups_unsupported" });
+    const memberships = groups?.children ?? [];
     return projects.children
       .filter((node) => node.name === "project")
       .map((project) =>
@@ -255,7 +289,9 @@ export class FogBugzApi {
           categoryIconType: Number(
             value(childCategory(categories, value(item, "ixCategory")), "nIconType"),
           ),
-          notifiedAt: timestamp(value(item, "dtCaseNotified")),
+          notifiedAt: timestamp(
+            item.children.find((node) => node.name === "dtCaseNotified")?.text ?? "",
+          ),
           updatedAt: timestamp(value(item, "dtLastUpdated")),
         }),
       );

@@ -74,6 +74,65 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   trackRpcRequestSent: () => {},
 }));
 
+it("explains unavailable integration features and refreshes compatibility after a FogBugz update", async () => {
+  let connection: FogBugzConnection = {
+    id: "legacy-connection",
+    baseUrl: "https://fogbugz.example/",
+    username: "developer@example.test",
+    personId: 7,
+    personName: "Test Developer",
+    authenticated: true,
+    capabilities: { projectGroups: false, browserSession: false, caseGit: false },
+  };
+  let checked = false;
+  using _environment = installFakeEnvironment([], {
+    [WS_METHODS.fogbugzStatus]: () => Effect.succeed({ connection, projects: [] }),
+    [WS_METHODS.fogbugzTest]: () =>
+      Effect.sync(() => {
+        checked = true;
+        connection = {
+          ...connection,
+          capabilities: { projectGroups: true, browserSession: true, caseGit: true },
+        };
+        return connection;
+      }),
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    panelAnimationDurationMs: 0,
+  });
+  await page.viewport(1400, 1000);
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/settings/mggm?machine=${ENVIRONMENT_ID}`] }),
+  );
+  await router.load();
+  const container = document.createElement("div");
+  container.className = "h-[1000px] w-[1400px]";
+  // AppRoot owns the router for this integrated settings journey.
+  await using screen = await render(<AppRoot router={router} />, { container, router: false });
+  const compatibility = page.getByRole("status", { name: "FogBugz compatibility" });
+  await expect
+    .element(page.getByText("Project groups are not supported", { exact: false }))
+    .toBeVisible();
+  await expect
+    .element(page.getByText("Automatic browser sign-in is not supported", { exact: false }))
+    .toBeVisible();
+  await expect.element(page.getByText("Case-Git is not supported", { exact: false })).toBeVisible();
+  await page.screenshot({ path: ".t3/fogbugz-compatibility-wide.png" });
+  await page.viewport(390, 1000);
+  screen.container.className = "h-[1000px] w-[390px]";
+  compatibility.element().scrollIntoView();
+  await expect.element(compatibility).toBeVisible();
+  await page.screenshot({ path: ".t3/fogbugz-compatibility-narrow.png" });
+  await userEvent.click(page.getByRole("button", { name: "Test connection", exact: true }));
+  await expect
+    .element(page.getByText("All integration features are supported.", { exact: true }))
+    .toBeVisible();
+  expect(checked).toBe(true);
+  expect(connection.authenticated).toBe(true);
+});
+
 it("shows case metadata and acknowledges reactivated threads on wide and narrow screens", async () => {
   const thread = {
     ...threadWithHistory("linked-case-sidebar", 1),

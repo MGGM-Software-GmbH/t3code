@@ -37,6 +37,7 @@ export function FogBugzThreadContext({
   const caseGitPermission = useAtomValue(
     fogbugzEnvironment.ensureCaseGit.permissionAtom(environmentId),
   );
+  const caseGitAvailable = status.data?.connection?.capabilities?.caseGit !== false;
   const [caseId, setCaseId] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -67,13 +68,13 @@ export function FogBugzThreadContext({
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Provision the linked thread's external case checkout on arrival.
   useEffect(() => {
-    if (display !== "context") return;
+    if (display !== "context" || status.isPending || !caseGitAvailable) return;
     if (!linked.data) preparedCase.current = null;
     if (linked.data && caseGitPermission && preparedCase.current !== linked.data.caseId) {
       preparedCase.current = linked.data.caseId;
       void prepareOnArrival();
     }
-  }, [linked.data, caseGitPermission, display]);
+  }, [linked.data, caseGitPermission, display, status.isPending, caseGitAvailable]);
 
   if (display === "context") return null;
   if (!status.data?.connection && !linked.data) return null;
@@ -89,7 +90,7 @@ export function FogBugzThreadContext({
             <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Open FogBugz case</span>
           </ThreadDetailsControl>
           <ThreadDetailsControl
-            disabled={!caseGitPermission}
+            disabled={!caseGitPermission || !caseGitAvailable}
             onClick={() => {
               const panels = useRightPanelStore.getState();
               panels.open(threadRef, "fogbugz-case-git");

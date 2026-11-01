@@ -514,7 +514,14 @@ export const layer = Layer.effect(
       ),
       prepareTurn: Effect.fn("FogBugzCaseGit.prepareTurn")(function* (threadId, runId) {
         if (!(yield* fogbugz.thread(threadId))) return null;
-        const { checkout, limits } = yield* synchronize(threadId, runId);
+        const prepared = yield* synchronize(threadId, runId).pipe(
+          Effect.catchTags({
+            FogBugzError: (error) =>
+              error.code === "unsupported" ? Effect.succeed(null) : Effect.fail(error),
+          }),
+        );
+        if (!prepared) return null;
+        const { checkout, limits } = prepared;
         return {
           text: caseGitInstructions(checkout, limits),
           cwd: checkout.cwd,
@@ -526,9 +533,15 @@ export const layer = Layer.effect(
           locations.delete(runId);
           return;
         }
-        const { checkout } = yield* synchronize(threadId, runId, true).pipe(
+        const synchronized = yield* synchronize(threadId, runId, true).pipe(
+          Effect.catchTags({
+            FogBugzError: (error) =>
+              error.code === "unsupported" ? Effect.succeed(null) : Effect.fail(error),
+          }),
           Effect.ensuring(Effect.sync(() => locations.delete(runId))),
         );
+        if (!synchronized) return;
+        const { checkout } = synchronized;
         if (checkout.syncIssue) yield* Effect.logWarning(checkout.syncIssue, { threadId });
       }),
     });

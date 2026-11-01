@@ -103,6 +103,7 @@ export const layer = Layer.effect(
     const lock = yield* Semaphore.make(1);
     const crypto = yield* Crypto.Crypto;
     const decodeConnection = Schema.decodeEffect(Schema.fromJsonString(FogBugzConnection));
+    const encodeConnection = Schema.encodeEffect(Schema.fromJsonString(FogBugzConnection));
     const connection = Effect.fn("FogBugz.connection")(function* () {
       const rows = yield* sql<{
         payload: string;
@@ -140,9 +141,26 @@ export const layer = Layer.effect(
                 Effect.asVoid,
                 Effect.mapError(storageError),
               )
-            : Effect.void,
+            : error.code === "unsupported" || error.code === "project_groups_unsupported"
+              ? sql`UPDATE fogbugz_connection SET payload = json_remove(payload, '$.capabilities') WHERE id = 1 AND json_extract(payload, '$.id') = ${current.id} AND json_extract(payload, '$.baseUrl') = ${current.baseUrl}`.pipe(
+                  Effect.asVoid,
+                  Effect.mapError(storageError),
+                )
+              : Effect.void,
         ),
       );
+    });
+    const checkCapabilities = Effect.fn("FogBugz.checkCapabilities")(function* (refresh = false) {
+      const { current } = yield* authenticated();
+      if (!refresh && current.capabilities) return current;
+      const capabilities = yield* call((api, token) => api.capabilities(token));
+      const checked = { ...current, capabilities };
+      const checkedPayload = yield* encodeConnection(checked).pipe(Effect.mapError(storageError));
+      // Do not overwrite a connection replaced while its remote probe was in flight.
+      yield* sql`UPDATE fogbugz_connection SET payload = ${checkedPayload} WHERE id = 1 AND json_extract(payload, '$.id') = ${current.id} AND json_extract(payload, '$.baseUrl') = ${current.baseUrl} AND json_extract(payload, '$.authenticated') = 1`.pipe(
+        Effect.mapError(storageError),
+      );
+      return checked;
     });
     const projectLinks = () =>
       sql<{
@@ -156,8 +174,27 @@ export const layer = Layer.effect(
     const resolveProjectLinks = Effect.fn("FogBugz.resolveProjectLinks")(function* (
       links: ReadonlyArray<(typeof FogBugzStatus.Type.projects)[number]>,
     ) {
+      const direct = links.flatMap((link) =>
+        link.fogbugzProjectId === null
+          ? []
+          : [{ projectId: link.projectId, fogbugzProjectId: link.fogbugzProjectId }],
+      );
+      if (links.some((link) => link.fogbugzProjectGroupId !== null)) {
+        const current = yield* checkCapabilities();
+        if (!current.capabilities?.projectGroups) {
+          if (direct.length) return direct;
+          return yield* new FogBugzError({ code: "project_groups_unsupported" });
+        }
+      }
       const projects = links.some((link) => link.fogbugzProjectGroupId !== null)
-        ? yield* call((api, token) => api.projects(token))
+        ? yield* call((api, token) => api.projects(token, true)).pipe(
+            Effect.catchTags({
+              FogBugzError: (error) =>
+                error.code === "project_groups_unsupported" && direct.length > 0
+                  ? Effect.succeed([])
+                  : Effect.fail(error),
+            }),
+          )
         : [];
       return links.flatMap((link) =>
         link.fogbugzProjectId !== null
@@ -350,7 +387,22 @@ export const layer = Layer.effect(
         };
       }),
       status: Effect.fn("FogBugz.status")(function* () {
-        return { connection: yield* connection(), projects: yield* projectLinks() };
+        const current = yield* connection();
+        const projects = yield* projectLinks();
+        if (!current?.authenticated || current.capabilities)
+          return { connection: current, projects };
+        return yield* checkCapabilities().pipe(
+          Effect.map((checked) => ({ connection: checked, projects })),
+          Effect.catch((error) =>
+            Effect.gen(function* () {
+              return {
+                connection: yield* connection(),
+                projects,
+                compatibilityError: error.message,
+              };
+            }),
+          ),
+        );
       }),
       connect: Effect.fn("FogBugz.connect")(function* (input) {
         return yield* lock.withPermit(
@@ -380,7 +432,8 @@ export const layer = Layer.effect(
                 return yield* new FogBugzError({ code: "authentication" });
               if (!input.password) {
                 const next = {
-                  ...previous,
+                  id: previous.id,
+                  personId: previous.personId,
                   baseUrl,
                   username: input.username,
                   personName: person.name,
@@ -457,10 +510,10 @@ export const layer = Layer.effect(
         );
       }),
       test: Effect.fn("FogBugz.test")(function* () {
-        return yield* call(async (api, token, current) => {
+        yield* call(async (api, token) => {
           await api.person(token);
-          return current;
         });
+        return yield* checkCapabilities(true);
       }),
       projects: Effect.fn("FogBugz.projects")(function* () {
         return yield* call((api, token) => api.projects(token));
@@ -481,7 +534,9 @@ export const layer = Layer.effect(
             )
               return;
             if (input.fogbugzProjectId !== null || groupId !== null) {
-              const projects = yield* call((api, token) => api.projects(token));
+              if (groupId !== null && !(yield* checkCapabilities()).capabilities?.projectGroups)
+                return yield* new FogBugzError({ code: "project_groups_unsupported" });
+              const projects = yield* call((api, token) => api.projects(token, groupId !== null));
               if (
                 !projects.some((project) =>
                   groupId !== null

@@ -2,6 +2,55 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { FogBugzApi, normalizeFogBugzUrl } from "./FogBugzApi.ts";
 
 describe("FogBugz API", () => {
+  it("detects optional extensions without creating a browser session or case repository", async () => {
+    let modern = false;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_url, request) => {
+      const parameters = new URLSearchParams(String(request?.body));
+      switch (parameters.get("cmd")) {
+        case "listProjects":
+          return new Response(
+            `<response><projects><project><ixProject>12</ixProject><sProject>OPS</sProject></project></projects>${modern ? "<projectGroups/>" : ""}</response>`,
+          );
+        case "browserSession":
+          expect(parameters.has("token")).toBe(false);
+          return new Response(
+            `<response><error code="${modern ? 10 : 3}">Private message</error></response>`,
+          );
+        case "caseGitRepository":
+          expect(parameters.get("ixBug")).toBe("0");
+          return new Response(
+            `<response><error code="${modern ? 13 : 27}">Private message</error></response>`,
+          );
+        default:
+          throw new Error("Unexpected API command");
+      }
+    });
+    const api = new FogBugzApi("https://fogbugz.example/", fetch);
+    expect(await api.capabilities("private-token")).toEqual({
+      projectGroups: false,
+      browserSession: false,
+      caseGit: false,
+    });
+    expect(await api.projects("private-token")).toEqual([{ id: 12, name: "OPS", groups: [] }]);
+    await expect(api.projects("private-token", true)).rejects.toMatchObject({
+      code: "project_groups_unsupported",
+    });
+    modern = true;
+    expect(await api.capabilities("private-token")).toEqual({
+      projectGroups: true,
+      browserSession: true,
+      caseGit: true,
+    });
+    fetch.mockResolvedValue(
+      new Response('<response><error code="3">Expired secret</error></response>'),
+    );
+    await expect(api.capabilities("private-token")).rejects.toMatchObject({
+      code: "authentication",
+    });
+    fetch.mockResolvedValue(new Response("Unavailable", { status: 503 }));
+    await expect(api.capabilities("private-token")).rejects.toMatchObject({ code: "network" });
+  });
+
   it("distinguishes resolved and closed cases using the status catalog and preserves assignment events", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async (_url, request) => {
       const parameters = new URLSearchParams(String(request?.body));
@@ -95,6 +144,8 @@ describe("FogBugz API", () => {
   });
 
   it("decodes the XML fields, entities and CDATA emitted by our FogBugz", async () => {
+    const caseResponse =
+      '<response><cases count="1"><case ixBug="42"><ixBug>42</ixBug><sTitle><![CDATA[Fix <title>]]></sTitle><ixProject>12</ixProject><sProject>OPS</sProject><sStatus>Active</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><sPersonAssignedTo>Test Person</sPersonAssignedTo><ixPriority>2</ixPriority><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>2026-10-29T08:00:00Z</dtCaseNotified><dtLastUpdated></dtLastUpdated></case></cases></response>';
     const fetch = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(
@@ -112,11 +163,7 @@ describe("FogBugz API", () => {
           "<response><categories><category><ixCategory>1</ixCategory><nIconType>1</nIconType></category></categories></response>",
         ),
       )
-      .mockResolvedValueOnce(
-        new Response(
-          '<response><cases count="1"><case ixBug="42"><ixBug>42</ixBug><sTitle><![CDATA[Fix <title>]]></sTitle><ixProject>12</ixProject><sProject>OPS</sProject><sStatus>Active</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><sPersonAssignedTo>Test Person</sPersonAssignedTo><ixPriority>2</ixPriority><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>2026-10-29T08:00:00Z</dtCaseNotified><dtLastUpdated></dtLastUpdated></case></cases></response>',
-        ),
-      );
+      .mockResolvedValueOnce(new Response(caseResponse));
     const api = new FogBugzApi("https://fogbugz.example/", fetch);
     expect(await api.person("secret")).toEqual({ id: 7, name: "Müller & Sohn" });
     expect(await api.projects("secret")).toEqual([
@@ -141,6 +188,16 @@ describe("FogBugz API", () => {
         updatedAt: null,
       },
     ]);
+    fetch
+      .mockResolvedValueOnce(
+        new Response(
+          "<response><categories><category><ixCategory>1</ixCategory><nIconType>1</nIconType></category></categories></response>",
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(caseResponse.replace(/<dtCaseNotified>.*?<\/dtCaseNotified>/, "")),
+      );
+    expect((await api.cases("secret", "assignedto:me"))[0]?.notifiedAt).toBeNull();
   });
 
   it("requests a case repository by POST and rejects malformed repository identities", async () => {

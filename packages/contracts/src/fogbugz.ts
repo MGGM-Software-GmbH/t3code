@@ -9,6 +9,11 @@ export const FogBugzProject = Schema.Struct({
   name: Schema.String,
   groups: Schema.Array(FogBugzProjectGroup),
 });
+export const FogBugzCapabilities = Schema.Struct({
+  projectGroups: Schema.Boolean,
+  browserSession: Schema.Boolean,
+  caseGit: Schema.Boolean,
+});
 export const FogBugzConnection = Schema.Struct({
   id: Schema.String,
   baseUrl: Schema.String,
@@ -16,6 +21,7 @@ export const FogBugzConnection = Schema.Struct({
   personId: FogBugzId,
   personName: Schema.String,
   authenticated: Schema.Boolean,
+  capabilities: Schema.optionalKey(FogBugzCapabilities),
 });
 export type FogBugzConnection = typeof FogBugzConnection.Type;
 export const FogBugzProjectLink = Schema.Struct({
@@ -26,6 +32,7 @@ export const FogBugzProjectLink = Schema.Struct({
 export const FogBugzStatus = Schema.Struct({
   connection: Schema.NullOr(FogBugzConnection),
   projects: Schema.Array(FogBugzProjectLink),
+  compatibilityError: Schema.optionalKey(Schema.String),
 });
 export const FogBugzCase = Schema.Struct({
   id: FogBugzId,
@@ -143,6 +150,10 @@ export const FogBugzCreateThreadInput = Schema.Struct({
 });
 
 const messages = {
+  unsupported:
+    "This FogBugz version does not support this integration feature. Check Settings > MGGM for details.",
+  project_groups_unsupported:
+    "This FogBugz version does not support project groups. Existing links are preserved. Update FogBugz or explicitly link a single project.",
   case_git_changed:
     "Case files changed since confirmation. Review the current changes and try again.",
   case_files_path:

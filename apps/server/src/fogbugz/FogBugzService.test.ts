@@ -48,21 +48,25 @@ function fixture() {
     requests.push(params);
     const command = params.get("cmd");
     const content =
-      command === "caseGitRepository"
-        ? '<caseGit><![CDATA[{"repositoryId":"f3e37008-65d3-4cd5-8276-6cfdcc8b8901","canWrite":true,"limits":{"fileBytes":26214400,"groupBytes":104857600,"groupFiles":100,"repositoryBytes":524288000}}]]></caseGit>'
-        : command === "logon"
-          ? "<token>private-token</token>"
-          : command === "viewPerson"
-            ? "<person><ixPerson>7</ixPerson><sFullName>Test Person</sFullName></person>"
-            : command === "listProjects"
-              ? "<projects><project><ixProject>12</ixProject><sProject>Project 12</sProject></project></projects><projectGroups><membership><ixProject>12</ixProject><ixProjectGroup>3</ixProjectGroup><sProjectGroup>MGGM</sProjectGroup></membership></projectGroups>"
-              : command === "listCategories"
-                ? "<categories><category><ixCategory>1</ixCategory><nIconType>1</nIconType></category></categories>"
-                : command === "search"
-                  ? params.get("cols") === "ixBug,events"
-                    ? "<cases><case><ixBug>42</ixBug><events><event><ixBugEvent>501</ixBugEvent><sPerson>Test Person</sPerson><dt>2026-10-29T10:00:00Z</dt><s>Required behavior</s></event></events></case></cases>"
-                    : `<cases>${params.get("q") === "42" ? caseXml(42, 12) : caseXml(42, 12) + caseXml(43, 99) + caseXml(44, 12, 8)}</cases>`
-                  : "";
+      command === "browserSession"
+        ? '<error code="10">POST token required</error>'
+        : command === "caseGitRepository" && params.get("ixBug") === "0"
+          ? '<error code="13">No access to case files</error>'
+          : command === "caseGitRepository"
+            ? '<caseGit><![CDATA[{"repositoryId":"f3e37008-65d3-4cd5-8276-6cfdcc8b8901","canWrite":true,"limits":{"fileBytes":26214400,"groupBytes":104857600,"groupFiles":100,"repositoryBytes":524288000}}]]></caseGit>'
+            : command === "logon"
+              ? "<token>private-token</token>"
+              : command === "viewPerson"
+                ? "<person><ixPerson>7</ixPerson><sFullName>Test Person</sFullName></person>"
+                : command === "listProjects"
+                  ? "<projects><project><ixProject>12</ixProject><sProject>Project 12</sProject></project></projects><projectGroups><membership><ixProject>12</ixProject><ixProjectGroup>3</ixProjectGroup><sProjectGroup>MGGM</sProjectGroup></membership></projectGroups>"
+                  : command === "listCategories"
+                    ? "<categories><category><ixCategory>1</ixCategory><nIconType>1</nIconType></category></categories>"
+                    : command === "search"
+                      ? params.get("cols") === "ixBug,events"
+                        ? "<cases><case><ixBug>42</ixBug><events><event><ixBugEvent>501</ixBugEvent><sPerson>Test Person</sPerson><dt>2026-10-29T10:00:00Z</dt><s>Required behavior</s></event></events></case></cases>"
+                        : `<cases>${params.get("q") === "42" ? caseXml(42, 12) : caseXml(42, 12) + caseXml(43, 99) + caseXml(44, 12, 8)}</cases>`
+                      : "";
     return new Response(`<response>${content}</response>`);
   });
   const dependencies = Layer.merge(Sqlite.layerMemory, secretLayer).pipe(
@@ -84,6 +88,69 @@ const seed = Effect.gen(function* () {
 });
 
 describe("FogBugz integration persistence and access", () => {
+  it.effect(
+    "keeps links and sign-in when optional extensions disappear and rechecks after an update",
+    () => {
+      const test = fixture();
+      let legacy = false;
+      return Effect.gen(function* () {
+        using _fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+          const parameters = new URLSearchParams(String(init?.body));
+          if (legacy && parameters.get("cmd") === "listProjects")
+            return new Response(
+              "<response><projects><project><ixProject>12</ixProject><sProject>Project 12</sProject></project></projects></response>",
+            );
+          if (legacy && parameters.get("cmd") === "browserSession")
+            return new Response('<response><error code="3">Not logged on</error></response>');
+          if (legacy && parameters.get("cmd") === "caseGitRepository")
+            return new Response('<response><error code="27">Unknown command</error></response>');
+          return test.fetch(url, init);
+        });
+        yield* seed;
+        const service = yield* FogBugzService;
+        yield* service.connect(credentials);
+        yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
+        yield* service.linkThread({ threadId, caseId: 42 });
+        legacy = true;
+        expect(
+          (yield* service.cases({ query: "", state: "open", assignedToMe: true }).pipe(Effect.flip))
+            .code,
+        ).toBe("project_groups_unsupported");
+        expect((yield* service.status()).connection?.capabilities?.projectGroups).toBe(false);
+        const checked = yield* service.test();
+        expect(checked.authenticated).toBe(true);
+        expect(checked.capabilities).toEqual({
+          projectGroups: false,
+          browserSession: false,
+          caseGit: false,
+        });
+        expect((yield* service.status()).projects).toEqual([
+          { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 },
+        ]);
+        expect(
+          (yield* service.cases({ query: "", state: "open", assignedToMe: true }).pipe(Effect.flip))
+            .code,
+        ).toBe("project_groups_unsupported");
+        expect((yield* service.thread(threadId))?.caseId).toBe(42);
+        const sql = yield* SqlClient.SqlClient;
+        const directProject = ProjectId.make("direct-project");
+        yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at) VALUES (${directProject}, 'Direct project', '/tmp/direct-project', '[]', '2026-01-01', '2026-01-01')`;
+        yield* service.linkProject({ projectId: directProject, fogbugzProjectId: 12 });
+        const partial = yield* service.cases({ query: "", state: "open", assignedToMe: true });
+        expect(partial.cases.map((item) => item.id)).toEqual([42]);
+        expect(partial.projects).toEqual([{ projectId: directProject, fogbugzProjectId: 12 }]);
+        legacy = false;
+        expect((yield* service.test()).capabilities).toEqual({
+          projectGroups: true,
+          browserSession: true,
+          caseGit: true,
+        });
+        expect(
+          (yield* service.cases({ query: "", state: "open", assignedToMe: true })).cases,
+        ).toHaveLength(1);
+      }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
+    },
+  );
   it.effect(
     "requires a persisted accessible thread link before preparing a case repository",
     () => {
