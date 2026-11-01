@@ -29,6 +29,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
   const settings = Context.get(settingsContext, ServerSettings.ServerSettingsService);
   if (installed) yield* fs.symlink("/bin/true", `${home}/pd-secrets`);
   const ready = yield* Queue.unbounded<void>();
+  const statusReady = yield* Queue.unbounded<void>();
   const writes: string[] = [];
   const spawns: PtySpawnInput[] = [];
   const dataListeners = new Set<(data: string) => void>();
@@ -63,7 +64,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
                 )
               : Effect.succeed(ChildProcessSpawner.ExitCode(0))
             : hanging
-              ? Effect.never
+              ? Queue.offer(statusReady, undefined).pipe(Effect.andThen(Effect.never))
               : Effect.succeed(ChildProcessSpawner.ExitCode(code)),
           isRunning: Effect.succeed(false),
           kill: () => Effect.void,
@@ -126,6 +127,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
     spawns,
     checks,
     ready: Queue.take(ready),
+    statusReady: Queue.take(statusReady),
     scriptReady: Queue.take(scriptReady),
     configureScript: (value: string) =>
       settings.updateSettings({ pdSecretsPostLoginScript: value }),
@@ -187,6 +189,7 @@ it.layer(NodeServices.layer)("PdSecrets", (it) => {
       const h = yield* makeHarness();
       h.hang();
       const check = yield* h.service.status().pipe(Effect.flip, Effect.forkScoped);
+      yield* h.statusReady;
       yield* TestClock.adjust("10 seconds");
       expect((yield* Fiber.join(check)).reason).toBe("check_failed");
     }),

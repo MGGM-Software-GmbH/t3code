@@ -10,7 +10,6 @@ import {
   type SidebarListMarker,
 } from "../Sidebar.logic";
 import { RelativeTimeLabel, SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
-import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { useClientSettings } from "../../hooks/useSettings";
 
@@ -135,8 +134,6 @@ export function SidebarSectionHeader(props: {
   dragging?: boolean;
   isDropTarget?: boolean;
   toggle: { expanded: boolean; onToggle: () => void };
-  /** The first shelf at the bottom of the list hosts the undo notice just above itself. */
-  hostsUndoNotice?: boolean;
 }) {
   const shelf = props.marker.slice(0, -"-header".length);
   const mggmThreadSidebarEnabled = useClientSettings(
@@ -153,9 +150,6 @@ export function SidebarSectionHeader(props: {
         props.className,
       )}
     >
-      {props.hostsUndoNotice ? (
-        <SidebarThreadUndoNotice className="absolute inset-x-0 bottom-full bg-sidebar surface-grain" />
-      ) : null}
       <CollapsibleSectionHeader
         role="treeitem"
         tabIndex={-1}

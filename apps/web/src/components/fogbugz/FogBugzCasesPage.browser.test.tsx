@@ -118,6 +118,8 @@ it("disables the FogBugz surface and its shortcut until the thread is linked", a
     pullRequestAvailable: false,
     pullRequestsAvailable: false,
     deviceAvailable: false,
+    sideChatAvailable: false,
+    sideChatDisabledReason: null,
   };
   await using screen = await render(
     <RightPanelEmptyState {...props} fogbugzCasesAvailable={false} />,
