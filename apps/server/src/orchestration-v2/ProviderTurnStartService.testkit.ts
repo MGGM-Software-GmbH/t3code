@@ -22,7 +22,10 @@ import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
 
 export const layer = Layer.mergeAll(
-  Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({ prepareTurn: () => Effect.succeed(null) }),
+  Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({
+    prepareTurn: () => Effect.succeed(null),
+    finishTurn: () => Effect.void,
+  }),
   Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
     refreshReviewComments: ({ records }) => Effect.succeed([...records]),
   }),

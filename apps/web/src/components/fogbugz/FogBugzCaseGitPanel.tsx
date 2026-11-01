@@ -44,6 +44,20 @@ type Props = Pick<
   | "openInShortcutEnabled"
 >;
 
+async function settleCaseFileOperation<Result>(
+  operation: () => Promise<Result>,
+  onFailure: (failure: unknown) => Result,
+  onSettled: () => void,
+): Promise<Result> {
+  try {
+    return await operation();
+  } catch (failure) {
+    return onFailure(failure);
+  } finally {
+    onSettled();
+  }
+}
+
 export function FogBugzCaseGitPanel(props: Props) {
   const { environmentId, threadId } = props.threadRef;
   const permission = useAtomValue(fogbugzEnvironment.ensureCaseGit.permissionAtom(environmentId));
@@ -110,24 +124,26 @@ function CaseGitFiles(props: Props) {
   async function runGit(action: typeof FogBugzCaseGitInput.Type.action) {
     setMutating(true);
     setMutationError(null);
-    try {
-      const result = await manageGit({ environmentId, input: { threadId, action } });
-      if (result._tag !== "Success") throw new Error(formatEnvironmentQueryError(result.cause));
-      setGitState(result.value);
-      setCheckout(result.value.checkout);
-      setRevision((value) => value + 1);
-      if (action.type === "revert") {
-        setRelativePath(null);
-        setFolderTrail(undefined);
-      }
-      if (action.type !== "status") setGitDialog(null);
-      return true;
-    } catch (failure) {
-      setMutationError(failure instanceof Error ? failure.message : "Could not update case Git.");
-      return false;
-    } finally {
-      setMutating(false);
-    }
+    return settleCaseFileOperation(
+      async () => {
+        const result = await manageGit({ environmentId, input: { threadId, action } });
+        if (result._tag !== "Success") throw new Error(formatEnvironmentQueryError(result.cause));
+        setGitState(result.value);
+        setCheckout(result.value.checkout);
+        setRevision((value) => value + 1);
+        if (action.type === "revert") {
+          setRelativePath(null);
+          setFolderTrail(undefined);
+        }
+        if (action.type !== "status") setGitDialog(null);
+        return true;
+      },
+      (failure) => {
+        setMutationError(failure instanceof Error ? failure.message : "Could not update case Git.");
+        return false;
+      },
+      () => setMutating(false),
+    );
   }
   async function openGitDialog(action: "commit" | "revert") {
     if (await runGit({ type: "status" })) setGitDialog(action);
@@ -148,14 +164,18 @@ function CaseGitFiles(props: Props) {
     if (mutating) return;
     setMutating(true);
     setMutationError(null);
-    try {
-      await change(action);
-      setDialog(null);
-    } catch (failure) {
-      setMutationError(failure instanceof Error ? failure.message : "Could not change case files.");
-    } finally {
-      setMutating(false);
-    }
+    await settleCaseFileOperation(
+      async () => {
+        await change(action);
+        setDialog(null);
+      },
+      (failure) => {
+        setMutationError(
+          failure instanceof Error ? failure.message : "Could not change case files.",
+        );
+      },
+      () => setMutating(false),
+    );
   }
   async function upload(files: File[], folder: string, containsDirectories = false) {
     if (containsDirectories) {
@@ -167,66 +187,72 @@ function CaseGitFiles(props: Props) {
     setMutationError(null);
     const attachments: Array<{ path: string; attachmentId: string | null }> = [];
     const pendingIds: string[] = [];
-    try {
-      for (const file of files) {
-        const path = folder ? `${folder}/${file.name}` : file.name;
-        if (file.size === 0) {
-          attachments.push({ path, attachmentId: null });
-          continue;
+    await settleCaseFileOperation(
+      async () => {
+        for (const file of files) {
+          const path = folder ? `${folder}/${file.name}` : file.name;
+          if (file.size === 0) {
+            attachments.push({ path, attachmentId: null });
+            continue;
+          }
+          const result = await runAttachmentUploadCycle({
+            registry: appAtomRegistry,
+            createUploadUrl: attachmentEnvironment.createUploadUrl,
+            remove: attachmentEnvironment.remove,
+            environmentId,
+            onMinted: (attachmentId) => {
+              pendingIds.push(attachmentId);
+              return "continue";
+            },
+            upload: {
+              type: "file",
+              name: file.name,
+              mimeType: file.type || "application/octet-stream",
+              sizeBytes: file.size,
+            },
+            resolveUploadUrl: (url) => {
+              const connection = readPreparedConnection(environmentId);
+              return connection ? resolveAssetUrl(connection.httpBaseUrl, url) : null;
+            },
+            transport: (url) => {
+              const controller = new AbortController();
+              return {
+                abort: () => controller.abort(),
+                done: fetch(url, {
+                  method: "POST",
+                  body: file,
+                  headers: { "Content-Type": file.type || "application/octet-stream" },
+                  signal: controller.signal,
+                }).then((response) => {
+                  if (!response.ok) throw new Error(`Upload rejected (${response.status})`);
+                }),
+              };
+            },
+          });
+          if (result.status !== "uploaded") throw new Error("Could not upload case files.");
+          attachments.push({
+            path,
+            attachmentId: result.attachmentId,
+          });
         }
-        const result = await runAttachmentUploadCycle({
-          registry: appAtomRegistry,
-          createUploadUrl: attachmentEnvironment.createUploadUrl,
-          remove: attachmentEnvironment.remove,
-          environmentId,
-          onMinted: (attachmentId) => {
-            pendingIds.push(attachmentId);
-            return "continue";
-          },
-          upload: {
-            type: "file",
-            name: file.name,
-            mimeType: file.type || "application/octet-stream",
-            sizeBytes: file.size,
-          },
-          resolveUploadUrl: (url) => {
-            const connection = readPreparedConnection(environmentId);
-            return connection ? resolveAssetUrl(connection.httpBaseUrl, url) : null;
-          },
-          transport: (url) => {
-            const controller = new AbortController();
-            return {
-              abort: () => controller.abort(),
-              done: fetch(url, {
-                method: "POST",
-                body: file,
-                headers: { "Content-Type": file.type || "application/octet-stream" },
-                signal: controller.signal,
-              }).then((response) => {
-                if (!response.ok) throw new Error(`Upload rejected (${response.status})`);
-              }),
-            };
-          },
-        });
-        if (result.status !== "uploaded") throw new Error("Could not upload case files.");
-        attachments.push({
-          path,
-          attachmentId: result.attachmentId,
-        });
-      }
-      await change({ type: "upload", files: attachments });
-    } catch (failure) {
-      setMutationError(failure instanceof Error ? failure.message : "Could not upload case files.");
-    } finally {
-      for (const attachmentId of pendingIds)
-        deletePendingAttachmentUpload({
-          registry: appAtomRegistry,
-          remove: attachmentEnvironment.remove,
-          environmentId,
-          attachmentId,
-        });
-      setMutating(false);
-    }
+        await change({ type: "upload", files: attachments });
+      },
+      (failure) => {
+        setMutationError(
+          failure instanceof Error ? failure.message : "Could not upload case files.",
+        );
+      },
+      () => {
+        for (const attachmentId of pendingIds)
+          deletePendingAttachmentUpload({
+            registry: appAtomRegistry,
+            remove: attachmentEnvironment.remove,
+            environmentId,
+            attachmentId,
+          });
+        setMutating(false);
+      },
+    );
   }
   async function load() {
     const currentRequest = ++requestId.current;

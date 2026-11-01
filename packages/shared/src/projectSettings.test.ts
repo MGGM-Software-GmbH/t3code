@@ -123,7 +123,9 @@ describe("resolveProjectSettings", () => {
       projectId,
       project,
     );
-    expect(folded.settings.defaultModelSelection).toBeNull();
+    expect(folded.settings.defaultModelSelection).toEqual(
+      DEFAULT_SERVER_SETTINGS.defaultModelSelection,
+    );
     expect(folded.sources.defaultModelSelection).toBe("environment");
   });
 
@@ -139,7 +141,7 @@ describe("resolveProjectSettings", () => {
       projectSettingsOverrides: { [projectId]: { defaultModelSelection: disabledSelection } },
     });
     const resolved = resolveProjectSettings(settings, projectId);
-    expect(resolved.settings.defaultModelSelection).toBeNull();
+    expect(resolved.settings.defaultModelSelection).toEqual(settings.defaultModelSelection);
     expect(resolved.sources.defaultModelSelection).toBe("environment");
   });
 
@@ -148,6 +150,12 @@ describe("resolveProjectSettings", () => {
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,
       textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
+      providerInstances: {
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+        },
+      },
       projectSettingsOverrides: {
         [projectId]: { providerInstances: { [codex]: { enabled: false } } },
       },
