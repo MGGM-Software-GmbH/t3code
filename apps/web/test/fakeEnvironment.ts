@@ -183,6 +183,7 @@ function run(threadId: ThreadId, id: RunId, ordinal: number, userMessageId: stri
 export interface FakeThread {
   readonly id: ThreadId;
   readonly title: string;
+  readonly branch?: string | null;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
 }
@@ -220,7 +221,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     modelSelection: MODEL,
     runtimeMode: "full-access",
     interactionMode: "default",
-    branch: "main",
+    branch: thread.branch === undefined ? "main" : thread.branch,
     worktreePath: null,
     activeProviderThreadId: null,
     lineage: { rootThreadId: thread.id, parentThreadId: null, relationshipToParent: null },
