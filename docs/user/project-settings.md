@@ -10,7 +10,7 @@ In **Settings > Projects**, select a T3 project and choose a **FogBugz project o
 
 Open **Fogbugz Cases** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. The **+** menu processes a case in a new linked thread. When several T3 projects match, choose the destination project first. Existing threads appear as direct links; a thread can also link a case by number or remove that association.
 
-Within a thread in a linked project, open the **Fogbugz-Cases** surface from the side panel. Its case list stays scoped to that thread's T3 project, including all accessible FogBugz projects in a linked group.
+Within a thread linked to a case, open the **Fogbugz-Cases** surface from the side panel. Its case list stays scoped to that thread's T3 project, including all accessible FogBugz projects in a linked group.
 
 For a thread linked to a case, **FogBugz-Case-Git** in the FogBugz section of thread details or the side panel's surface menu opens that case's files using the existing file viewer. By default, T3 prepares a separate local clone for each thread under `<T3 home>/case-files/<connection>/<person>/<case>/<thread>/repo`. In **Settings > Projects > FogBugz**, set **Case-Git checkout folder** to share one checkout per case across the project's threads. Use an absolute path or a path relative to the project root; case 12345 uses `<folder>/FB12345`. The folder may be inside the project repository. For SVN projects, adding this folder to `svn:ignore` is recommended. T3 does not change SVN properties. Clearing or changing the setting keeps existing checkouts on disk. FogBugz creates a missing repository when your account has write access and the project's case file storage is enabled. Unlinking preserves the local files and the FogBugz repository.
 
@@ -20,7 +20,7 @@ Linked threads store planning artifacts, including INITIAL.md, PRP.md and protot
 
 In either list, **Add to Context** adds a case reference to the composer without starting an agent run. **Create PRP** starts planning; **Implement** starts implementation. The side panel uses the current thread, including a new thread before its first message. These actions pass the case number and instructions to read it through the FogBugz MCP, rather than copying the case history into the prompt. The agent needs access to that MCP.
 
-Cases show category, status, priority, assignee and your latest notification time. The list sorts by that notification time, then by the last case update.
+Cases show category, status, priority, assignee and your latest notification time, or the last update when there is no notification. The list sorts by that displayed date, then by the last case update.
 
 Linked threads show the case category icon and FogBugz project name in the thread list, with priority and status below the title.
 
@@ -32,7 +32,7 @@ For a later assignment, the analysis focuses on what you are expected to contrib
 
 Click a case number to open it in a new browser tab using your existing FogBugz browser session. This link does not pass an API token.
 
-Creating a linked thread from the case list opens the case in the Browser panel using the selected browser profile. Switching between existing threads preserves your panel selection, including a closed panel. Use **Open FogBugz case** in thread details to open it again. T3 exchanges the stored API token for a browser session without another password prompt. This requires the MGGM FogBugz browser-session API. Changing the FogBugz server or account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. FogBugz comment editing is not included.
+Creating a linked thread from the case list opens the case in the Browser panel using the selected browser profile. Switching between existing threads preserves your panel selection, including a closed panel. Use **Open FogBugz case** in thread details to open it again. T3 exchanges the stored API token for a browser session without another password prompt. This requires the MGGM FogBugz browser-session API. Changing the base URL for the same account preserves its sign-in and existing links. Changing the account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. FogBugz comment editing is not included.
 
 ## Settings scope
 
