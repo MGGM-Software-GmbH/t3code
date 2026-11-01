@@ -340,10 +340,12 @@ const PersistedServerSettings = Schema.Struct({
   ),
   projectSettingsOverrides: Schema.Record(
     ProjectId,
-    keepUnknownOverrideKeys(Schema.Struct({
-      ...ProjectSettingsOverrides.fields,
-      responseStreamingMode: Schema.optionalKey(PersistedResponseStreamingMode),
-    })),
+    keepUnknownOverrideKeys(
+      Schema.Struct({
+        ...ProjectSettingsOverrides.fields,
+        responseStreamingMode: Schema.optionalKey(PersistedResponseStreamingMode),
+      }),
+    ),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 

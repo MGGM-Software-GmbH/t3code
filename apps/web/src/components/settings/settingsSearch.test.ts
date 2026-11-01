@@ -16,7 +16,6 @@ import {
   searchSettings,
   SETTINGS_NAV_GROUPS,
   SETTINGS_SEARCH_ITEMS,
-  SETTINGS_NAV_GROUPS,
   sourceControlHostSearchItems,
   sourceControlHostSettingsSearchId,
   type SettingsSearchItem,
