@@ -15,9 +15,10 @@ setCustomExtension("xsl", "xml");
 setCustomExtension("xslt", "xml");
 
 /**
- * Highlights' hand-written WASM lexers tokenize large files 10-40x faster than
- * Shiki and never backtrack like Shiki's JS regex engine. Only one highlighter
- * type can be active per thread, so every creation site must pass this value.
+ * Die WASM-Lexer von Highlights tokenisieren große Dateien 10-40x schneller als Shiki
+ * und vermeiden das Backtracking seiner JavaScript-Regex-Engine.
+ * Gemeinsame Highlighter müssen pro Thread denselben Typ verwenden.
+ * Eigene TextMate-Dateigrammatiken verwenden unabhängige Shiki-Instanzen.
  */
 export const PREFERRED_HIGHLIGHTER: HighlighterTypes = "highlights";
 

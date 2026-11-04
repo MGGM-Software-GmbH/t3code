@@ -110,6 +110,7 @@ import {
   FileSurfaceLoading,
 } from "./fileSurfaceChrome";
 import SourceFilePreview from "./ReadOnlySourcePreview";
+import { isDwsFile, useFileHighlighter } from "~/hooks/useFileHighlighter";
 import { resolveCenteredFileLineScrollTop } from "./fileLineReveal";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { projectFileCacheKey } from "./fileContentRevision";
@@ -613,11 +614,13 @@ function editableFileContents(
   return {
     name: relativePath,
     contents,
+    ...(isDwsFile(relativePath) ? { lang: "mggm-dws" } : {}),
     cacheKey: `editor:${environmentId}:${projectFileCacheKey(cwd, relativePath, contents)}`,
   };
 }
 
 function needsWorkerHighlight(workerPool: WorkerPoolManager | undefined, file: FileContents) {
+  if (isDwsFile(file.name)) return false;
   if (workerPool?.isWorkingPool() !== true) return false;
   if ((file.lang ?? getFiletypeFromFileName(file.name)) === "text") return false;
   let lines = 1;
@@ -688,6 +691,7 @@ function EditableFileSurface({
   onPostRender,
   onPendingChange,
 }: EditableFileSurfaceProps) {
+  const syntax = useFileHighlighter(relativePath);
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
   const setReviewCommentEditDraft = useComposerDraftStore(
@@ -868,6 +872,7 @@ function EditableFileSurface({
     });
   };
 
+  if (!syntax.ready) return <FileSurfaceLoading />;
   return (
     <EditProvider createEditor={createFileEditor}>
       <div ref={surfaceRef} className="flex min-h-0 flex-1 flex-col">
@@ -928,6 +933,7 @@ function EditableFileSurface({
             editorOptions={editorOptions}
             onEditChange={handleEditChange}
             options={{
+              ...(syntax.highlighter ? { highlighter: syntax.highlighter } : {}),
               disableFileHeader: true,
               enableGutterUtility: !hasOpenCommentForm,
               enableLineSelection: !hasOpenCommentForm,
