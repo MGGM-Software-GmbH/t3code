@@ -26,7 +26,10 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
+import { withCaseGitRoot } from "../fogbugz/caseGitInstructions.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -132,6 +135,7 @@ export const layer: Layer.Layer<
   ProviderTurnStartServiceV2,
   never,
   | EventSink.EventSinkV2
+  | FogBugzCaseGit.FogBugzCaseGit
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
@@ -145,11 +149,13 @@ export const layer: Layer.Layer<
   | ProviderSessionManager.ProviderSessionManagerV2
   | RunExecutionService.RunExecutionServiceV2
   | RuntimePolicy.RuntimePolicyV2
+  | WorkspaceFileSystem.WorkspaceFileSystem
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
+    const caseGit = yield* FogBugzCaseGit.FogBugzCaseGit;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -162,6 +168,7 @@ export const layer: Layer.Layer<
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
+    const workspaceFiles = yield* WorkspaceFileSystem.WorkspaceFileSystem;
 
     const resolveRecreateBase = Effect.fn("ProviderTurnStartService.resolveRecreateBase")(
       function* (cwd: string) {
@@ -725,6 +732,11 @@ export const layer: Layer.Layer<
       }
       const resolvedRuntimePolicy = resolvedPolicy.success;
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
+      // Queued turns can start after the browser closes or the workspace changes.
+      const reviewContextRecords = yield* workspaceFiles.refreshReviewComments({
+        cwd: resolvedRuntimePolicy.cwd,
+        records: message.context?.records ?? [],
+      });
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
       );
@@ -846,7 +858,7 @@ export const layer: Layer.Layer<
       let resumeFellBack = false;
       const userText = projectComposerContextForProvider({
         text: message.text,
-        records: message.context?.records ?? [],
+        records: reviewContextRecords,
       });
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
@@ -1602,17 +1614,25 @@ export const layer: Layer.Layer<
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           const start = compact ? session.compactThread! : session.startTurn;
+          const caseContext =
+            compact || goalCommand
+              ? null
+              : yield* caseGit.prepareTurn(projection.thread.id, run.id);
+          if (!(yield* isCurrentAttemptInStatus("running"))) return;
           // Like history, the side chat context waits for a turn that sends a prompt.
           const sideChatContext =
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [delivery.context, sideChatContext, restartNote]
+          const context = [caseContext?.text ?? "", delivery.context, sideChatContext, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
           yield* start({
             ...(noteContinuation ? promptedInput : turnInput),
+            runtimePolicy: caseContext?.canWrite
+              ? withCaseGitRoot(turnInput.runtimePolicy, caseContext.cwd)
+              : turnInput.runtimePolicy,
             message: {
               ...turnInput.message,
               text: goalCommand ? userText : withInlineContext(context, userText),
@@ -1670,14 +1690,7 @@ export const layer: Layer.Layer<
               }),
         ),
       );
-      const deliverySession =
-        effectiveHandoffs.length === 0 &&
-        retryHandoff.length === 0 &&
-        sideChatHandoff === undefined &&
-        restartNote === "" &&
-        !noteContinuation
-          ? session
-          : makeDeliverySession(session, startWithHandoffs);
+      const deliverySession = makeDeliverySession(session, startWithHandoffs);
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,

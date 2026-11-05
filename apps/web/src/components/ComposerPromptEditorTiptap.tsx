@@ -112,7 +112,7 @@ import { FileTagChipContent } from "./chat/FileTagChip";
 import { SkillChipPopover, skillPopoverDescription } from "./chat/SkillInlineText";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { getTimelinePageScrollKey } from "./chat/pageScrollController";
-import { ContextChip } from "./ContextChip";
+import { ContextChip, ContextChipLabel } from "./ContextChip";
 import {
   ComposerContextActionsContext,
   ComposerContextReferenceChip,
@@ -487,6 +487,39 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
   );
 }
 
+const ComposerFogBugzReferenceExtension = Node.create({
+  name: "composer-fogbugz-reference",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return { source: { default: "" }, caseId: { default: 0 }, url: { default: "" } };
+  },
+  parseHTML() {
+    return [{ tag: "span[data-composer-fogbugz-reference]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["span", { "data-composer-fogbugz-reference": "", ...HTMLAttributes }];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ComposerFogBugzReferenceNodeView);
+  },
+});
+
+function ComposerFogBugzReferenceNodeView({ node }: NodeViewProps) {
+  return (
+    <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME}>
+      <ContextChip
+        kind="citation"
+        render={<a href={node.attrs.url as string} target="_blank" rel="noopener noreferrer" />}
+      >
+        <ContextChipLabel>FogBugz #{node.attrs.caseId as number}</ContextChipLabel>
+      </ContextChip>
+    </NodeViewWrapper>
+  );
+}
+
 const ComposerContextReferenceExtension = Node.create({
   name: "composer-context-reference",
   group: "inline",
@@ -841,6 +874,7 @@ function createComposerExtensions(richText: boolean) {
     ComposerMentionExtension,
     ComposerSkillExtension,
     ComposerCitationExtension,
+    ComposerFogBugzReferenceExtension,
     ComposerContextReferenceExtension,
     ComposerMarkersExtension,
     ...(richText

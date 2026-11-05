@@ -13,7 +13,9 @@ import {
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
   AuthSettingsWriteScope,
+  AuthEnvironmentMaintainScope,
   AuthSourceControlWriteScope,
+  AuthFilesystemWriteScope,
   ThreadId,
   EnvironmentId,
   ORCHESTRATION_V2_WS_METHODS,
@@ -101,11 +103,17 @@ describe("command permissions", () => {
     ),
   );
 
-  it.effect("requires the destination preview grant to close a browser tab", () =>
+  it.effect.each([
+    [WS_METHODS.previewClose, AuthPreviewOperateScope],
+    [WS_METHODS.fogbugzCaseContext, AuthOrchestrationReadScope],
+    [WS_METHODS.fogbugzEnsureCaseGit, AuthSourceControlWriteScope],
+    [WS_METHODS.fogbugzManageCaseGit, AuthSourceControlWriteScope],
+    [WS_METHODS.fogbugzMutateCaseFiles, AuthFilesystemWriteScope],
+  ] as const)("requires the destination grant for %s", ([method, permission]) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
-        const close = createCommandPermissions(runtime, WS_METHODS.previewClose);
+        const close = createCommandPermissions(runtime, method);
         registry.set(sessions(env), AsyncResult.success(grant(true)));
         expect(registry.get(close.permissionAtom(env))).toBe(false);
         expect((yield* close.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
@@ -115,8 +123,8 @@ describe("command permissions", () => {
           sessions(env),
           AsyncResult.success({
             ...grant(false),
-            scopes: [AuthPreviewOperateScope],
-            permissions: [AuthPreviewOperateScope],
+            scopes: [permission],
+            permissions: [permission],
           }),
         );
         expect(registry.get(close.permissionAtom(env))).toBe(true);
@@ -130,6 +138,39 @@ describe("command permissions", () => {
     ),
   );
 
+  it.effect("requires the destination maintenance grant for pd-secrets sign-in", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        for (const tag of [
+          WS_METHODS.pdSecretsLogin,
+          WS_METHODS.pdSecretsRespond,
+          WS_METHODS.pdSecretsCancel,
+        ]) {
+          const command = createCommandPermissions(runtime, tag);
+          registry.set(sessions(env), AsyncResult.success(grant(true)));
+          expect(registry.get(command.permissionAtom(env))).toBe(false);
+          expect((yield* command.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+            "EnvironmentAuthorizationError",
+          );
+          registry.set(
+            sessions(env),
+            AsyncResult.success({
+              ...grant(true),
+              scopes: [AuthEnvironmentMaintainScope],
+              permissions: [AuthEnvironmentMaintainScope],
+            }),
+          );
+          expect(registry.get(command.permissionAtom(env))).toBe(true);
+          yield* command.authorize(registry, env);
+          registry.set(sessions(other), AsyncResult.success(grant(false)));
+          expect((yield* command.authorize(registry, other).pipe(Effect.flip))._tag).toBe(
+            "EnvironmentAuthorizationError",
+          );
+        }
+      }),
+    ),
+  );
   it.effect("requires the destination settings grant to run storage cleanup", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -38,6 +38,21 @@ afterEach(() => {
 });
 
 describe("clientPersistenceStorage", () => {
+  it("keeps implicit upstream preferences in an existing sparse document", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem("t3code:client-settings:v1", "{}");
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+    expect(readBrowserClientSettings()).toMatchObject({
+      sidebarWorkingShelfEnabled: false,
+      followUpBehavior: "queue",
+      fontSizeInterface: 16,
+      fontSizePrompt: 14,
+      fontSizeCode: 13,
+      glassOpacity: 80,
+    });
+    expect(testWindow.localStorage.getItem("t3code:client-settings:v1")).toBe("{}");
+  });
+
   it.each(["not-json", '{"wordWrap":"invalid"}'])(
     "does not treat invalid saved settings as absent: %s",
     async (value) => {

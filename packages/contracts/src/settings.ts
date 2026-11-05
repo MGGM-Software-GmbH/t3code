@@ -84,7 +84,6 @@ export const SidebarAutoSettleAfterDays = Schema.Number.check(
   }),
 );
 export type SidebarAutoSettleAfterDays = typeof SidebarAutoSettleAfterDays.Type;
-const DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS: SidebarAutoSettleAfterDays = 3;
 
 export const MAX_SNOOZE_PRESET_MINUTES = 30 * 24 * 60;
 export const MAX_SNOOZE_PRESETS = 8;
@@ -133,7 +132,7 @@ export const GlassOpacity = Schema.Int.check(
   }),
 );
 export type GlassOpacity = typeof GlassOpacity.Type;
-const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
+const DEFAULT_GLASS_OPACITY: GlassOpacity = 90;
 
 export const MIN_APPEARANCE_CONTRAST = 50;
 export const MAX_APPEARANCE_CONTRAST = 200;
@@ -159,7 +158,7 @@ export const InterfaceFontSize = Schema.Int.check(
   Schema.isBetween({ minimum: MIN_INTERFACE_FONT_SIZE, maximum: MAX_INTERFACE_FONT_SIZE }),
 );
 export type InterfaceFontSize = typeof InterfaceFontSize.Type;
-export const DEFAULT_INTERFACE_FONT_SIZE: InterfaceFontSize = 16;
+export const DEFAULT_INTERFACE_FONT_SIZE: InterfaceFontSize = 17;
 
 export const MIN_PROMPT_FONT_SIZE = 12;
 export const MAX_PROMPT_FONT_SIZE = 20;
@@ -167,7 +166,7 @@ export const PromptFontSize = Schema.Int.check(
   Schema.isBetween({ minimum: MIN_PROMPT_FONT_SIZE, maximum: MAX_PROMPT_FONT_SIZE }),
 );
 export type PromptFontSize = typeof PromptFontSize.Type;
-export const DEFAULT_PROMPT_FONT_SIZE: PromptFontSize = 14;
+export const DEFAULT_PROMPT_FONT_SIZE: PromptFontSize = 16;
 
 export const MIN_CODE_FONT_SIZE = 10;
 export const MAX_CODE_FONT_SIZE = 18;
@@ -175,7 +174,7 @@ export const CodeFontSize = Schema.Int.check(
   Schema.isBetween({ minimum: MIN_CODE_FONT_SIZE, maximum: MAX_CODE_FONT_SIZE }),
 );
 export type CodeFontSize = typeof CodeFontSize.Type;
-export const DEFAULT_CODE_FONT_SIZE: CodeFontSize = 13;
+export const DEFAULT_CODE_FONT_SIZE: CodeFontSize = 15;
 
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 20;
@@ -264,6 +263,12 @@ export const NotificationMode = Schema.Literals([
   "notifications-and-sound",
 ]);
 export type NotificationMode = typeof NotificationMode.Type;
+
+// Keep seconds within the browser's signed 32-bit millisecond timer limit.
+export const MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS = 2_147_483;
+export const SlowRequestWarningThresholdSeconds = Schema.Int.check(
+  Schema.isBetween({ minimum: 0, maximum: MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS }),
+);
 
 export const QuitConfirmationMode = Schema.Literals(["direct", "hold", "double-click"]);
 export type QuitConfirmationMode = typeof QuitConfirmationMode.Type;
@@ -355,6 +360,9 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
   inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  slowRequestWarningThresholdSeconds: SlowRequestWarningThresholdSeconds.pipe(
+    Schema.withDecodingDefault(Effect.succeed(60)),
+  ),
   diffColorScheme: DiffColorScheme.pipe(
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
   ),
@@ -477,6 +485,7 @@ export const ClientSettingsSchema = Schema.Struct({
   proactivePanelsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   showSkillsInSlashMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   boringSidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  mggmThreadSidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   boringSidebarMultilineRows: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -490,6 +499,9 @@ export const ClientSettingsSchema = Schema.Struct({
   // Opt-in for the removed legacy sidebar. Still read so those users land in
   // the boring sidebar; the boring sidebar toggle clears it.
   legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Beta: working and monitoring threads fold into a Working shelf and return
+  // to the top of the inbox once they need the user. The inbox then orders by
+  // time, so manual placement there is ignored (and kept) while it is on.
   sidebarWorkingShelfEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
@@ -528,6 +540,23 @@ export const ClientSettingsSchema = Schema.Struct({
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({});
+
+/** Existing documents may omit upstream defaults; those omissions must not become opt-ins. */
+export const StoredClientSettingsSchema = Schema.Struct({
+  ...ClientSettingsSchema.fields,
+  glassOpacity: GlassOpacity.pipe(Schema.withDecodingDefault(Effect.succeed(80))),
+  fontSizeInterface: InterfaceFontSize.pipe(Schema.withDecodingDefault(Effect.succeed(16))),
+  fontSizePrompt: PromptFontSize.pipe(Schema.withDecodingDefault(Effect.succeed(14))),
+  fontSizeCode: CodeFontSize.pipe(Schema.withDecodingDefault(Effect.succeed(13))),
+  followUpBehavior: Schema.Literals(["queue", "steer"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("queue")),
+  ),
+  sidebarWorkingShelfEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+});
+
+// ── Server Settings (server-authoritative) ────────────────────
 
 const UsageModelTokenPrice = Schema.Number.check(
   Schema.isFinite(),
@@ -674,13 +703,22 @@ export const CodexSettings = makeProviderSettingsSchema(
         description: "Additional CLI arguments passed to codex app-server on session start.",
       }),
     ),
+    autoStartWeeklyWindow: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({
+        title: "Automatically start weekly window",
+        providerSettingsForm: { control: "switch" },
+        description:
+          "Check every 60 minutes and run a brief, read-only Codex task when an unused weekly window needs starting. Uses gpt-5.6-luna and a small amount of quota. Requires CLI sign-in and reported weekly limits; never redeems banked resets.",
+      }),
+    ),
     customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"],
+    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs", "autoStartWeeklyWindow"],
   },
 );
 export type CodexSettings = typeof CodexSettings.Type;
@@ -710,7 +748,7 @@ const InstanceIdleCompaction = Schema.Literals(
 export const ClaudeSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
     binaryPath: makeBinaryPathSetting("claude").pipe(
@@ -1026,6 +1064,10 @@ export const WorktreeCleanup = Schema.NullOr(
 export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
+  "fogbugzCaseGitDirectory",
+  "fogbugzAutoSettle",
+  "fogbugzAutoUnsettle",
+  "fogbugzAutoAnalyze",
   "worktreeCleanup",
   "defaultModelSelection",
   "defaultRuntimeMode",
@@ -1063,6 +1105,10 @@ export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOver
 /** Absent keys inherit; null is a value for nullable settings.
  * providerInstances overrides fields per instance; other keys replace the whole setting. */
 export const ProjectSettingsOverrides = Schema.Struct({
+  fogbugzCaseGitDirectory: Schema.optionalKey(TrimmedString),
+  fogbugzAutoSettle: Schema.optionalKey(Schema.Literals(["never", "resolved", "closed"])),
+  fogbugzAutoUnsettle: Schema.optionalKey(Schema.Boolean),
+  fogbugzAutoAnalyze: Schema.optionalKey(Schema.Literals(["never", "initial", "assigned"])),
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
@@ -1183,9 +1229,25 @@ export const StorageCleanupSettings = Schema.Struct({
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
+const DEFAULT_THREAD_MODEL_SELECTION = Schema.decodeSync(ModelSelection)({
+  instanceId: "codex",
+  model: "gpt-6.1-sol",
+  options: [
+    { id: "reasoningEffort", value: "high" },
+    { id: "serviceTier", value: "default" },
+  ],
+});
+
 export const ServerSettings = Schema.Struct({
-  // Null means unmigrated; empty is authoritative and must not resurrect cleared preferences.
-  favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  /** Optional Bash script run on this environment after pd-secrets signs in. */
+  pdSecretsPostLoginScript: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  // Null means no client has migrated this preference yet; an empty value is
+  // authoritative so another device cannot resurrect cleared preferences.
+  favorites: Schema.NullOr(ModelFavorites).pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed([{ provider: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" }]),
+    ),
+  ),
   providerModelPreferences: Schema.NullOr(ProviderModelPreferences).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -1202,7 +1264,11 @@ export const ServerSettings = Schema.Struct({
   responseStreamingMode: ResponseStreamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
   ),
-  enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  enableProviderUpdateChecks: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  // Retain the update-era key. On by default so restarts resume the work they
+  // interrupted; recovery stops after three automatic continuations in a row.
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
@@ -1211,7 +1277,7 @@ export const ServerSettings = Schema.Struct({
   projectAgentBrowserAccessOverrides: Schema.Record(ProjectId, Schema.Boolean).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   defaultProjectScripts: Schema.Array(ProjectScript).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -1222,7 +1288,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_THREAD_MODEL_SELECTION)),
   ),
   fallbackModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
@@ -1248,14 +1314,18 @@ export const ServerSettings = Schema.Struct({
   /** Alpha: Simlock device hosts. Off, the server ignores `simlockDeviceHosts`. */
   simlockDeviceHostsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
+    Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   compactIdleThreads: LegacyCompactIdleThreads.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   idleCompaction: Schema.optionalKey(IdleCompactionMode),
   snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Minutes between retries of a model-capacity failure; zero disables retries. */
+  modelCapacityRetryDelayMinutes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(5)),
+  ),
   snoozePresets: SnoozePresetSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNOOZE_PRESETS)),
   ),
@@ -1282,6 +1352,14 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  fogbugzAutoSettle: Schema.Literals(["never", "resolved", "closed"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("never")),
+  ),
+  fogbugzCaseGitDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  fogbugzAutoUnsettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  fogbugzAutoAnalyze: Schema.Literals(["never", "initial", "assigned"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("never")),
+  ),
   backgroundActivity: BackgroundActivitySettings,
 
   automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
@@ -1349,7 +1427,7 @@ export const ServerSettings = Schema.Struct({
   reviewGuideInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 
   pullRequestMergeMethod: Schema.NullOr(PullRequestMergeMethod).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
+    Schema.withDecodingDefault(Effect.succeed("rebase" as const)),
   ),
 
   // Schema.Unknown preserves unknown-driver configs across versions; see providerInstance.ts.
@@ -1386,6 +1464,25 @@ export type ServerSettings = typeof ServerSettings.Type;
 
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
 
+/** Shipped provider presets. An explicit instance with the same id takes precedence. */
+export const DEFAULT_PROVIDER_INSTANCE_CONFIGS: Readonly<
+  Record<ProviderInstanceId, ProviderInstanceConfig>
+> = {
+  [ProviderInstanceId.make("githubCopilot")]: {
+    driver: ProviderDriverKind.make("acpRegistry"),
+    displayName: "GitHub Copilot",
+    enabled: false,
+    // Registry metadata supplies ACP arguments; the environment owns CLI installation and updates.
+    config: { source: "registry", agentId: "github-copilot-cli", commandPath: "copilot" },
+  },
+};
+
+/**
+ * Read the legacy `enabled` flag embedded in a provider instance config
+ * blob. The envelope-level `ProviderInstanceConfig.enabled` is the single
+ * flag going forward; this reader exists for old settings files that still
+ * carry the flag in-config.
+ */
 export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | undefined => {
   if (config === null || typeof config !== "object" || Array.isArray(config)) {
     return undefined;
@@ -1396,15 +1493,21 @@ export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | un
 
 // Must match each driver's enabled decoding default.
 const DEFAULT_DISABLED_PROVIDER_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set(
-  ["cursor", "grok", "fx", "kiro", "muse", "pi", "opencode", "antigravity"].map((driver) =>
-    ProviderDriverKind.make(driver),
+  ["claudeAgent", "cursor", "grok", "fx", "kiro", "muse", "pi", "opencode", "antigravity"].map(
+    (driver) => ProviderDriverKind.make(driver),
   ),
 );
 
+/** Built-in instances that run before the user configures them. */
 const DEFAULT_ENABLED_DEFAULT_INSTANCES: ReadonlySet<ProviderInstanceId> = new Set(
-  ["codex", "claudeAgent"].map((instanceId) => ProviderInstanceId.make(instanceId)),
+  ["codex"].map((instanceId) => ProviderInstanceId.make(instanceId)),
 );
 
+/**
+ * Whether the built-in default instance at `instanceId` is enabled while
+ * settings have no `providerInstances` entry for it. Only Codex starts on;
+ * any other id without an entry has no running instance.
+ */
 export const isUnconfiguredDefaultInstanceEnabled = (instanceId: ProviderInstanceId): boolean =>
   DEFAULT_ENABLED_DEFAULT_INSTANCES.has(instanceId);
 
@@ -1559,6 +1662,7 @@ const ModelSelectionPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  pdSecretsPostLoginScript: Schema.optionalKey(TrimmedString),
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
   ),
@@ -1653,6 +1757,13 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
+  fogbugzCaseGitDirectory: Schema.optionalKey(TrimmedString),
+  fogbugzAutoSettle: Schema.optionalKey(Schema.Literals(["never", "resolved", "closed"])),
+  fogbugzAutoUnsettle: Schema.optionalKey(Schema.Boolean),
+  fogbugzAutoAnalyze: Schema.optionalKey(Schema.Literals(["never", "initial", "assigned"])),
+  modelCapacityRetryDelayMinutes: Schema.optionalKey(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   snoozePresets: Schema.optionalKey(SnoozePresetSettings),
   hiddenThreadTags: Schema.optionalKey(Schema.Array(Schema.String)),
@@ -1741,9 +1852,25 @@ export function requiredScopesForServerSettingsPatch(
       changesSettings = true;
     }
   }
+  const enablesAutomation = [patch, ...Object.values(patch.projectSettingsOverrides ?? {})].some(
+    (settings) =>
+      settings &&
+      ((settings.fogbugzAutoAnalyze !== undefined && settings.fogbugzAutoAnalyze !== "never") ||
+        (settings.fogbugzAutoSettle !== undefined && settings.fogbugzAutoSettle !== "never") ||
+        settings.fogbugzAutoUnsettle === true),
+  );
+  // Replacing an override can enable automation inherited from the environment.
+  const inheritsAutomation = Object.values(patch.projectSettingsOverrides ?? {}).some(
+    (settings) =>
+      settings === null ||
+      settings.fogbugzAutoAnalyze === undefined ||
+      settings.fogbugzAutoSettle === undefined ||
+      settings.fogbugzAutoUnsettle === undefined,
+  );
   return [
     ...(changesSettings || !changesProviders ? [AuthSettingsWriteScope] : []),
     ...(changesProviders ? [AuthProvidersManageScope] : []),
+    ...(enablesAutomation || inheritsAutomation ? [AuthOrchestrationOperateScope] : []),
   ];
 }
 
@@ -1763,6 +1890,7 @@ export function requiredScopesForProjectMutation(
 export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
+  slowRequestWarningThresholdSeconds: Schema.optionalKey(SlowRequestWarningThresholdSeconds),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
   chatWidth: Schema.optionalKey(ChatWidth),
   effortDisplay: Schema.optionalKey(EffortDisplay),
@@ -1816,6 +1944,7 @@ export const ClientSettingsPatch = Schema.Struct({
   proactivePanelsEnabled: Schema.optionalKey(Schema.Boolean),
   showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
   boringSidebarEnabled: Schema.optionalKey(Schema.Boolean),
+  mggmThreadSidebarEnabled: Schema.optionalKey(Schema.Boolean),
   boringSidebarMultilineRows: Schema.optionalKey(Schema.Boolean),
   threadDetailsUsageEnabled: Schema.optionalKey(Schema.Boolean),
   threadDetailsItems: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),

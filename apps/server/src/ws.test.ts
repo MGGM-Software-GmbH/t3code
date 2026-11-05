@@ -51,6 +51,7 @@ import * as CodexInstallation from "./provider/CodexInstallation.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
 import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
+import * as PdSecrets from "./environment/PdSecrets.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
@@ -103,6 +104,7 @@ import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts"
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as CodexResetForecast from "./usage/CodexResetForecast.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -113,6 +115,8 @@ import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import { FogBugzService } from "./fogbugz/FogBugzService.ts";
+import { FogBugzCaseGit } from "./fogbugz/FogBugzCaseGit.ts";
 import * as ServerConfigModule from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -656,6 +660,10 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
 // Build the production RPC layer; unrelated capabilities fail if this test calls them.
 const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(DocumentText.DocumentText)({}),
+  Layer.mock(PdSecrets.PdSecrets)({}),
+  Layer.mock(FogBugzService)({}),
+  Layer.mock(FogBugzCaseGit)({}),
+  Layer.mock(CodexResetForecast.CodexResetForecast)({}),
   Layer.mock(ServerSecretStore.ServerSecretStore)({}),
   Layer.mock(WorkspacePaths.WorkspacePaths)({}),
   Layer.mock(TraceDiagnostics.TraceDiagnostics)({}),
@@ -759,6 +767,7 @@ it.effect.each([
     Effect.gen(function* () {
       const keybindings = yield* Keybindings.Keybindings;
       const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({ defaultAutoPull: false });
       const keybindingsSubscribed = yield* Deferred.make<void>();
       const settingsSubscribed = yield* Deferred.make<void>();
       const keybindingsChanges = keybindings.subscribeChanges.pipe(

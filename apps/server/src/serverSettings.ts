@@ -1,5 +1,7 @@
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   DEFAULT_SERVER_SETTINGS,
+  ModelFavorites,
   ModelSelection,
   ProjectId,
   ProjectScript,
@@ -13,6 +15,8 @@ import {
   ProviderInstanceId,
   resolveProviderInstanceEnabled,
   ResponseStreamingMode,
+  PullRequestMergeMethod,
+  SidebarAutoSettleAfterDays,
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
@@ -75,7 +79,11 @@ export {
 } from "@t3tools/shared/serverSettings";
 
 const encodeServerSettings = Schema.encodeEffect(ServerSettings);
-const encodeServerSettingsJson = Schema.encodeUnknownEffect(fromJsonStringPretty(ServerSettings));
+const encodeServerSettingsJson = Schema.encodeUnknownEffect(
+  fromJsonStringPretty(
+    Schema.Struct({ ...ServerSettings.fields, defaultsProfile: Schema.Literal("mggm") }),
+  ),
+);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 
 const textEncoder = new TextEncoder();
@@ -83,9 +91,14 @@ const textDecoder = new TextDecoder();
 
 // Conflicting flags resolve to false to preserve user disables.
 const foldProviderInstanceEnabledFlags = (settings: ServerSettings): ServerSettings => {
-  let changed = false;
+  let changed = Object.keys(DEFAULT_PROVIDER_INSTANCE_CONFIGS).some(
+    (instanceId) => !Object.hasOwn(settings.providerInstances, instanceId),
+  );
   const providerInstances: Record<string, ProviderInstanceConfig> = {};
-  for (const [instanceId, instance] of Object.entries(settings.providerInstances)) {
+  for (const [instanceId, instance] of Object.entries({
+    ...DEFAULT_PROVIDER_INSTANCE_CONFIGS,
+    ...settings.providerInstances,
+  })) {
     const config = instance.config;
     // Leave malformed flags for driver schema validation rather than silently repairing them.
     if (
@@ -363,6 +376,7 @@ const PersistedResponseStreamingMode = Schema.Union([
 );
 const PersistedServerSettings = Schema.Struct({
   ...ServerSettings.fields,
+  defaultsProfile: Schema.Literal("mggm"),
   responseStreamingMode: PersistedResponseStreamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
   ),
@@ -378,7 +392,52 @@ const PersistedServerSettings = Schema.Struct({
 });
 // Parse first and decode second, so a managed policy can fill its defaults in between.
 const decodeSettingsFileJsonExit = Schema.decodeUnknownExit(fromLenientJson(Schema.Unknown));
-const decodePersistedServerSettingsExit = Schema.decodeUnknownExit(PersistedServerSettings);
+
+// Settings are sparse on disk. Decode unmarked files with their original defaults,
+// then persist their effective values before subsequent writes can omit MGGM defaults.
+const LegacyPersistedServerSettings = Schema.Struct({
+  ...PersistedServerSettings.fields,
+  defaultsProfile: Schema.optionalKey(Schema.Never),
+  favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
+    Schema.withDecodingDefault(Effect.succeed(3)),
+  ),
+  autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  pullRequestMergeMethod: Schema.NullOr(PullRequestMergeMethod).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+});
+const decodePersistedServerSettingsExit = Schema.decodeUnknownExit(
+  Schema.Union([PersistedServerSettings, LegacyPersistedServerSettings]),
+);
+
+/** Preserve providers that were implicitly enabled before the MGGM defaults profile. */
+function preserveLegacyProviderDefaults(settings: ServerSettings): ServerSettings {
+  const providerInstances: Record<string, ProviderInstanceConfig> = {
+    claudeAgent: { driver: ProviderDriverKind.make("claudeAgent"), enabled: true, config: {} },
+    githubCopilot: {
+      ...DEFAULT_PROVIDER_INSTANCE_CONFIGS[ProviderInstanceId.make("githubCopilot")]!,
+      enabled: true,
+    },
+    ...settings.providerInstances,
+  };
+  for (const [instanceId, instance] of Object.entries(providerInstances)) {
+    if (instance.driver === "claudeAgent" && instance.enabled === undefined) {
+      providerInstances[instanceId] = { ...instance, enabled: true };
+    }
+  }
+  return { ...settings, providerInstances };
+}
+/**
+ * The retired `providers.<kind>` map, read without its old schemas. Before
+ * `providerInstances` existed each built-in driver had one blob there; it
+ * now only feeds `migrateLegacyProviderSettings`.
+ */
 const LegacyProviderSettingsJson = fromLenientJson(
   Schema.Struct({
     providers: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
@@ -477,7 +536,8 @@ function migrateLegacyProviderSettings(
     const enabled =
       explicitEnabled ??
       (HISTORY_RESTORED_DRIVERS.has(driver) && usedProviders.has(driver) ? true : undefined);
-    const driverDefault = resolveProviderInstanceEnabled({ driver, config: {} });
+    const driverDefault =
+      driver === "claudeAgent" ? true : resolveProviderInstanceEnabled({ driver, config: {} });
     if (Object.keys(config).length === 0 && (enabled === undefined || enabled === driverDefault)) {
       continue;
     }
@@ -539,6 +599,7 @@ function fallbackTextGenerationProvider(
 }
 
 const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
+  "defaultModelSelection",
   "backgroundActivity",
   "automaticGitFetchInterval",
   "providerHealthRefreshInterval",
@@ -725,7 +786,21 @@ const make = Effect.gen(function* () {
 
   const writeSettingsAtomically = Effect.fnUntraced(
     function* (settings: ServerSettings) {
-      const stripped = stripDefaultServerSettings(settings, managed.defaults) ?? {};
+      // Drop unchanged presets as whole entries. Stripping individual fields
+      // would leave an explicit override without its required driver/config.
+      const providerInstances = Object.fromEntries(
+        Object.entries(settings.providerInstances).filter(
+          ([instanceId, instance]) =>
+            !Equal.equals(
+              instance,
+              DEFAULT_PROVIDER_INSTANCE_CONFIGS[instanceId as ProviderInstanceId],
+            ),
+        ),
+      );
+      const stripped = {
+        ...stripDefaultServerSettings({ ...settings, providerInstances }, managed.defaults),
+        defaultsProfile: "mggm" as const,
+      };
       const sparseSettingsJson = yield* encodeServerSettingsJson(
         managed.keepStored === undefined
           ? stripped
@@ -784,6 +859,7 @@ const make = Effect.gen(function* () {
 
   const loadSettingsFromDisk = Effect.gen(function* () {
     let settings = managed.defaults;
+    let needsDefaultsMigration = false;
     let legacyProviders: Readonly<Record<string, unknown>> | undefined;
     let legacySourceControl: Parameters<typeof migrateLegacySourceControlSettings>[1] = {};
     let parseFailure = Option.none<unknown>();
@@ -805,7 +881,12 @@ const make = Effect.gen(function* () {
       if (decoded._tag === "Failure" || legacySettings._tag === "Failure") {
         const failure = decoded._tag === "Failure" ? decoded : legacySettings;
         // The file may hold an opt-out we can no longer read; never resume threads on a guess.
-        settings = { ...managed.defaults, continueThreadsAfterServerUpdate: false };
+        settings = {
+          ...managed.defaults,
+          continueThreadsAfterServerUpdate: false,
+          autoResumeLimitedThreads: false,
+          modelCapacityRetryDelayMinutes: 0,
+        };
         if (failure._tag === "Failure") {
           parseFailure = Option.some(Cause.squash(failure.cause));
           yield* Effect.logWarning("failed to parse settings.json, using defaults", {
@@ -815,7 +896,9 @@ const make = Effect.gen(function* () {
           });
         }
       } else {
-        settings = decoded.value;
+        const { defaultsProfile, ...loadedSettings } = decoded.value;
+        needsDefaultsMigration = defaultsProfile === undefined;
+        settings = loadedSettings;
       }
     }
     // Settings saved by a server that kept the mode in `compactIdleThreads` move
@@ -876,10 +959,14 @@ const make = Effect.gen(function* () {
             ),
           );
 
-    const loaded = foldProviderInstanceEnabledFlags(
+    const migratedProviders =
       legacyProviders === undefined
         ? settings
-        : migrateLegacyProviderSettings(settings, legacyProviders, providerHistory),
+        : migrateLegacyProviderSettings(settings, legacyProviders, providerHistory);
+    const loaded = foldProviderInstanceEnabledFlags(
+      needsDefaultsMigration
+        ? preserveLegacyProviderDefaults(migratedProviders)
+        : migratedProviders,
     );
     const folded = settingsFileTrusted
       ? foldLegacyProjectSettings(loaded, legacyProjectRows)
@@ -912,8 +999,18 @@ const make = Effect.gen(function* () {
     const migrated = settingsFileTrusted
       ? yield* moveInlineSettingsSecrets(sourceControlMigration.settings)
       : folded;
+    let hasUnmigratedInlineSecrets = false;
+    mapSettingsSecrets(migrated, (secret) => {
+      if (secret.sensitive && !secret.redacted && secret.value.length > 0) {
+        hasUnmigratedInlineSecrets = true;
+      }
+      return secret;
+    });
+    // A file still carrying the retired `providers`, `bitbucket`, or `github` keys is rewritten
+    // once so the migrated values persist and the old keys disappear.
     if (
       migrated !== loaded ||
+      (needsDefaultsMigration && legacySecretsCopied && !hasUnmigratedInlineSecrets) ||
       (settingsFileTrusted && legacyProviders !== undefined) ||
       hasLegacySourceControl
     ) {

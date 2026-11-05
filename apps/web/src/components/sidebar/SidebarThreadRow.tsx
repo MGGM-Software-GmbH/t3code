@@ -4,12 +4,14 @@ import { discardComposerDraft } from "../../lib/discardComposerDraft";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { useDeadlinePassed } from "~/hooks/useDeadline";
+import { useClientSettings } from "../../hooks/useSettings";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
   canSnooze,
   hasQueuedTurnStart,
+  resolveThreadWakeNotification,
   QUEUED_TURN_START_GRACE_MS,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
@@ -42,6 +44,7 @@ import {
   MessageCircleQuestionIcon,
   PinIcon,
   PinOffIcon,
+  RotateCcwIcon,
   ShieldQuestionIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -67,8 +70,11 @@ import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironmentQuery } from "../../state/query";
+import { fogbugzEnvironment } from "../../state/fogbugz";
+import { FogBugzCategoryIcon } from "../fogbugz/FogBugzCategoryIcon";
+import { FogBugzThreadMetadata } from "../fogbugz/FogBugzThreadMetadata";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
-import { formatRelativeTimeLabel, parseTimestampDate } from "../../timestampFormat";
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
@@ -78,6 +84,7 @@ import {
   animateSidebarLayoutChanges,
   hasUnseenCompletion,
   resolveSidebarRowAccessibility,
+  resolveSidebarThreadActivityTimestamp,
   type SidebarDropVerb,
   resolveSidebarThreadStatus,
   resolveThreadLastVisitedAt,
@@ -136,7 +143,7 @@ function compactSidebarTimeLabel(label: string): string {
 
 // Subscribes to the minute tick itself, so only the label re-renders each
 // minute. The minute is passed as the clock so it is the formatter's input.
-function RelativeTimeLabel(props: { timestamp: string | null }) {
+export function RelativeTimeLabel(props: { timestamp: string | null }) {
   const nowMinute = useNowMinute();
   return props.timestamp === null
     ? null
@@ -145,8 +152,13 @@ function RelativeTimeLabel(props: { timestamp: string | null }) {
       );
 }
 
-function threadTimeTimestamp(thread: SidebarThreadSummary): string {
-  return thread.latestUserMessageAt ?? thread.updatedAt;
+function useThreadTimeTimestamp(thread: SidebarThreadSummary): string {
+  const mggmThreadSidebarEnabled = useClientSettings(
+    (settings) => settings.mggmThreadSidebarEnabled,
+  );
+  return mggmThreadSidebarEnabled
+    ? resolveSidebarThreadActivityTimestamp(thread)
+    : (thread.latestUserMessageAt ?? thread.updatedAt);
 }
 
 function JumpHintBadge(props: { label: string }) {
@@ -479,7 +491,7 @@ export function SortableThreadRow(
   const thread =
     useThreadShell(scopeThreadRef(rowProps.thread.environmentId, rowProps.thread.id)) ??
     rowProps.thread;
-  // Keyed by variant so a card/slim switch remounts the row.
+  // Keyed by variant so changing row layouts remounts the row.
   return <SidebarThreadRow key={rowProps.variant} {...rowProps} thread={thread} sortable={bag} />;
 }
 export type SidebarSweepAction = "settle" | "unsettle" | "unsnooze";
@@ -525,6 +537,7 @@ const TOP_STATUS_ICONS = {
   failed: CircleAlertIcon,
   done: CircleCheckIcon,
   woke: AlarmClockIcon,
+  reactivated: RotateCcwIcon,
 } as const;
 
 function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: string }) {
@@ -536,7 +549,7 @@ type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's branch and PR line under it.
-  variant: "card" | "slim" | "folder" | "folder-multiline";
+  variant: "card" | "project-card" | "slim" | "folder" | "folder-multiline";
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -655,6 +668,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   } = props;
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
+  const fogbugzCases = useEnvironmentQuery(
+    fogbugzEnvironment.threadCases({ environmentId: thread.environmentId, input: {} }),
+  );
+  const fogbugzCase = fogbugzCases.data?.find((item) => item.threadId === thread.id)?.case;
+  const fogbugzMeta = fogbugzCase ? <FogBugzThreadMetadata item={fogbugzCase} /> : null;
+  const activityTimestamp = useThreadTimeTimestamp(thread);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const { leaseLiveStatus, rowRef: leaseRowRef } = useSidebarRowSubscriptionLease(props.isActive);
   const { revealRef } = props;
@@ -708,12 +727,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
-  const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
-  const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
-  const isWoke =
-    wokeAtDate !== null &&
-    (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
-    thread.settledOverride !== "settled";
+  const wakeNotification = resolveThreadWakeNotification(
+    { ...thread, lastVisitedAt: lastVisitedAt ?? null },
+    props.wokeAt,
+  );
+  const isWoke = wakeNotification !== null;
+  const wakeLabel = wakeNotification?.label ?? "Woke";
+  const wakeIcon = wakeLabel === "Reactivated" ? "reactivated" : "woke";
   const shouldRecede = shouldRecedeSidebarThread({
     status,
     isUnread,
@@ -766,8 +786,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     }
                   : isWoke
                     ? {
-                        label: "Woke",
-                        icon: "woke" as const,
+                        label: wakeLabel,
+                        icon:
+                          wakeLabel === "Reactivated"
+                            ? ("reactivated" as const)
+                            : ("woke" as const),
                         className: "text-warning-foreground",
                       }
                     : isUnread
@@ -777,7 +800,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           className: "text-success-foreground",
                         }
                       : null;
-  const isWokeStatus = topStatus?.icon === "woke";
+  const isWokeStatus = topStatus?.icon === "woke" || topStatus?.icon === "reactivated";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
@@ -826,8 +849,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const handleAcknowledgeWokeClick = (event: ReactMouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    if (props.wokeAt === null) return;
-    onAcknowledgeWoke(threadRef, props.wokeAt);
+    if (wakeNotification === null) return;
+    onAcknowledgeWoke(threadRef, wakeNotification.at);
   };
   const handleContextMenu = (event: ReactMouseEvent) => {
     event.preventDefault();
@@ -1131,20 +1154,21 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </span>
     ) : null;
   const diff = latestRunDiff(thread);
+  const displayedBranch = thread.branch === "main" ? null : thread.branch;
   // Only the trailing icons would remain, so the row moves them to the title line instead.
   const metaLineEmpty =
-    !thread.branch &&
+    !displayedBranch &&
     !showsScratchMachine &&
     prBadge === null &&
     diff === null &&
     runningTerminalIds.length === 0;
   const metaLine = metaLineEmpty ? null : (
     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-      {thread.branch ? (
+      {displayedBranch ? (
         <>
           <ThreadWorktreeIndicator thread={thread} />
           <span className="flex min-w-0 flex-1">
-            <MiddleTruncate value={thread.branch} showTitle={false} />
+            <MiddleTruncate value={displayedBranch} showTitle={false} />
           </span>
         </>
       ) : showsScratchMachine ? (
@@ -1189,9 +1213,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     </span>
   ) : null;
 
-  if (variant !== "card") {
-    const multiline = variant === "folder-multiline";
-    const inFolder = variant === "folder" || multiline;
+  const inProjectGroup = variant === "project-card";
+  if (variant !== "card" && !inProjectGroup) {
+    const multiline = variant === "folder-multiline" || fogbugzCase !== undefined;
+    const inFolder = variant === "folder" || variant === "folder-multiline";
     return (
       <li
         data-thread-item={threadKey}
@@ -1234,7 +1259,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             {/* `contents` keeps one-line rows a single flex row. */}
             <div className={multiline ? "flex h-6 min-w-0 items-center gap-2.5" : "contents"}>
               {accessibleTitle}
-              {inFolder ? null : (
+              {inFolder && !fogbugzCase ? null : (
                 <span
                   className={cn(
                     "flex shrink-0 items-center transition-opacity",
@@ -1242,7 +1267,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
                   )}
                 >
-                  {props.project ? (
+                  {fogbugzCase ? (
+                    <FogBugzCategoryIcon item={fogbugzCase} />
+                  ) : props.project ? (
                     <ProjectFavicon project={props.project} className="size-4" />
                   ) : null}
                 </span>
@@ -1285,16 +1312,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           render={
                             <button
                               type="button"
-                              aria-label="Dismiss Woke notification"
+                              aria-label={`Dismiss ${wakeLabel} notification`}
                               onClick={handleAcknowledgeWokeClick}
                               className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-warning-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                             >
-                              <AlarmClockIcon aria-hidden className="size-3" />
-                              <span role="status">Woke</span>
+                              <TopStatusIcon icon={wakeIcon} className="size-3" />
+                              <span role="status">{wakeLabel}</span>
                             </button>
                           }
                         />
-                        <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
+                        <TooltipPopup side="top">Dismiss {wakeLabel} notification</TooltipPopup>
                       </Tooltip>
                     ) : inFolder && topStatus ? (
                       // Folder rows have no status line, so the status takes the time slot.
@@ -1313,7 +1340,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           timestamp={
                             variantAction === "unsettle"
                               ? resolveSettledThreadTimestamp(thread)
-                              : threadTimeTimestamp(thread)
+                              : activityTimestamp
                           }
                         />
                       </span>
@@ -1380,6 +1407,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
+            {fogbugzCase ? (
+              <span className="mt-0.5 truncate text-xs text-secondary-label">
+                {fogbugzCase.projectName}
+              </span>
+            ) : null}
+            {fogbugzMeta}
             {multiline ? metaLine : null}
           </TooltipTrigger>
           {detailsTooltip}
@@ -1395,7 +1428,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {...(fileDropHandlers ?? {})}
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
-        metaLineEmpty && "[contain-intrinsic-size:auto_58px]",
+        (metaLineEmpty || inProjectGroup) && !fogbugzCase && "[contain-intrinsic-size:auto_58px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1410,7 +1443,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               data-sidebar-parent={props.navigationParent}
               aria-label={accessibility.label}
               aria-current={accessibility.current}
-              data-testid="sidebar-row-card"
+              data-testid={inProjectGroup ? "sidebar-row-project-card" : "sidebar-row-card"}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
@@ -1424,22 +1457,30 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           <div
             className={cn(
               "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
-              metaLineEmpty && "h-auto",
+              (metaLineEmpty || inProjectGroup || fogbugzCase) && "h-auto",
+              inProjectGroup && !fogbugzCase && "grid grid-cols-[minmax(0,1fr)_auto] gap-y-1",
             )}
           >
-            <div className="flex h-5 min-w-0 items-center gap-1.5">
-              {draftIndicator}
-              {props.project ? (
+            <div
+              className={cn(
+                "flex h-5 min-w-0 items-center gap-1.5",
+                inProjectGroup && !fogbugzCase && "col-start-2 row-start-2",
+              )}
+            >
+              {inProjectGroup ? null : draftIndicator}
+              {fogbugzCase ? (
+                <FogBugzCategoryIcon item={fogbugzCase} />
+              ) : !inProjectGroup && props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
-              {pinIndicator}
-              {props.projectDisplayName ? (
+              {inProjectGroup ? null : pinIndicator}
+              {fogbugzCase || (!inProjectGroup && props.projectDisplayName) ? (
                 <span
                   className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
                 >
-                  {props.projectDisplayName}
+                  {fogbugzCase?.projectName ?? props.projectDisplayName}
                 </span>
               ) : (
                 <span className="flex-1" />
@@ -1470,19 +1511,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             render={
                               <button
                                 type="button"
-                                aria-label="Dismiss Woke notification"
+                                aria-label={`Dismiss ${wakeLabel} notification`}
                                 onClick={handleAcknowledgeWokeClick}
                                 className={cn(
                                   "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                                   topStatus.className,
                                 )}
                               >
-                                <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
+                                <TopStatusIcon icon={wakeIcon} className="size-4" />
                                 <span role="status">{topStatus.label}</span>
                               </button>
                             }
                           />
-                          <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
+                          <TooltipPopup side="top">Dismiss {wakeLabel} notification</TooltipPopup>
                         </Tooltip>
                       ) : (
                         <span
@@ -1508,7 +1549,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         </span>
                       )
                     ) : (
-                      <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
+                      <RelativeTimeLabel timestamp={activityTimestamp} />
                     )}
                   </span>
                   {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
@@ -1572,7 +1613,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
-            <div className="mt-1 flex min-w-0 items-center gap-1.5">
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1.5",
+                inProjectGroup && !fogbugzCase ? "col-span-2 row-start-1" : "mt-1",
+              )}
+            >
+              {inProjectGroup ? draftIndicator : null}
+              {inProjectGroup ? pinIndicator : null}
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
@@ -1581,7 +1629,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ) : null}
               {titleLineIcons}
             </div>
-            {metaLine}
+            {fogbugzMeta}
+            {inProjectGroup && !fogbugzCase ? (
+              <div className="col-start-1 row-start-2 min-w-0 pr-1">{metaLine}</div>
+            ) : (
+              metaLine
+            )}
           </div>
         </TooltipTrigger>
         {detailsTooltip}
@@ -1625,6 +1678,10 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
 }) {
   const thread =
     useThreadShell(scopeThreadRef(props.thread.environmentId, props.thread.id)) ?? props.thread;
+  const fogbugzCases = useEnvironmentQuery(
+    fogbugzEnvironment.threadCases({ environmentId: thread.environmentId, input: {} }),
+  );
+  const fogbugzCase = fogbugzCases.data?.find((item) => item.threadId === thread.id)?.case;
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
     statusLabel: null,
@@ -1635,6 +1692,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
+  const activityTimestamp = useThreadTimeTimestamp(thread);
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
   const gitStatus = useEnvironmentQuery(
     leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
@@ -1712,7 +1770,9 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
             />
           }
         >
-          {props.project ? (
+          {fogbugzCase ? (
+            <FogBugzCategoryIcon item={fogbugzCase} />
+          ) : props.project ? (
             <ProjectFavicon
               project={props.project}
               className={cn(
@@ -1747,9 +1807,17 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                 />
               </span>
               <span className="w-8 shrink-0 text-right text-xs text-muted-foreground/55 tabular-nums">
-                <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
+                <RelativeTimeLabel timestamp={activityTimestamp} />
               </span>
             </span>
+            {fogbugzCase ? (
+              <>
+                <span className="truncate text-xs text-secondary-label">
+                  {fogbugzCase.projectName}
+                </span>
+                <FogBugzThreadMetadata item={fogbugzCase} />
+              </>
+            ) : null}
             {props.searchMatch ? (
               <ThreadSearchMatchExcerpt
                 match={{

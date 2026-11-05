@@ -386,3 +386,30 @@ export function isThreadWokeUnseen(input: {
     .filter((ms) => !Number.isNaN(ms));
   return seenAt.every((ms) => ms < wokeAtMs);
 }
+
+export function resolveThreadWakeNotification(
+  thread: Pick<
+    EnvironmentThreadShell,
+    "unsettledAt" | "unsettledReason" | "settledOverride" | "lastVisitedAt"
+  >,
+  wokeAt: string | null,
+): { readonly at: string; readonly label: "Woke" | "Reactivated" } | null {
+  const reactivatedAt =
+    thread.unsettledReason === "fogbugz-reactivated" ? thread.unsettledAt : null;
+  const latestIsReactivation =
+    reactivatedAt != null &&
+    Number.isFinite(Date.parse(reactivatedAt)) &&
+    (wokeAt === null ||
+      !Number.isFinite(Date.parse(wokeAt)) ||
+      Date.parse(reactivatedAt) >= Date.parse(wokeAt));
+  const at = latestIsReactivation ? reactivatedAt : wokeAt;
+  return at !== null &&
+    isThreadWokeUnseen({
+      wokeAt: at,
+      settled: thread.settledOverride === "settled",
+      lastVisitedAt: thread.lastVisitedAt,
+      latestRunCompletedAt: null,
+    })
+    ? { at, label: latestIsReactivation ? "Reactivated" : "Woke" }
+    : null;
+}

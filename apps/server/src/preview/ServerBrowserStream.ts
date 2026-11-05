@@ -29,7 +29,7 @@ import { requestUrl } from "../requestUrl.ts";
 const PREVIEW_STREAM_ROUTE_PREFIX = "/api/preview-stream";
 const TAB_GONE_CODE = 4404;
 
-const DEFAULT_QUALITY = 70;
+const DEFAULT_QUALITY = 100;
 const MAX_SOCKET_BUFFER_BYTES = 8 * 1024 * 1024;
 const textDecoder = new TextDecoder();
 

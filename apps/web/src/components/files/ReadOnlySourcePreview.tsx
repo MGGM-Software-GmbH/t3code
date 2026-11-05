@@ -2,11 +2,12 @@ import { File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
 
 import { DiffWorkerPoolProvider } from "~/components/DiffWorkerPoolProvider";
 import { useClientSettings } from "~/hooks/useSettings";
+import { useFileHighlighter } from "~/hooks/useFileHighlighter";
 import { useRenderedAppearance } from "~/hooks/useTheme";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 
-import { FILE_LINK_REVEAL_UNSAFE_CSS } from "./fileSurfaceChrome";
+import { FILE_LINK_REVEAL_UNSAFE_CSS, FileSurfaceLoading } from "./fileSurfaceChrome";
 
 export default function ReadOnlySourcePreview(props: {
   readonly name: string;
@@ -17,8 +18,10 @@ export default function ReadOnlySourcePreview(props: {
   readonly wordWrap?: boolean;
 }) {
   const resolvedTheme = useRenderedAppearance();
+  const syntax = useFileHighlighter(props.name);
   const defaultWordWrap = useClientSettings((settings) => settings.wordWrap);
   const wordWrap = props.wordWrap ?? defaultWordWrap;
+  if (!syntax.ready) return <FileSurfaceLoading />;
   return (
     <DiffWorkerPoolProvider>
       <Virtualizer
@@ -30,9 +33,11 @@ export default function ReadOnlySourcePreview(props: {
           file={{
             name: props.name,
             contents: props.text,
+            ...(syntax.language ? { lang: syntax.language } : {}),
             ...(props.cacheKey ? { cacheKey: props.cacheKey } : {}),
           }}
           options={{
+            ...(syntax.highlighter ? { highlighter: syntax.highlighter } : {}),
             disableFileHeader: true,
             overflow: wordWrap ? "wrap" : "scroll",
             theme: resolveDiffThemeName(resolvedTheme),

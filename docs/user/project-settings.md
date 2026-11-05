@@ -1,5 +1,41 @@
 # Settings and project overrides
 
+## FogBugz
+
+In **Settings > MGGM**, select an environment and connect your existing MGGM FogBugz account using its base URL, email and password. The environment stores the API token in its server-side secret store. Use **Test connection**, **Save changes**, or **Disconnect** to manage it.
+
+The FogBugz settings show when your server lacks project groups, automatic browser sign-in, or Case-Git. Individual project links and ordinary threads remain usable. Without automatic browser sign-in, sign in directly in the Browser panel. Existing links and files are preserved; a missing group feature requires a FogBugz update or an explicit change to a single-project link. After updating FogBugz, use **Test connection** to check feature support again.
+
+In **Settings > Projects**, select a T3 project and choose a **FogBugz project or group** visible to your account. A group includes all its currently accessible projects, including later membership changes. Each T3 project has its own assignment. Choose **Not linked** to remove it.
+
+Open **Fogbugz Cases** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. The **+** menu processes a case in a new linked thread. When several T3 projects match, choose the destination project first. Existing threads appear as direct links; a thread can also link a case by number or remove that association.
+
+Within a thread linked to a case, open the **Fogbugz-Cases** surface from the side panel. Its case list stays scoped to that thread's T3 project, including all accessible FogBugz projects in a linked group.
+
+For a thread linked to a case, **FogBugz-Case-Git** in the FogBugz section of thread details or the side panel's surface menu opens that case's files using the existing file viewer. By default, T3 prepares a separate local clone for each thread under `<T3 home>/case-files/<connection>/<person>/<case>/<thread>/repo`. In **Settings > Projects > FogBugz**, set **Case-Git checkout folder** to share one checkout per case across the project's threads. Use an absolute path or a path relative to the project root; case 12345 uses `<folder>/FB12345`. The folder may be inside the project repository. For SVN projects, adding this folder to `svn:ignore` is recommended. T3 does not change SVN properties. Clearing or changing the setting keeps existing checkouts on disk. FogBugz creates a missing repository when your account has write access and the project's case file storage is enabled. Unlinking preserves the local files and the FogBugz repository.
+
+Drop files into this panel to add them at the checkout root, or onto a folder to add them there. You can also upload through the file picker, create files and folders, and delete selected entries after confirmation. A folder's context menu creates or uploads directly into that folder. Existing files are never overwritten by an upload. These actions change the local checkout. Use the Git menu's **Commit** action to review the changed paths, enter a message and publish the case commits. **Revert** discards uncommitted changes after confirmation, including new files; existing commits and ignored files are kept. **Update** fetches remote changes and applies fast-forwards or conflict-free merges without publishing local commits. The regular file refresh only reloads the local file list. Save or discard open editor changes before using Git actions. Empty folders remain local until they contain a file. File changes are unavailable while an agent is using the same checkout or the FogBugz account lacks write access. A shared checkout accepts only one agent turn at a time; finish that turn before starting work there from another thread.
+
+Linked threads store planning artifacts, including INITIAL.md, PRP.md and prototypes, in the case checkout. Instructions that name the project's `docs/prp/` directory are redirected there. T3 gives the agent the checkout path and the server's file-size limits before each turn. The agent creates local checkpoint commits; T3 uploads those commits to the case repository after the turn. T3 checks for remote changes when opening the checkout and before a turn, and applies fast-forwards or conflict-free merges. Uncommitted changes and conflicts are preserved and reported for your decision. Synchronization does not change files while the agent is running.
+
+In either list, **Add to Context** adds a case reference to the composer without starting an agent run. **Create PRP** starts planning; **Implement** starts implementation. The side panel uses the current thread, including a new thread before its first message. These actions pass the case number and instructions to read it through the FogBugz MCP, rather than copying the case history into the prompt. The agent needs access to that MCP.
+
+Cases show category, status, priority, assignee and your latest notification time, or the last update when there is no notification. The list sorts by that displayed date, then by the last case update.
+
+Linked threads show the case category icon and FogBugz project name in the thread list, with priority and status below the title.
+
+Configure **Auto-Settle on**, **Auto-Unsettle On reactivate**, and **Auto-Analyze New Cases** in **Settings > MGGM**, or override them for a project in **Settings > Projects**. All three start disabled. The server checks linked projects every 30 seconds, even when the client is closed. Settling waits for active agent work to finish; reactivation shows the thread again without starting a turn.
+
+**Only initial event** analyzes new cases whose first two events are **Opened**, then **Assigned** to you. **Any assigned to me** also handles later assignments to you. Enabling analysis establishes a baseline on the next check; existing assignments do not start work. Each new assignment starts a separate linked thread using the project's default model and an analysis-only request through the FogBugz MCP. This can incur provider costs. Automatic analysis does not request implementation, file changes, or FogBugz comments. A missing default model prevents the run.
+
+For a later assignment, the analysis focuses on what you are expected to contribute now. It uses the assignment event and discussion to identify the requested review, decision, clarification, investigation, test, or implementation task, distinguishes explicit requests from inferred expectations, and flags missing information. New cases retain the initial requirements analysis.
+
+Click a case number to open it in a new browser tab using your existing FogBugz browser session. This link does not pass an API token.
+
+Creating a linked thread from the case list opens the case in the Browser panel using the selected browser profile. Switching between existing threads preserves your panel selection, including a closed panel. Use **Open FogBugz case** in thread details to open it again. T3 exchanges the stored API token for a browser session without another password prompt. This requires the MGGM FogBugz browser-session API. Changing the base URL for the same account preserves its sign-in and existing links. Changing the account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. FogBugz comment editing is not included.
+
+## Settings scope
+
 On web and desktop, the "Applying settings for …" sentence at the top of Settings pages picks
 the project and environment a change applies to. Pages that only hold device preferences, such as
 Appearance, don't show it. They start at **All projects** and **All environments**
@@ -169,6 +205,10 @@ access. Source control contains automatic pull, the default pull request merge m
 generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
 
+Under **Settings → General → Notifications**, **Slow request warning threshold** sets how
+long this browser waits before warning about a slow request. The default is 60 seconds;
+set it to `0` to disable these warnings. Changes take effect without reloading.
+
 The Projects category, under Code, holds the project's name, icon, actions,
 checkouts and removal. Actions belong to a project: editing them creates the project's own list
 on each selected environment, and reset returns to the environment's shared list. A project's
@@ -229,6 +269,17 @@ Results also list folders in the worktree folder that no thread uses, with their
 
 Browser captures and rotated logs have separate retention periods. Expired capture links stop
 working. Current logs, message attachments, and browser profiles are kept.
+
+## Retry a busy model
+
+In **General**, set **Model capacity retry delay** to the number of minutes to wait after
+"Selected model is at capacity. Please try a different model." The default is 5 minutes;
+0 disables automatic retries. Retries keep the same provider, model, and model options.
+This setting is independent of usage-limit recovery.
+
+Use **Play** in the stopped thread to continue immediately, or cancel its scheduled retry
+in the thread's recovery notice. A server restart preserves the scheduled retry. Changing
+the thread's model prevents the old capacity failure from automatically starting another model.
 
 ## Project icons
 

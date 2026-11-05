@@ -34,6 +34,7 @@ import * as McpSchema from "effect/ai/McpSchema";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
+import { caseGitInstructions } from "../../apps/server/src/fogbugz/caseGitInstructions.ts";
 import * as McpInvocationContext from "../../apps/server/src/mcp/McpInvocationContext.ts";
 import { advertisedJsonSchema } from "../../apps/server/src/mcp/advertisedJsonSchema.ts";
 import {
@@ -253,6 +254,21 @@ export const McpToolUseCase = Schema.Struct({
     /** delegate_task `role` for a delegated child. T3 builds the child's first message from it. */
     delegateRole: Schema.optional(OrchestratorMcpTaskRole),
     context: Schema.optional(Schema.String),
+    caseGit: Schema.optional(
+      Schema.Struct({
+        caseId: Schema.Number,
+        repositoryId: Schema.String,
+        cwd: Schema.String,
+        canWrite: Schema.Boolean,
+        syncIssue: Schema.optional(Schema.String),
+        limits: Schema.Struct({
+          fileBytes: Schema.Number,
+          groupBytes: Schema.Number,
+          groupFiles: Schema.Number,
+          repositoryBytes: Schema.Number,
+        }),
+      }),
+    ),
     priorTurns: Schema.optional(
       Schema.Array(
         Schema.Struct({
@@ -902,6 +918,9 @@ export const buildMessages = (sample: Sample) => {
       ? "You are a subagent started by the parent agent's Agent tool. Your final message goes to the parent agent, not to the user."
       : undefined,
     context,
+    testCase.setup.caseGit === undefined
+      ? undefined
+      : caseGitInstructions(testCase.setup.caseGit, testCase.setup.caseGit.limits),
   ];
   const reminders = base.reminders.toSpliced(base.gitStatusAt, 0, reminder(gitStatus(testCase)));
   push("user", ...reminders, ...notes.flatMap((note) => (note ? [reminder(note)] : [])));

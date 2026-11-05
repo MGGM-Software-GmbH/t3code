@@ -68,7 +68,12 @@ import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { buildFileReviewComment } from "~/reviewCommentContext";
+import {
+  buildFileReviewComment,
+  restoreFileReviewCommentRange,
+  remapFileReviewComments,
+  type ReviewCommentContext,
+} from "~/reviewCommentContext";
 import { assetEnvironment } from "~/state/assets";
 import { usePreviewAvailable } from "~/browser/previewRuntime";
 import { useEnvironmentHttpBaseUrl, usePrimaryEnvironmentId } from "~/state/environments";
@@ -86,16 +91,14 @@ import { PreviewImage } from "./PreviewImage";
 import FileBrowserPanel from "./FileBrowserPanel";
 import { FileExplorerPane } from "./FileExplorerPane";
 import { FileBreadcrumbs } from "./FileBreadcrumbs";
-import { breadcrumbPathOf, retainedBreadcrumbTrail, trailChildOf } from "./filePath";
+import { breadcrumbPathOf, joinHostPath, retainedBreadcrumbTrail, trailChildOf } from "./filePath";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import {
-  type FileCommentAnnotationEntry,
   type FileCommentAnnotationGroup,
   type FileCommentLineAnnotation,
   formatFileCommentRange,
   nextFileCommentId,
   normalizeFileCommentRange,
-  remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import { installFileEditorDismissal } from "./fileEditorDismissal";
 import {
@@ -107,6 +110,7 @@ import {
   FileSurfaceLoading,
 } from "./fileSurfaceChrome";
 import SourceFilePreview from "./ReadOnlySourcePreview";
+import { isDwsFile, useFileHighlighter } from "~/hooks/useFileHighlighter";
 import { resolveCenteredFileLineScrollTop } from "./fileLineReveal";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { projectFileCacheKey } from "./fileContentRevision";
@@ -150,6 +154,10 @@ interface FilePreviewPanelProps {
   onPendingChange: (relativePath: string, pending: boolean) => void;
   selectedFilePending: boolean;
   workspaceMutationId: string | null;
+  absoluteFileReferences?: boolean;
+  singleColumn?: boolean;
+  fileActions?: import("./FileBrowserPanel").FileBrowserActions;
+  readOnly?: boolean;
 }
 
 const MermaidFilePreview = lazy(() =>
@@ -607,11 +615,13 @@ function editableFileContents(
   return {
     name: relativePath,
     contents,
+    ...(isDwsFile(relativePath) ? { lang: "mggm-dws" } : {}),
     cacheKey: `editor:${environmentId}:${projectFileCacheKey(cwd, relativePath, contents)}`,
   };
 }
 
 function needsWorkerHighlight(workerPool: WorkerPoolManager | undefined, file: FileContents) {
+  if (isDwsFile(file.name)) return false;
   if (workerPool?.isWorkingPool() !== true) return false;
   if ((file.lang ?? getFiletypeFromFileName(file.name)) === "text") return false;
   let lines = 1;
@@ -652,6 +662,7 @@ interface EditableFileSurfaceProps {
   environmentId: EnvironmentId;
   cwd: string;
   relativePath: string;
+  reviewFilePath?: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
   contents: string;
   resolvedTheme: "light" | "dark";
@@ -666,10 +677,13 @@ interface FileSelectionOverride {
   range: SelectedLineRange | null;
 }
 
+const EMPTY_FILE_REVIEW_COMMENTS: ReviewCommentContext[] = [];
+
 function EditableFileSurface({
   environmentId,
   cwd,
   relativePath,
+  reviewFilePath = relativePath,
   composerDraftTarget,
   contents,
   resolvedTheme,
@@ -678,9 +692,74 @@ function EditableFileSurface({
   onPostRender,
   onPendingChange,
 }: EditableFileSurfaceProps) {
+  const syntax = useFileHighlighter(relativePath);
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
-  const [lineAnnotations, setLineAnnotations] = useState<FileCommentLineAnnotation[]>([]);
+  const setReviewCommentEditDraft = useComposerDraftStore(
+    (store) => store.setReviewCommentEditDraft,
+  );
+  const reviewComments = useComposerDraftStore(
+    (store) =>
+      store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_FILE_REVIEW_COMMENTS,
+  );
+  const [draft, setDraft] = useState<ReviewCommentContext | null>(null);
+  const [draftText, setDraftText] = useState("");
+  const previousContentsRef = useRef<{ path: string; contents: string } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- External file updates must remap persisted comments and the open editor draft.
+  useEffect(() => {
+    const previous =
+      previousContentsRef.current?.path === relativePath
+        ? previousContentsRef.current.contents
+        : null;
+    previousContentsRef.current = { path: relativePath, contents };
+    const store = useComposerDraftStore.getState();
+    const comments = store.getComposerDraft(composerDraftTarget)?.reviewComments ?? [];
+    const fileComments = comments.filter(
+      (comment) => comment.sectionId === `file:${reviewFilePath}`,
+    );
+    const remapped = remapFileReviewComments(previous, contents, [
+      ...fileComments,
+      ...(draft ? [draft] : []),
+    ]);
+    const updated = remapped.slice(0, fileComments.length);
+    if (updated.some((comment, index) => comment !== fileComments[index])) {
+      const byId = new Map(updated.map((comment) => [comment.id, comment]));
+      store.setReviewComments(
+        composerDraftTarget,
+        comments.map((comment) => byId.get(comment.id) ?? comment),
+      );
+    }
+    if (draft) setDraft(remapped.at(-1)!);
+  }, [composerDraftTarget, contents, relativePath, reviewFilePath, draft]);
+  const lineAnnotations: FileCommentLineAnnotation[] = (() => {
+    const lines = contents.replace(/\r(?=\n|$)/g, "").split("\n");
+    const comments = reviewComments.filter(
+      (comment) => comment.sectionId === `file:${reviewFilePath}`,
+    );
+    return [...comments, ...(draft ? [draft] : [])].reduce<FileCommentLineAnnotation[]>(
+      (annotations, comment) => {
+        if (comment.sourceStatus === "removed" || comment.sourceStatus === "unresolved")
+          return annotations;
+        const range =
+          comment.sourceStatus === "current" &&
+          lines.slice(comment.startIndex, comment.endIndex + 1).join("\n") === comment.diff
+            ? { startLine: comment.startIndex + 1, endLine: comment.endIndex + 1 }
+            : restoreFileReviewCommentRange(contents, comment);
+        if (!range) return annotations;
+        const entry = {
+          id: comment.id,
+          kind: comment.id === draft?.id ? ("draft" as const) : ("comment" as const),
+          ...range,
+          text: comment.text,
+        };
+        const group = annotations.find((annotation) => annotation.lineNumber === range.endLine);
+        if (group) group.metadata.entries.push(entry);
+        else annotations.push({ lineNumber: range.endLine, metadata: { entries: [entry] } });
+        return annotations;
+      },
+      [],
+    );
+  })();
   const [selectionOverride, setSelectionOverride] = useState<FileSelectionOverride | null>(null);
   const selectedRange =
     selectionOverride?.revealRequestId === revealRequestId ? selectionOverride.range : null;
@@ -712,120 +791,53 @@ function EditableFileSurface({
     },
   };
 
+  // Mirrors the editor draft to the save queue and optimistic file query.
   const handleEditChange = ({
     file,
-    lineAnnotations: nextLineAnnotations,
   }: EditorChangeEvent<"file", FileCommentAnnotationGroup, undefined>) => {
+    // Adopting an external change reports it as an edit; it is already on disk.
     if (file.contents === getProjectFileContents(environmentId, cwd, relativePath)) return;
     setEditedContents(file.contents);
     setProjectFileQueryData(environmentId, cwd, relativePath, file.contents);
     changeFileSaveSession(saveTarget, file.contents);
-    if (!nextLineAnnotations) return;
-    const remapped = remapFileCommentAnnotations(nextLineAnnotations);
-    // The editor hands back the array it was given until an edit moves an annotation.
-    setLineAnnotations((current) => (current === nextLineAnnotations ? current : remapped));
-    for (const annotation of remapped) {
-      for (const entry of annotation.metadata.entries) {
-        if (entry.kind !== "comment") continue;
-        addReviewComment(
-          composerDraftTarget,
-          buildFileReviewComment({
-            id: entry.id,
-            filePath: relativePath,
-            startLine: entry.startLine,
-            endLine: entry.endLine,
-            text: entry.text,
-            contents: file.contents,
-          }),
-        );
-      }
-    }
   };
 
   const removeAnnotationEntry = (entryId: string) => {
     setSelectedRange(null);
     removeReviewComment(composerDraftTarget, entryId);
-    setLineAnnotations((current) => {
-      return current.flatMap((annotation) => {
-        const entries = annotation.metadata.entries.filter((entry) => entry.id !== entryId);
-        return entries.length > 0 ? [{ ...annotation, metadata: { entries } }] : [];
-      });
-    });
+    setDraft((current) => (current?.id === entryId ? null : current));
   };
 
   const submitAnnotationEntry = (entryId: string, text: string) => {
     setSelectedRange(null);
-    const entry = lineAnnotations
-      .flatMap((annotation) => annotation.metadata.entries)
-      .find((candidate) => candidate.id === entryId);
+    const entry =
+      draft?.id === entryId ? draft : reviewComments.find((comment) => comment.id === entryId);
     if (entry) {
-      addReviewComment(
-        composerDraftTarget,
-        buildFileReviewComment({
-          id: entry.id,
-          filePath: relativePath,
-          startLine: entry.startLine,
-          endLine: entry.endLine,
-          text,
-          contents,
-        }),
-      );
+      addReviewComment(composerDraftTarget, { ...entry, text: text.trim() });
     }
-    setLineAnnotations((current) =>
-      current.map((annotation) => ({
-        ...annotation,
-        metadata: {
-          entries: annotation.metadata.entries.map((annotationEntry) =>
-            annotationEntry.id === entryId
-              ? { ...annotationEntry, kind: "comment", text }
-              : annotationEntry,
-          ),
-        },
-      })),
-    );
+    if (draft?.id === entryId) {
+      setDraft(null);
+      setDraftText("");
+    }
   };
 
   const beginComment = (range: SelectedLineRange) => {
     editorRef.current?.setSelections([]);
     editorRef.current?.blur();
     const { startLine, endLine } = normalizeFileCommentRange(range);
-    const draftEntry: FileCommentAnnotationEntry = {
-      id: nextFileCommentId(),
-      kind: "draft",
-      startLine,
-      endLine,
-      text: "",
-    };
-    setLineAnnotations((current) => {
-      const withoutDraft = current.flatMap((annotation) => {
-        const entries = annotation.metadata.entries.filter((entry) => entry.kind !== "draft");
-        return entries.length > 0 ? [{ ...annotation, metadata: { entries } }] : [];
-      });
-      const existingIndex = withoutDraft.findIndex(
-        (annotation) => annotation.lineNumber === endLine,
-      );
-      if (existingIndex < 0) {
-        return [
-          ...withoutDraft,
-          {
-            lineNumber: endLine,
-            metadata: { entries: [draftEntry] },
-          },
-        ];
-      }
-      return withoutDraft.map((annotation, index) =>
-        index === existingIndex
-          ? {
-              ...annotation,
-              metadata: { entries: [...annotation.metadata.entries, draftEntry] },
-            }
-          : annotation,
-      );
-    });
+    setDraftText("");
+    setDraft(
+      buildFileReviewComment({
+        id: nextFileCommentId(),
+        filePath: reviewFilePath,
+        startLine,
+        endLine,
+        text: "",
+        contents,
+      }),
+    );
   };
-  const hasOpenCommentForm = lineAnnotations.some((annotation) =>
-    annotation.metadata.entries.some((entry) => entry.kind === "draft"),
-  );
+  const hasOpenCommentForm = draft !== null;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- installs selection dismissal listeners on the editor surface DOM node
   useEffect(() => {
     const root = surfaceRef.current;
@@ -861,9 +873,54 @@ function EditableFileSurface({
     });
   };
 
+  if (!syntax.ready) return <FileSurfaceLoading />;
   return (
     <EditProvider createEditor={createFileEditor}>
-      <div ref={surfaceRef} className="flex min-h-0 flex-1">
+      <div ref={surfaceRef} className="flex min-h-0 flex-1 flex-col">
+        {reviewComments
+          .filter(
+            (comment) =>
+              comment.sectionId === `file:${reviewFilePath}` &&
+              (comment.sourceStatus === "removed" || comment.sourceStatus === "unresolved"),
+          )
+          .map((comment) => (
+            <div key={comment.id} className="max-h-48 overflow-auto border-b border-border">
+              <p className="px-3 text-xs text-muted-foreground">
+                {comment.sourceStatus === "removed"
+                  ? "Commented lines were removed."
+                  : "Comment location could not be identified."}{" "}
+                Last known location: {comment.rangeLabel}.
+              </p>
+              <DiffCommentAnnotation
+                kind="comment"
+                rangeLabel={comment.rangeLabel}
+                text={comment.text}
+                onCancel={() => removeAnnotationEntry(comment.id)}
+                onDelete={() => removeAnnotationEntry(comment.id)}
+                onEdit={(text) => submitAnnotationEntry(comment.id, text)}
+                editDraft={comment.editDraft}
+                onEditDraftChange={(text) =>
+                  setReviewCommentEditDraft(composerDraftTarget, comment.id, text)
+                }
+                onComment={(text) => submitAnnotationEntry(comment.id, text)}
+              />
+            </div>
+          ))}
+        {draft && draft.sourceStatus !== "current" ? (
+          <div>
+            <p className="px-3 text-xs text-muted-foreground">
+              Source changed. This comment refers to the selected snapshot, not the current lines.
+            </p>
+            <DiffCommentAnnotation
+              kind="draft"
+              rangeLabel={draft.rangeLabel}
+              text={draftText}
+              onTextChange={setDraftText}
+              onCancel={() => removeAnnotationEntry(draft.id)}
+              onComment={(text) => submitAnnotationEntry(draft.id, text)}
+            />
+          </div>
+        ) : null}
         <Virtualizer
           className="file-preview-virtualizer min-h-0 flex-1 overflow-auto"
           config={{
@@ -877,6 +934,7 @@ function EditableFileSurface({
             editorOptions={editorOptions}
             onEditChange={handleEditChange}
             options={{
+              ...(syntax.highlighter ? { highlighter: syntax.highlighter } : {}),
               disableFileHeader: true,
               enableGutterUtility: !hasOpenCommentForm,
               enableLineSelection: !hasOpenCommentForm,
@@ -899,7 +957,16 @@ function EditableFileSurface({
                     key={entry.id}
                     kind={entry.kind}
                     rangeLabel={formatFileCommentRange(entry.startLine, entry.endLine)}
-                    text={entry.text}
+                    text={entry.kind === "draft" ? draftText : entry.text}
+                    {...(entry.kind === "draft" ? { onTextChange: setDraftText } : {})}
+                    onEdit={(text) => submitAnnotationEntry(entry.id, text)}
+                    editDraft={reviewComments.find((comment) => comment.id === entry.id)?.editDraft}
+                    {...(entry.kind === "comment"
+                      ? {
+                          onEditDraftChange: (text: string | null) =>
+                            setReviewCommentEditDraft(composerDraftTarget, entry.id, text),
+                        }
+                      : {})}
                     onCancel={() => removeAnnotationEntry(entry.id)}
                     onComment={(text) => submitAnnotationEntry(entry.id, text)}
                     onDelete={() => removeAnnotationEntry(entry.id)}
@@ -1004,6 +1071,10 @@ export default function FilePreviewPanel({
   onPendingChange,
   selectedFilePending,
   workspaceMutationId,
+  absoluteFileReferences = false,
+  singleColumn = false,
+  fileActions,
+  readOnly = false,
 }: FilePreviewPanelProps) {
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
@@ -1039,7 +1110,8 @@ export default function FilePreviewPanel({
     attachment !== undefined || (relativePath !== null && isHostPath(relativePath));
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
-  const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
+  const hasWriteScope = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
+  const canWriteFiles = hasWriteScope && !readOnly;
   const file = useProjectFileQuery(
     environmentId,
     cwd,
@@ -1069,11 +1141,13 @@ export default function FilePreviewPanel({
   // Everything preview-related keys off previewPath; a folder has no preview.
   const previewPath = isFolder ? null : relativePath;
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
-  const showExplorer = shouldShowFileExplorer({
-    relativePath: previewPath,
-    explorerOpen,
-    attachmentOpen: attachment !== undefined,
-  });
+  const showExplorer =
+    (!singleColumn || previewPath === null) &&
+    shouldShowFileExplorer({
+      relativePath: previewPath,
+      explorerOpen,
+      attachmentOpen: attachment !== undefined,
+    });
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
     RENDER_MARKDOWN_STORAGE_KEY,
     false,
@@ -1316,7 +1390,7 @@ export default function FilePreviewPanel({
               <Globe2 className="size-3.5" />
             </FileSurfaceAction>
           ) : null}
-          {!isHostFile && previewPath !== null ? (
+          {!singleColumn && !isHostFile && previewPath !== null ? (
             <FileSurfaceAction
               label={explorerOpen ? "Hide file explorer" : "Show file explorer"}
               pressed={explorerOpen}
@@ -1513,6 +1587,9 @@ export default function FilePreviewPanel({
                   environmentId={environmentId}
                   cwd={cwd}
                   relativePath={relativePath}
+                  reviewFilePath={
+                    absoluteFileReferences ? joinHostPath(cwd, relativePath) : relativePath
+                  }
                   composerDraftTarget={composerDraftTarget}
                   contents={file.data.contents}
                   resolvedTheme={resolvedTheme}
@@ -1533,6 +1610,8 @@ export default function FilePreviewPanel({
               cwd={hostFolderPath ?? cwd}
               projectName={hostFolderPath ?? projectName}
               hostFolder={hostFolderPath !== null}
+              absoluteFileReferences={absoluteFileReferences}
+              fileActions={fileActions}
               selectedPath={
                 hostFolderPath === null
                   ? relativePath

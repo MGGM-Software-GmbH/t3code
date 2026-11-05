@@ -13,6 +13,7 @@ import {
   threadRaisedHandWhileSnoozed,
   threadWokeAt,
   isThreadWokeUnseen,
+  resolveThreadWakeNotification,
   type ThreadSnoozeShell,
 } from "./threadSettled.ts";
 
@@ -20,6 +21,29 @@ const NOW = "2026-04-10T12:00:00.000Z";
 const SNOOZED_AT = "2026-04-10T09:00:00.000Z";
 const FUTURE_WAKE = "2026-04-11T09:00:00.000Z";
 const PAST_WAKE = "2026-04-10T10:00:00.000Z";
+
+it("shows the latest unseen wake or FogBugz reactivation and acknowledges both on visit", () => {
+  const thread = {
+    unsettledAt: NOW,
+    unsettledReason: "fogbugz-reactivated" as const,
+    settledOverride: "active" as const,
+    lastVisitedAt: PAST_WAKE,
+  };
+  expect(resolveThreadWakeNotification(thread, null)).toEqual({ at: NOW, label: "Reactivated" });
+  expect(resolveThreadWakeNotification(thread, PAST_WAKE)).toEqual({
+    at: NOW,
+    label: "Reactivated",
+  });
+  expect(resolveThreadWakeNotification(thread, FUTURE_WAKE)).toEqual({
+    at: FUTURE_WAKE,
+    label: "Woke",
+  });
+  expect(resolveThreadWakeNotification({ ...thread, lastVisitedAt: NOW }, null)).toBeNull();
+  expect(resolveThreadWakeNotification({ ...thread, settledOverride: "settled" }, null)).toBeNull();
+  expect(resolveThreadWakeNotification({ ...thread, unsettledReason: "user" }, null)).toBeNull();
+  expect(resolveThreadWakeNotification({ ...thread, unsettledReason: undefined }, null)).toBeNull();
+  expect(resolveThreadWakeNotification({ ...thread, unsettledAt: "invalid" }, null)).toBeNull();
+});
 
 function localDate(year: number, month: number, day: number, hour: number, minute = 0): Date {
   return new Date(year, month - 1, day, hour, minute, 0, 0);

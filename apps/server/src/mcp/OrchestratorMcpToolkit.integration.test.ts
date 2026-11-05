@@ -1,5 +1,6 @@
 import * as NodeURL from "node:url";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import { FogBugzService } from "../fogbugz/FogBugzService.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -57,6 +58,7 @@ import * as PeerLinks from "../peer/PeerLinks.ts";
 const layerOrchestratorToolkit = McpHttpServer.layerOrchestratorToolkit.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  Layer.provide(Layer.mock(FogBugzService)({ thread: () => Effect.succeed(null) })),
 );
 
 /** A task delegated here always has a local child thread. */

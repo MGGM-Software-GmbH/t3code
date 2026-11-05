@@ -6,6 +6,10 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Migrator from "effect/sql/Migrator";
+import FogBugz from "./Migrations/077_FogBugz.ts";
+import FogBugzProjectGroups from "./Migrations/078_FogBugzProjectGroups.ts";
+import FogBugzAutomation from "./Migrations/079_FogBugzAutomation.ts";
 
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 
@@ -29,6 +33,66 @@ const v2TableCount = Effect.gen(function* () {
 });
 
 describe("runMigrations", () => {
+  it.effect.each([73, 74, 75])(
+    "preserves FogBugz data when upgrading preview migration %s",
+    (lastId) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: 72 });
+        yield* Migrator.make({})({
+          loader: Migrator.fromRecord({
+            "73_FogBugz": FogBugz,
+            ...(lastId >= 74 ? { "74_FogBugzProjectGroups": FogBugzProjectGroups } : {}),
+            ...(lastId >= 75 ? { "75_FogBugzAutomation": FogBugzAutomation } : {}),
+          }),
+        });
+        yield* sql`INSERT INTO fogbugz_connection VALUES (1, 'connection')`;
+        yield* sql`INSERT INTO fogbugz_projects VALUES ('project', 7)`;
+        yield* sql`INSERT INTO fogbugz_threads VALUES ('thread', 'project', 12345, 'Case title')`;
+        const data = yield* sql`SELECT * FROM fogbugz_threads`;
+        yield* sql`UPDATE effect_sql_migrations SET created_at = '2026-10-30' WHERE migration_id = 73`;
+
+        yield* runMigrations();
+
+        assert.deepStrictEqual(yield* history, migrationManifest);
+        assert.deepStrictEqual(yield* sql`SELECT * FROM fogbugz_threads`, data);
+        assert.deepStrictEqual(yield* sql`SELECT * FROM fogbugz_connection`, [
+          { id: 1, payload: "connection" },
+        ]);
+        assert.deepStrictEqual(
+          yield* sql`SELECT created_at FROM effect_sql_migrations WHERE migration_id = 77`,
+          [{ created_at: "2026-10-30" }],
+        );
+        assert.deepStrictEqual(yield* runMigrations(), []);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect(
+    "rolls back a failed FogBugz preview upgrade and rejects unknown later migrations",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: 72 });
+        yield* Migrator.make({})({ loader: Migrator.fromRecord({ "73_FogBugz": FogBugz }) });
+        const before = yield* history;
+        yield* sql`CREATE TRIGGER fail_fogbugz_upgrade BEFORE INSERT ON effect_sql_migrations
+        WHEN NEW.name = 'ProjectionProjectsPinArchive' BEGIN SELECT RAISE(ABORT, 'injected failure'); END`;
+        assert.isTrue(Exit.isFailure(yield* Effect.exit(runMigrations())));
+        assert.deepStrictEqual(yield* history, before);
+        assert.deepStrictEqual(
+          yield* sql`SELECT name FROM sqlite_master WHERE name = 'orchestration_v2_projection_turn_items_active_run_idx'`,
+          [],
+        );
+        yield* sql`DROP TRIGGER fail_fogbugz_upgrade`;
+        yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (74, 'UnknownFork')`;
+        const unknownHistory = yield* history;
+        assert.isTrue(Exit.isFailure(yield* Effect.exit(runMigrations())));
+        assert.deepStrictEqual(yield* history, unknownHistory);
+        yield* sql`DELETE FROM effect_sql_migrations WHERE name = 'UnknownFork'`;
+        yield* runMigrations();
+        assert.deepStrictEqual(yield* history, migrationManifest);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
   it.effect("refuses to start when another migration took a V2 id", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

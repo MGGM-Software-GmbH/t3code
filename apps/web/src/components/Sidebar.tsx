@@ -189,6 +189,7 @@ import {
   firstValidTimestampMs,
   belongsInSidebarWorkingShelf,
   isSidebarEnvironmentDisconnected,
+  groupIdleSidebarThreads,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
@@ -200,6 +201,7 @@ import {
   resolveSidebarDropVerb,
   resolveSidebarThreadSection,
   resolveSidebarReorderableThreadKeys,
+  resolveWorkingShelfThreads,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
   shouldNavigateAfterThreadPark,
@@ -270,6 +272,7 @@ import {
 } from "./sidebar/SidebarProjectFolderHeader";
 import {
   SidebarDragBoundary,
+  SidebarIdleProjectHeader,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
 } from "./sidebar/SidebarListMarkers";
@@ -331,6 +334,10 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
+const IDLE_RECENT_EXPANDED_KEY = "t3code:sidebar:idle-recent-expanded";
+const IDLE_PROJECTS_EXPANDED_KEY = "t3code:sidebar:idle-projects-expanded";
+const IDLE_PROJECT_EXPANDED_KEY = "t3code:sidebar:idle-project-expanded";
+const idleProjectExpandedSchema = Schema.Record(Schema.String, Schema.Boolean);
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -414,6 +421,7 @@ function routeThreadOnly(
 
 // Separate hooks cache maps independently of later Sidebar hooks and preserve dnd-kit inputs.
 function useSidebarThreads(input: {
+  readonly projectGroups: readonly SidebarProjectSnapshot[];
   readonly projectScopeKey: string | null;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
@@ -454,6 +462,9 @@ function useSidebarThreads(input: {
       )
       .map((environment) => environment.environmentId),
   );
+  const mggmThreadSidebarEnabled = useClientSettings(
+    (settings) => settings.mggmThreadSidebarEnabled,
+  );
   const inboxReturnsVersion = useSyncExternalStore(
     inboxReturns.subscribe,
     inboxReturns.getSnapshot,
@@ -479,6 +490,21 @@ function useSidebarThreads(input: {
   // Shared with the old per-project sidebar, so folders keep their open state.
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const setProjectExpanded = useUiStateStore((store) => store.setProjectExpanded);
+  const [idleRecentExpanded, setIdleRecentExpanded] = useLocalStorage(
+    IDLE_RECENT_EXPANDED_KEY,
+    true,
+    Schema.Boolean,
+  );
+  const [idleProjectsExpanded, setIdleProjectsExpanded] = useLocalStorage(
+    IDLE_PROJECTS_EXPANDED_KEY,
+    false,
+    Schema.Boolean,
+  );
+  const [idleProjectExpandedByKey, setIdleProjectExpandedByKey] = useLocalStorage(
+    IDLE_PROJECT_EXPANDED_KEY,
+    {},
+    idleProjectExpandedSchema,
+  );
   const [settledTail, setSettledTail] = useState({
     scopeKey: projectScopeKey,
     count: SETTLED_TAIL_INITIAL_COUNT,
@@ -504,6 +530,44 @@ function useSidebarThreads(input: {
 
   const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
     partition;
+  const inlineWorkingThreads = workingShelfEnabled
+    ? EMPTY_THREADS
+    : activeThreads.filter(isThreadWorking);
+  const idle = groupIdleSidebarThreads(
+    mggmThreadSidebarEnabled
+      ? workingShelfEnabled
+        ? activeThreads
+        : activeThreads.filter((thread) => !isThreadWorking(thread))
+      : EMPTY_THREADS,
+    input.projectGroups,
+    Date.parse(`${nowMinute}Z`),
+  );
+  const visibleIdleRecent = idleRecentExpanded
+    ? idle.recent
+    : routeThreadOnly(idle.recent, routeRowThreadKey);
+  const visibleIdleProjects = idle.projectGroups.map((group) => ({
+    ...group,
+    expanded: idleProjectExpandedByKey[group.projectKey] !== false,
+    visibleThreads:
+      idleProjectsExpanded && idleProjectExpandedByKey[group.projectKey] !== false
+        ? group.threads
+        : routeThreadOnly(group.threads, routeRowThreadKey),
+  }));
+  const visibleActiveThreads = mggmThreadSidebarEnabled
+    ? [
+        ...inlineWorkingThreads,
+        ...visibleIdleRecent,
+        ...visibleIdleProjects.flatMap((group) => group.visibleThreads),
+      ]
+    : activeThreads;
+  const idleParentByThreadKey = new Map([
+    ...visibleIdleRecent.map((thread) => [threadShellKey(thread), "shelf:idle-recent"] as const),
+    ...visibleIdleProjects.flatMap((group) =>
+      group.visibleThreads.map(
+        (thread) => [threadShellKey(thread), `idle-project:${group.projectKey}`] as const,
+      ),
+    ),
+  ]);
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const olderSettledShelf = useOlderSettledShelf({
     scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
@@ -533,9 +597,12 @@ function useSidebarThreads(input: {
   const visibleSnoozedThreads = snoozedShelfExpanded
     ? snoozedThreads
     : routeThreadOnly(snoozedThreads, routeRowThreadKey);
-  const visibleWorkingThreads = workingShelfExpanded
-    ? workingThreads
-    : routeThreadOnly(workingThreads, routeRowThreadKey);
+  const visibleWorkingThreads = resolveWorkingShelfThreads({
+    threads: workingThreads,
+    expanded: workingShelfExpanded,
+    routeThreadKey: routeRowThreadKey,
+    mggmThreadSidebarEnabled,
+  });
   const projectFolders =
     folderGroups === null
       ? null
@@ -559,7 +626,7 @@ function useSidebarThreads(input: {
   const orderedThreads = [
     ...pinnedThreads,
     ...(projectFolders === null
-      ? activeThreads
+      ? visibleActiveThreads
       : projectFolders.flatMap((folder) => folder.threads)),
     ...visibleWorkingThreads,
     ...visibleSnoozedThreads,
@@ -579,6 +646,21 @@ function useSidebarThreads(input: {
     ...partition,
     threads,
     workingShelfEnabled,
+    mggmThreadSidebarEnabled,
+    idle,
+    inlineWorkingThreads,
+    visibleIdleRecent,
+    visibleIdleProjects,
+    idleParentByThreadKey,
+    idleRecentExpanded,
+    toggleIdleRecent: () => setIdleRecentExpanded((value) => !value),
+    idleProjectsExpanded,
+    toggleIdleProjects: () => setIdleProjectsExpanded((value) => !value),
+    toggleIdleProject: (projectKey: string) =>
+      setIdleProjectExpandedByKey((current) => ({
+        ...current,
+        [projectKey]: current[projectKey] === false,
+      })),
     searchableThreads: [
       ...pinnedThreads,
       ...activeThreads,
@@ -1314,6 +1396,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     activeReorderableThreadKeys,
     activeThreads,
     workingThreads,
+    mggmThreadSidebarEnabled,
+    idle,
+    inlineWorkingThreads,
+    visibleIdleRecent,
+    visibleIdleProjects,
+    idleParentByThreadKey,
+    idleRecentExpanded,
+    toggleIdleRecent,
+    idleProjectsExpanded,
+    toggleIdleProjects,
+    toggleIdleProject,
     snoozedThreads,
     settledThreads,
     snoozeNow,
@@ -1344,6 +1437,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     pinnedKeysById,
     activeKeysById,
   } = useSidebarThreads({
+    projectGroups,
     projectScopeKey,
     scopedProjectKeys,
     serverConfigs,
@@ -1725,7 +1819,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     };
   };
 
-  const isContextDrag = dragState?.contextDrag === true || dragState?.activeSection === "working";
+  const isContextDrag =
+    dragState?.contextDrag === true ||
+    (!mggmThreadSidebarEnabled && dragState?.activeSection === "working");
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null;
@@ -1945,13 +2041,30 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const items: SidebarListItem[] = [{ kind: "marker", marker: "pinned-header" }];
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
     items.push(...pinnedRows);
-    items.push({ kind: "marker", marker: "pinned-divider" });
-    const activeRows = rowsOf(activeThreads, "active");
-    items.push({ kind: "marker", marker: "active-placeholder" });
-    items.push(...activeRows);
+    // Returned threads lead the inbox directly below the remaining work.
     if (workingThreads.length > 0) {
       items.push({ kind: "marker", marker: "working-header" });
       items.push(...rowsOf(visibleWorkingThreads, "working"));
+    }
+    items.push({ kind: "marker", marker: "pinned-divider" });
+    items.push({ kind: "marker", marker: "active-placeholder" });
+    items.push(
+      ...rowsOf(
+        projectFolders === null && mggmThreadSidebarEnabled ? inlineWorkingThreads : activeThreads,
+        "active",
+      ),
+    );
+    if (projectFolders === null && idle.recent.length > 0) {
+      items.push({ kind: "marker", marker: "idle-recent-header" });
+      items.push(...rowsOf(visibleIdleRecent, "active"));
+    }
+    if (projectFolders === null && idle.projectGroups.length > 0) {
+      items.push({ kind: "marker", marker: "idle-projects-header" });
+      for (const group of visibleIdleProjects) {
+        if (!idleProjectsExpanded && group.visibleThreads.length === 0) continue;
+        items.push({ kind: "marker", marker: `idle-project:${group.projectKey}` });
+        items.push(...rowsOf(group.visibleThreads, "active"));
+      }
     }
     if (snoozedThreads.length > 0) {
       items.push({ kind: "marker", marker: "snoozed-header" });
@@ -2011,7 +2124,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   }, [listMotionPass, shelfExpansionKey]);
   const handleThreadDragOver = (event: DragOverEvent) => {
     const target = event.over
-      ? resolveSidebarDropTarget(sidebarListItems, String(event.active.id), String(event.over.id))
+      ? resolveSidebarDropTarget(
+          sidebarListItems,
+          String(event.active.id),
+          String(event.over.id),
+          mggmThreadSidebarEnabled,
+        )
       : null;
     setDragState((current) =>
       current === null || current.activeKey !== String(event.active.id)
@@ -2034,7 +2152,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
     enabled: !isContextDrag,
-    boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
+    pinningOnly: mggmThreadSidebarEnabled,
+    boundaryLabelHeight: mggmThreadSidebarEnabled ? 0 : SIDEBAR_DRAG_LABEL_HEIGHT,
     settledOrder: draggedSettledOrder,
     ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
     settledExpanded: settledShelfExpanded,
@@ -2052,7 +2171,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (source === undefined) return createSidebarCollisionDetection(() => false);
     return createSidebarCollisionDetection(
       (id) => {
-        const target = resolveSidebarDropTarget(sidebarListItems, draggedThreadKey, id);
+        const target = resolveSidebarDropTarget(
+          sidebarListItems,
+          draggedThreadKey,
+          id,
+          mggmThreadSidebarEnabled,
+        );
         if (target === null) return false;
         return (
           planSidebarThreadDrop({
@@ -2068,13 +2192,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeOrder: activeKeys,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
-            activeTimeOrdered: workingShelfEnabled,
+            activeTimeOrdered: true,
+            pinningOnly: mggmThreadSidebarEnabled,
           }).kind !== "none"
         );
       },
       {
         items: sidebarListItems,
         activationY: dragActivationY ?? null,
+        pinningOnly: mggmThreadSidebarEnabled,
       },
     );
   })();
@@ -2084,7 +2210,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const target =
       event.over === null
         ? null
-        : resolveSidebarDropTarget(sidebarListItems, activeKey, String(event.over.id));
+        : resolveSidebarDropTarget(
+            sidebarListItems,
+            activeKey,
+            String(event.over.id),
+            mggmThreadSidebarEnabled,
+          );
     const activeThread = threadByKey.get(activeKey);
     if (activeSection === undefined || target === null || activeThread === undefined) return;
     const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
@@ -2101,7 +2232,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeOrder: activeKeys,
       activeKeysById,
       activeReorderableKeys: activeReorderableThreadKeys,
-      activeTimeOrdered: workingShelfEnabled,
+      activeTimeOrdered: true,
+      pinningOnly: mggmThreadSidebarEnabled,
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
@@ -3300,6 +3432,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     role="presentation"
                     className={cn(
                       "relative flex flex-col gap-px",
+                      mggmThreadSidebarEnabled &&
+                        "[&>[data-thread-item]]:relative [&>[data-thread-item]+[data-thread-item]]:before:pointer-events-none [&>[data-thread-item]+[data-thread-item]]:before:absolute [&>[data-thread-item]+[data-thread-item]]:before:inset-x-2.5 [&>[data-thread-item]+[data-thread-item]]:before:top-0 [&>[data-thread-item]+[data-thread-item]]:before:border-t [&>[data-thread-item]+[data-thread-item]]:before:border-dashed [&>[data-thread-item]+[data-thread-item]]:before:border-sidebar-foreground/25",
                       sidebarListItems.length > 0 && "flex-1",
                       actionSweep !== null && "**:pointer-events-none",
                     )}
@@ -3310,6 +3444,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         section: SidebarSection,
                         // The tree row of the project folder this row sits in.
                         folderRow?: string,
+                        navigationParent?: string,
                       ) => {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
@@ -3321,7 +3456,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             ? "folder-multiline"
                             : "folder"
                           : isCard
-                            ? "card"
+                            ? navigationParent?.startsWith("idle-project:")
+                              ? "project-card"
+                              : "card"
                             : "slim";
                         return (
                           <SortableThreadRow
@@ -3337,6 +3474,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             thread={thread}
                             variant={rowVariant}
                             navigationParent={
+                              navigationParent ??
                               folderRow ??
                               (section === "working" ||
                               section === "snoozed" ||
@@ -3441,7 +3579,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         if (item.kind === "thread") {
                           // Folders draw active rows in their own place below.
                           if (projectFolders !== null && item.section === "active") continue;
-                          items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
+                          items.push(
+                            renderThreadRow(
+                              threadByKey.get(item.key)!,
+                              item.section,
+                              undefined,
+                              idleParentByThreadKey.get(item.key),
+                            ),
+                          );
                           continue;
                         }
                         if (projectFolders !== null && item.marker === "active-placeholder") {
@@ -3469,13 +3614,71 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           }
                           continue;
                         }
+                        if (item.marker.startsWith("idle-project:")) {
+                          const projectKey = item.marker.slice("idle-project:".length);
+                          const group = visibleIdleProjects.find(
+                            (candidate) => candidate.projectKey === projectKey,
+                          );
+                          items.push(
+                            <SidebarIdleProjectHeader
+                              key={item.marker}
+                              projectKey={projectKey}
+                              project={
+                                projectGroups.find(
+                                  (project) => project.projectKey === projectKey,
+                                ) ?? null
+                              }
+                              label={group?.displayName ?? "Unknown project"}
+                              count={group?.threads.length ?? 0}
+                              latestActivityAt={group?.latestActivityAt ?? null}
+                              expanded={group?.expanded ?? false}
+                              onToggle={() => toggleIdleProject(projectKey)}
+                            />,
+                          );
+                          continue;
+                        }
                         switch (item.marker) {
+                          case "idle-recent-header":
+                            items.push(
+                              <SidebarSectionHeader
+                                key="idle-recent-header"
+                                marker="idle-recent-header"
+                                label="Idle 24h"
+                                count={idle.recent.length}
+                                toggle={{
+                                  expanded: idleRecentExpanded,
+                                  onToggle: toggleIdleRecent,
+                                }}
+                              />,
+                            );
+                            break;
+                          case "idle-projects-header":
+                            items.push(
+                              <SidebarSectionHeader
+                                key="idle-projects-header"
+                                marker="idle-projects-header"
+                                label="Idle Projects"
+                                count={idle.projectGroups.reduce(
+                                  (count, group) => count + group.threads.length,
+                                  0,
+                                )}
+                                toggle={{
+                                  expanded: idleProjectsExpanded,
+                                  onToggle: toggleIdleProjects,
+                                }}
+                              />,
+                            );
+                            break;
                           case "pinned-header":
                             items.push(
                               <SidebarDragBoundary
                                 key="pinned-header"
                                 marker="pinned-header"
                                 label="Pinned"
+                                showHeading={
+                                  mggmThreadSidebarEnabled &&
+                                  (pinnedThreads.length > 0 || from !== null)
+                                }
                                 visible={from !== null}
                                 isDropTarget={dragTargetSection === "pinned"}
                               />,
@@ -3487,7 +3690,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key="pinned-divider"
                                 marker="pinned-divider"
                                 label="Active"
-                                visible={from !== null}
+                                visible={from !== null && !mggmThreadSidebarEnabled}
                                 isDropTarget={dragTargetSection === "active"}
                               />,
                             );
@@ -3500,6 +3703,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 label="Active"
                                 showHint={
                                   from !== null &&
+                                  (!mggmThreadSidebarEnabled || from === "pinned") &&
                                   (activeThreads.length === 0 ||
                                     (from === "active" &&
                                       activeThreads.length === 1 &&
@@ -3515,7 +3719,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="working-shelf-header"
                                 marker="working-header"
-                                className="mt-auto"
                                 label="Working"
                                 count={workingThreads.length}
                                 toggle={{
@@ -3530,7 +3733,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="snoozed-shelf-header"
                                 marker="snoozed-header"
-                                className={cn(workingThreads.length === 0 && "mt-auto")}
+                                className="mt-auto"
                                 label="Snoozed"
                                 count={snoozedThreads.length}
                                 toggle={{
@@ -3545,9 +3748,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="settled-shelf-header"
                                 marker="settled-header"
-                                className={cn(
-                                  workingThreads.length + snoozedThreads.length === 0 && "mt-auto",
-                                )}
+                                className={cn(snoozedThreads.length === 0 && "mt-auto")}
                                 label="Settled"
                                 count={settledCount}
                                 dragging={from !== null}
@@ -3567,6 +3768,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 label="Settled"
                                 showHint={
                                   from !== null &&
+                                  !mggmThreadSidebarEnabled &&
                                   (renderedSettledThreads.length === 0 ||
                                     (from === "settled" &&
                                       renderedSettledThreads.length === 1 &&

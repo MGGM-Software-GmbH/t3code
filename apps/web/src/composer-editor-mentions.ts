@@ -27,6 +27,12 @@ export type ComposerPromptSegment =
       source: string;
     }
   | {
+      type: "fogbugz-reference";
+      caseId: number;
+      url: string;
+      source: string;
+    }
+  | {
       type: "context-reference";
       kind: string;
       contextId: string;
@@ -79,12 +85,25 @@ export function collectComposerPromptInlineTokens(text: string) {
   const tokens = collectComposerInlineTokens(text);
   const citations = collectAssistantCitations(text);
   const references = collectComposerContextReferences(text);
-  if (citations.length === 0 && references.length === 0) return tokens;
+  const cases = [
+    ...text.matchAll(
+      /\[FogBugz #([1-9]\d*)\]\((https?:\/\/[^\s)]*\/default\.asp\?\1)(?: "[^"\n]*")?\)/g,
+    ),
+  ].map((match) => ({
+    type: "fogbugz-reference" as const,
+    caseId: Number(match[1]),
+    url: match[2]!,
+    source: match[0],
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+  if (citations.length === 0 && references.length === 0 && cases.length === 0) return tokens;
 
   // An unfinished @ mention can otherwise consume the start of a link label.
   const links = [
     ...citations.map((match) => ({ ...match, type: "citation" as const })),
     ...references.map((match) => ({ ...match, type: "context-reference" as const })),
+    ...cases,
   ];
   return [
     ...tokens.filter(
@@ -113,6 +132,13 @@ function splitPromptTextIntoComposerSegments(text: string): ComposerPromptSegmen
 
     if (match.type === "citation") {
       segments.push({ type: "citation", citation: match.citation, source: match.source });
+    } else if (match.type === "fogbugz-reference") {
+      segments.push({
+        type: match.type,
+        caseId: match.caseId,
+        url: match.url,
+        source: match.source,
+      });
     } else if (match.type === "context-reference") {
       segments.push({
         type: "context-reference",

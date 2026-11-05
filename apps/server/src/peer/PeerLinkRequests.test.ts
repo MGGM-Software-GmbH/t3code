@@ -1,3 +1,4 @@
+import { FogBugzService } from "../fogbugz/FogBugzService.ts";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -166,6 +167,7 @@ const makeLaptop = Effect.gen(function* () {
     Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
     Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+    Layer.provide(Layer.mock(FogBugzService)({ thread: () => Effect.succeed(null) })),
     Layer.provide(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-peer-link-requests-" }).pipe(
         Layer.provide(NodeServices.layer),

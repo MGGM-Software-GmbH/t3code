@@ -40,6 +40,41 @@ async function reloadRightPanelStore() {
 }
 
 describe("rightPanelStore", () => {
+  it.each(["fogbugz-cases", "fogbugz-case-git"] as const)(
+    "persists, closes, and reopens one %s surface per scoped thread",
+    async (kind) => {
+      const store = useRightPanelStore.getState();
+      const remoteRef = scopeThreadRef("env-2" as EnvironmentId, refA.threadId);
+      store.open(refA, kind);
+      store.open(refA, kind);
+      store.open(remoteRef, "files");
+      await reloadRightPanelStore();
+      expect(
+        selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+      ).toEqual([{ id: kind, kind }]);
+      expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, remoteRef)).toBe(
+        "files",
+      );
+      useRightPanelStore.getState().closeSurface(refA, kind);
+      expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+      const closed = useClosedViewStore.getState().entries[0]!;
+      const { storage, name } = useClosedViewStore.persist.getOptions();
+      const persisted = await storage!.getItem(name!);
+      useClosedViewStore.setState({ entries: [] });
+      await storage!.setItem(name!, persisted!);
+      await useClosedViewStore.persist.rehydrate();
+      expect(useClosedViewStore.getState().entries[0]).toEqual(closed);
+      expect(
+        await reopenClosedView(closed, {
+          openPreview: async () => {
+            throw new Error("Unexpected browser launch");
+          },
+          workspaceAvailable: true,
+        }),
+      ).toBe(true);
+      expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe(kind);
+    },
+  );
   it("opens a hosted side chat's panel actions in its parent's panel until unhosted", () => {
     const store = useRightPanelStore.getState();
     const unhost = hostRightPanel(refB, refA);

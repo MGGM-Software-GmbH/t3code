@@ -96,10 +96,14 @@ function setup() {
 }
 
 function markdownPreview(truncated: boolean) {
+  return sourcePreview("tasks.md", "- [ ] Keep the rest of this file\n", truncated);
+}
+
+function sourcePreview(relativePath: string, contents: string, truncated = false) {
   state.file = {
-    relativePath: "tasks.md",
-    contents: "- [ ] Keep the rest of this file\n",
-    byteLength: truncated ? 1_200_000 : 32,
+    relativePath,
+    contents,
+    byteLength: truncated ? 1_200_000 : contents.length,
     truncated,
   };
   return (
@@ -107,7 +111,7 @@ function markdownPreview(truncated: boolean) {
       environmentId={environmentId}
       cwd="/workspace"
       projectName="Project"
-      relativePath="tasks.md"
+      relativePath={relativePath}
       threadRef={threadRef}
       composerDraftTarget={threadRef}
       keybindings={[]}
@@ -158,5 +162,27 @@ describe("rendered Markdown task saves", () => {
         contents: "- [x] Keep the rest of this file\n",
       },
     });
+  });
+});
+
+describe("DWS-Dateibearbeitung", () => {
+  it.each(["example.dws", "example.shtml"])("färbt und speichert %s", async (relativePath) => {
+    using _settings = setup();
+    const contents = "<% var QueryName := 'sql_test'; %>\nconst value = \"<%= QueryName %>\";\n";
+    await using screen = await render(sourcePreview(relativePath, contents));
+    const editor = screen.getByRole("textbox");
+    await expect.element(editor).toBeVisible();
+    const element = editor.element();
+    expect(element.querySelectorAll("span[style*='color:']").length).toBeGreaterThan(3);
+    using _timers = fakeTimers();
+    await editor.click();
+    const { userEvent } = await import("vite-plus/test/browser");
+    await userEvent.keyboard("{Control>}{End}{/Control}// Test");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).toHaveBeenCalledWith({
+      environmentId,
+      input: { cwd: "/workspace", relativePath, contents: `${contents}// Test` },
+    });
+    expect(element.querySelectorAll("span[style*='color:']").length).toBeGreaterThan(3);
   });
 });

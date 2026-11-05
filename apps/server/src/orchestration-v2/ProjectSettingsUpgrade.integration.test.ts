@@ -27,8 +27,10 @@ import * as SourceControlProviderRegistry from "../sourceControl/SourceControlPr
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as RuntimeLayer from "./runtimeLayer.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
 
 const projectId = ProjectId.make("project:upgrade");
 const icon = { kind: "emoji", emoji: "🦊" } as const;
@@ -116,8 +118,12 @@ const unusedEnrichment = {
 };
 
 const layerRuntime = (dbPath: string) => {
-  const layerPlatform = Layer.merge(
-    Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
+  const layerPlatform = Layer.mergeAll(
+    NodeServices.layer,
+    NodeCrypto.layer,
+    Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
+      refreshReviewComments: ({ records }) => Effect.succeed([...records]),
+    }),
     Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
       resolveLink: () => Effect.die("unused"),
     }),
@@ -156,6 +162,12 @@ const layerRuntime = (dbPath: string) => {
     Layer.provide(layerCheckpointStore),
     Layer.provide(layerServerConfig),
     Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(
+      Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({
+        prepareTurn: () => Effect.succeed(null),
+        finishTurn: () => Effect.void,
+      }),
+    ),
     Layer.provide(
       Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
         // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.

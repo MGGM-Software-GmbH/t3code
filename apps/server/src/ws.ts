@@ -1,4 +1,9 @@
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
+import { FogBugzService } from "./fogbugz/FogBugzService.ts";
+import { FogBugzCaseGit } from "./fogbugz/FogBugzCaseGit.ts";
+import { FogBugzError } from "@t3tools/contracts";
+import * as FogBugzThreads from "./fogbugz/FogBugzThreads.ts";
+import * as FogBugzBrowser from "./fogbugz/FogBugzBrowser.ts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -177,6 +182,7 @@ import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRe
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
+import * as PdSecrets from "./environment/PdSecrets.ts";
 import { makeProviderInstallation } from "./provider/providerInstallation.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as NpmRelease from "./cloud/npmRelease.ts";
@@ -240,6 +246,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { commandFeatureUsage, featureUsage } from "./telemetry/FeatureUsage.ts";
 import type { TelemetryOwner } from "./telemetry/Identify.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as CodexResetForecast from "./usage/CodexResetForecast.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -274,6 +281,7 @@ import { requestUrl } from "./requestUrl.ts";
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
+const isFogBugzError = Schema.is(FogBugzError);
 
 const resolveDiscoveryForConfig = <A, E, R>(
   discovery: Effect.Effect<A, E, R>,
@@ -1425,6 +1433,7 @@ export const layerWsRpc = (
               Effect.orElseSucceed(() => null),
             );
       const usage = yield* UsageService.UsageService;
+      const codexResetForecast = yield* CodexResetForecast.CodexResetForecast;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -1454,6 +1463,9 @@ export const layerWsRpc = (
         yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const providerAuth = yield* ProviderAuthService.ProviderAuthService;
+      const pdSecrets = yield* PdSecrets.PdSecrets;
+      const fogbugz = yield* FogBugzService;
+      const fogbugzCaseGit = yield* FogBugzCaseGit;
       const providerInstallation = yield* makeProviderInstallation();
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const npmRelease = yield* NpmRelease.NpmRelease;
@@ -2580,6 +2592,45 @@ export const layerWsRpc = (
             return { outcome };
           }),
         [WS_METHODS.providerAuthStart]: (input) => providerAuth.start(input, currentSessionId),
+        [WS_METHODS.pdSecretsStatus]: () => pdSecrets.status(),
+        [WS_METHODS.fogbugzStatus]: () => fogbugz.status(),
+        [WS_METHODS.fogbugzEnsureCaseGit]: (input) => fogbugzCaseGit.ensure(input.threadId),
+        [WS_METHODS.fogbugzManageCaseGit]: (input) => fogbugzCaseGit.manage(input),
+        [WS_METHODS.fogbugzMutateCaseFiles]: (input) => fogbugzCaseGit.mutateFiles(input),
+        [WS_METHODS.fogbugzThreadCases]: () => fogbugz.threadCases(),
+        [WS_METHODS.fogbugzOpenCase]: (input) =>
+          FogBugzBrowser.openCase(input).pipe(
+            Effect.provideService(FogBugzService, fogbugz),
+            Effect.provideService(ServerBrowser.ServerBrowser, serverBrowser),
+          ),
+        [WS_METHODS.fogbugzConnect]: (input) => fogbugz.connect(input),
+        [WS_METHODS.fogbugzDisconnect]: () => fogbugz.disconnect(),
+        [WS_METHODS.fogbugzTest]: () => fogbugz.test(),
+        [WS_METHODS.fogbugzProjects]: () => fogbugz.projects(),
+        [WS_METHODS.fogbugzLinkProject]: (input) => fogbugz.linkProject(input),
+        [WS_METHODS.fogbugzCases]: (input) => fogbugz.cases(input),
+        [WS_METHODS.fogbugzCaseContext]: (input) => fogbugz.caseContext(input),
+        [WS_METHODS.fogbugzThread]: (input) => fogbugz.thread(input.threadId),
+        [WS_METHODS.fogbugzLinkThread]: (input) => fogbugz.linkThread(input),
+        [WS_METHODS.fogbugzCreateThread]: (input) =>
+          startup
+            .enqueueCommand(
+              FogBugzThreads.createThread(input).pipe(
+                Effect.provideService(FogBugzService, fogbugz),
+                Effect.provideService(
+                  ThreadManagementService.ThreadManagementService,
+                  threadManagement,
+                ),
+              ),
+            )
+            .pipe(
+              Effect.mapError((error) =>
+                isFogBugzError(error) ? error : new FogBugzError({ code: "thread" }),
+              ),
+            ),
+        [WS_METHODS.pdSecretsLogin]: (input) => pdSecrets.login(input, currentSessionId),
+        [WS_METHODS.pdSecretsRespond]: (input) => pdSecrets.respond(input, currentSessionId),
+        [WS_METHODS.pdSecretsCancel]: () => pdSecrets.cancel(currentSessionId),
         [WS_METHODS.providerAuthRespond]: (input) =>
           Effect.annotateCurrentSpan({ instanceId: input.instanceId }).pipe(
             Effect.andThen(providerAuth.respond(input, currentSessionId)),
@@ -2653,6 +2704,7 @@ export const layerWsRpc = (
         [WS_METHODS.serverGetResourceTelemetryHistory]: (input) =>
           resourceTelemetry.readHistory(input),
         [WS_METHODS.serverGetUsageSummary]: (input) => usage.readSummary(input),
+        [WS_METHODS.serverGetCodexResetForecast]: () => codexResetForecast.read,
         [WS_METHODS.serverRefreshUsageRates]: (_input) => usage.refreshRates,
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),

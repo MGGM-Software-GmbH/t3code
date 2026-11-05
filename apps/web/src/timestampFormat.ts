@@ -93,7 +93,7 @@ export function resolveHour12(timestampFormat: TimestampFormat): boolean {
   return getTimestampFormatter(timestampFormat, false).resolvedOptions().hour12 ?? false;
 }
 
-export function parseTimestampDate(isoDate: string): Date | null {
+function parseTimestampDate(isoDate: string): Date | null {
   const date = new Date(isoDate);
   return Number.isNaN(date.getTime()) ? null : date;
 }
@@ -129,6 +129,30 @@ export function formatChatTimestampTooltip(
   const month = monthNameFormatter.format(date);
   const year = date.getFullYear();
   return `${time}, ${day}${ordinalSuffix(day)} ${month} ${year}`;
+}
+
+const germanTimestampFormatter = new Intl.DateTimeFormat("de-DE", {
+  weekday: "long",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/** Local timestamps in a fixed German numeric date format, optionally with the weekday. */
+export function formatGermanTimestamp(
+  isoDate: string,
+  options: { readonly includeWeekday?: boolean } = {},
+): string {
+  const date = parseTimestampDate(isoDate);
+  if (!date) return "";
+  const parts = new Map(
+    germanTimestampFormatter.formatToParts(date).map(({ type, value }) => [type, value]),
+  );
+  const weekday = options.includeWeekday === false ? "" : `${parts.get("weekday")}, `;
+  return `${weekday}${parts.get("day")}.${parts.get("month")}.${parts.get("year")} ${parts.get("hour")}:${parts.get("minute")}`;
 }
 
 export function formatShortTimestamp(isoDate: string, timestampFormat: TimestampFormat): string {

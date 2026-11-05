@@ -293,8 +293,15 @@ The server shows the exact line for how you started it, such as
 for your user. Where `t3` is not on your `PATH`, such as with only the
 desktop app installed, it names the full path of the app's own `t3` instead. It allows Chrome's sandbox with an AppArmor profile and installs
 any missing libraries and system fonts with apt; pages that load without text
-can mean the host has no fonts. It is safe to run again. Without `sudo`, it only
-reports what it would change.
+can mean the host has no fonts. It is safe to run again and reloads an existing
+AppArmor profile without replacing administrator changes. Without `sudo`, it
+reports what it would change and exits unsuccessfully when setup is required.
+
+The Linux shell installer runs browser setup before reporting a successful
+installation. If root is needed, it uses non-interactive sudo. If that is not
+available, run the printed setup command with root privileges and rerun the
+installer. Installing an extracted archive manually still needs the setup
+command above on affected hosts.
 
 The browser runs in Chrome's sandbox by default. Chrome cannot start that sandbox
 as root. If your T3 server runs as root, run it as a nonroot user to keep

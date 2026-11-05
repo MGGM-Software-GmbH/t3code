@@ -113,6 +113,10 @@ import { useAtomValue } from "@effect/atom-react";
 import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { WorkspaceMutationIdContext } from "./chat/ChatMarkdownMedia";
+import { FogBugzThreadContext } from "./fogbugz/FogBugzThreadContext";
+import { performFogBugzCaseAction, type FogBugzCaseAction } from "./fogbugz/fogbugzCaseActions";
+import type { FogBugzCase } from "@t3tools/contracts";
+import { fogbugzEnvironment } from "../state/fogbugz";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -1097,6 +1101,22 @@ export default function ChatView(props: ChatViewProps) {
       ? scopeProjectRef(activeThreadEnvironmentId, activeThreadProjectId)
       : null;
   const activeProject = useProject(activeProjectRef);
+  const fogbugzStatus = useEnvironmentQuery(
+    activeProject
+      ? fogbugzEnvironment.status({ environmentId: activeProject.environmentId, input: {} })
+      : null,
+  );
+  const fogbugzThread = useEnvironmentQuery(
+    isServerThread && activeThreadRef
+      ? fogbugzEnvironment.thread({
+          environmentId: activeThreadRef.environmentId,
+          input: { threadId: activeThreadRef.threadId },
+        })
+      : null,
+  );
+  const fogbugzCasesAvailable =
+    fogbugzThread.data !== null &&
+    fogbugzStatus.data?.projects.some((link) => link.projectId === activeProject?.id) === true;
   const activeProjectSettings = resolveProjectSettings(
     settings,
     activeProject?.id ?? null,
@@ -2344,6 +2364,7 @@ export default function ChatView(props: ChatViewProps) {
     addFilesSurfaceStable,
     addPullRequestSurfaceStable,
     addPullRequestsSurfaceStable,
+    addFogBugzCasesSurfaceStable,
     closePreviewPanelStable,
     copyRightPanelFilePathStable,
     createBrowserSurface,
@@ -2378,6 +2399,7 @@ export default function ChatView(props: ChatViewProps) {
     rightPanelMaximized,
     supportsPullRequests,
     pullRequestsSurfaceAvailable,
+    fogbugzCasesAvailable,
     gitCwd,
     activeProjectCwd,
     explicitDiffOpenRef,
@@ -2536,11 +2558,18 @@ export default function ChatView(props: ChatViewProps) {
   });
   const limitRecoveryBanner =
     serverRuntime?.status === "failed" &&
-    serverRuntime.lastErrorClass === "usage_limit" &&
+    (serverRuntime.lastErrorClass === "usage_limit" ||
+      isModelCapacityError(serverRuntime.lastError)) &&
     activeThreadShell?.latestRun
       ? usageLimitRecoveryBannerItem({
           runId: activeThreadShell.latestRun.runId,
-          resetAt: serverRuntime.usageLimitResetAt ?? null,
+          capacity: isModelCapacityError(serverRuntime.lastError),
+          resetAt: isModelCapacityError(serverRuntime.lastError)
+            ? settings.modelCapacityRetryDelayMinutes > 0 &&
+              activeThreadShell.limitRecovery?.runId === activeThreadShell.latestRun.runId
+              ? activeThreadShell.limitRecovery.resetAt
+              : null
+            : (serverRuntime.usageLimitResetAt ?? null),
           stoppedAt: activeThreadShell.latestRun.completedAt ?? activeThreadShell.updatedAt,
           recovery: activeThreadShell.limitRecovery ?? null,
           snoozedUntil: activeThreadShell.snoozedUntil,
@@ -2885,6 +2914,7 @@ export default function ChatView(props: ChatViewProps) {
   });
   const { onSend } = useComposerSend({
     environmentId,
+    activeWorkspaceRoot,
     routeThreadKey,
     currentRouteThreadKeyRef,
     draftId,
@@ -2971,6 +3001,34 @@ export default function ChatView(props: ChatViewProps) {
   };
   const onWorktreeSetupWorkLocallyStable = useStableCallback(onWorktreeSetupWorkLocally);
   const onComposerSendStable = useStableCallback(onSend);
+  const processFogBugzCase = async (action: FogBugzCaseAction, item: FogBugzCase) => {
+    if (!activeThreadId || !activeProject || !canOperateThread) {
+      throw new Error("Case actions require a project and permission to send messages.");
+    }
+    const addContext = (text: string) => {
+      if (!composerRef.current?.insertTextAtEnd(text, { ensureLeadingBoundary: true })) {
+        throw new Error("The composer is busy; try again once it is ready.");
+      }
+      scheduleComposerFocus();
+    };
+    const baseUrl = fogbugzStatus.data?.connection?.baseUrl;
+    if (!baseUrl) throw new Error("Connect FogBugz before referencing a case.");
+    await performFogBugzCaseAction(action, {
+      caseId: item.id,
+      baseUrl,
+      isCurrentThread: () => currentRouteThreadKeyRef.current === routeThreadKey,
+      addContext,
+      sendMessage: async (text) => {
+        if (isServerThread) {
+          await sendAppMessage(text);
+        } else {
+          addContext(text);
+          await onSend();
+        }
+      },
+    });
+  };
+  const processFogBugzCaseStable = useStableCallback(processFogBugzCase);
   const sendPreviewAnnotation = (
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
@@ -3193,6 +3251,9 @@ export default function ChatView(props: ChatViewProps) {
       activeSurfaceId={activeRightPanelSurface?.id ?? null}
       threadRef={activeThreadRef}
       environmentId={activeThread.environmentId}
+      projectId={activeThread.projectId}
+      onCaseAction={processFogBugzCaseStable}
+      canProcessCase={canOperateThread}
       visible={rightPanelOpen}
       composerDraftTarget={composerDraftTarget}
       keybindings={keybindings}
@@ -3342,6 +3403,10 @@ export default function ChatView(props: ChatViewProps) {
             />
           </header>
         )}
+
+        {isServerThread && !backgroundThread && activeThreadRef ? (
+          <FogBugzThreadContext key={activeThreadKey} threadRef={activeThreadRef} />
+        ) : null}
 
         <div className="relative flex min-h-0 min-w-0 flex-1">
           <ThreadFindCanvas
@@ -3986,6 +4051,20 @@ export default function ChatView(props: ChatViewProps) {
           onAddFiles={addFilesSurfaceStable}
           onAddPullRequest={addPullRequestSurfaceStable}
           onAddPullRequests={addPullRequestsSurfaceStable}
+          onAddFogBugzCases={addFogBugzCasesSurfaceStable}
+          onAddFogBugzCaseGit={() => {
+            if (
+              activeThreadRef &&
+              fogbugzCasesAvailable &&
+              fogbugzStatus.data?.connection?.capabilities?.caseGit !== false
+            )
+              useRightPanelStore.getState().open(activeThreadRef, "fogbugz-case-git");
+          }}
+          fogbugzCaseGitAvailable={
+            fogbugzCasesAvailable &&
+            canWriteSourceControl &&
+            fogbugzStatus.data?.connection?.capabilities?.caseGit !== false
+          }
           onAddDevice={addDeviceSurfaceStable}
           onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
           browserAvailable={canOperatePreview && browserAvailable}
@@ -3994,6 +4073,7 @@ export default function ChatView(props: ChatViewProps) {
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={pullRequestsSurfaceAvailable}
+          fogbugzCasesAvailable={fogbugzCasesAvailable}
           deviceAvailable={activeThreadRef !== null}
           sideChatAvailable={sideChat.available}
           sideChatDisabledReason={sideChatDisabledReason}

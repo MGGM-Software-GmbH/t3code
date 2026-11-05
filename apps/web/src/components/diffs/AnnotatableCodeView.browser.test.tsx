@@ -1,3 +1,4 @@
+import { restoreDiffReviewCommentRange } from "~/reviewCommentContext";
 import type { CodeViewDiffItem, FileDiffMetadata, SelectedLineRange } from "@pierre/diffs";
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import { StrictMode, type ComponentProps } from "react";
@@ -146,7 +147,7 @@ describe("diff comment drafts", () => {
         { ...refreshed.fileDiff, type: "rename-changed", hunks: [], cacheKey: "shared:pending" },
       ]),
     );
-    expect(container.querySelector("textarea")).toBeNull();
+    expect(editor().value).toBe("Keep this draft");
     await screen.rerender(view([refreshed], "loaded"));
     expect(editor().value).toBe("Keep this draft");
     expect(container.querySelector("mark")?.textContent).toBe("Line 1");
@@ -159,5 +160,28 @@ describe("diff comment drafts", () => {
       }),
     ]);
     expect(container.querySelector("p")?.textContent).toBe("Keep this draft");
+  });
+});
+
+describe("diff comment snapshots", () => {
+  it("retains the selected source after an agent replaces a file", async () => {
+    using _drafts = setup();
+    const original = file("shared.ts");
+    const replacement = file("shared.ts", 2);
+    replacement.fileDiff = parsePatchFiles(
+      "diff --git a/shared.ts b/shared.ts\n--- a/shared.ts\n+++ b/shared.ts\n@@ -1 +1 @@\n-old\n+agent replacement\n",
+    )[0]!.files[0]!;
+    await using screen = await render(view([original]), { container });
+    await click("Comment on shared.ts");
+    await typeComment("Keep the selected source");
+    await screen.rerender(view([replacement], "refreshed"));
+    await expect.element(screen.getByText("Source changed.", { exact: false })).toBeVisible();
+    await click("Comment");
+    const comments = useComposerDraftStore.getState().getComposerDraft(target)!.reviewComments;
+    expect(comments).toHaveLength(1);
+    expect(comments[0]!.diff).toContain("+new");
+    expect(comments[0]!.diff).not.toContain("agent replacement");
+    expect(restoreDiffReviewCommentRange(replacement.fileDiff, comments[0]!)).toBeNull();
+    expect(restoreDiffReviewCommentRange(original.fileDiff, comments[0]!)).not.toBeNull();
   });
 });

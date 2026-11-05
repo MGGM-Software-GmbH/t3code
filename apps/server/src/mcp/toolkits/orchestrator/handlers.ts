@@ -10,6 +10,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
+import { FogBugzService } from "../../../fogbugz/FogBugzService.ts";
 
 const handlers = {
   orchestrator_capabilities: McpToolAccess.reads((input) =>
@@ -156,7 +157,17 @@ const handlers = {
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-      return yield* service.readThread(scope, input);
+      const result = yield* service.readThread(scope, input);
+      const fogbugz = yield* FogBugzService;
+      const linkedCase = yield* fogbugz
+        .thread(input.threadId)
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message }),
+          ),
+        );
+      return { ...result, fogbugz: linkedCase };
     }),
   ),
   t3_thread_update: McpToolAccess.writesThreads(

@@ -2,6 +2,7 @@ import {
   AuthEnvironmentMaintainScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
+  AuthFilesystemWriteScope,
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
@@ -11,6 +12,7 @@ import {
   ThreadId,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
+  AuthPreviewOperateScope,
   AuthSourceControlWriteScope,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
@@ -40,6 +42,40 @@ describe("RPC authorization scopes", () => {
       WS_METHODS.scheduledTasksListWebhookDeliveries,
       WS_METHODS.scheduledTasksGetWebhookDelivery,
       WS_METHODS.scheduledTasksRotateWebhookToken,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+    }
+  });
+
+  it("guards FogBugz credentials separately from case reads and thread mutations", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzManageCaseGit)).toBe(
+      AuthSourceControlWriteScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzMutateCaseFiles)).toBe(
+      AuthFilesystemWriteScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzOpenCase)).toBe(AuthPreviewOperateScope);
+    for (const method of [
+      WS_METHODS.fogbugzConnect,
+      WS_METHODS.fogbugzDisconnect,
+      WS_METHODS.fogbugzTest,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthSettingsWriteScope);
+    }
+    for (const method of [
+      WS_METHODS.fogbugzStatus,
+      WS_METHODS.fogbugzProjects,
+      WS_METHODS.fogbugzCases,
+      WS_METHODS.fogbugzCaseContext,
+      WS_METHODS.fogbugzThread,
+      WS_METHODS.fogbugzThreadCases,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
+    for (const method of [
+      WS_METHODS.fogbugzLinkProject,
+      WS_METHODS.fogbugzLinkThread,
+      WS_METHODS.fogbugzCreateThread,
     ]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
     }

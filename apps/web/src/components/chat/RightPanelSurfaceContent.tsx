@@ -1,5 +1,6 @@
 import type {
   EditorId,
+  FogBugzCase,
   EnvironmentId,
   PreviewAnnotationPayload,
   ProjectId,
@@ -24,6 +25,7 @@ import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
+import type { FogBugzCaseAction } from "../fogbugz/fogbugzCaseActions";
 
 const PreviewPanel = lazy(() =>
   import("../preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
@@ -33,6 +35,14 @@ const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
+const FogBugzCaseGitPanel = lazy(() =>
+  import("../fogbugz/FogBugzCaseGitPanel").then((module) => ({
+    default: module.FogBugzCaseGitPanel,
+  })),
+);
+const FogBugzCases = lazy(() =>
+  import("../fogbugz/FogBugzCasesPage").then((module) => ({ default: module.FogBugzCases })),
+);
 
 type RightPanelTerminalProps = Omit<
   PersistentThreadTerminalPanelProps,
@@ -63,6 +73,9 @@ export function RightPanelSurfaceContent(props: {
   readonly activeSurfaceId: string | null;
   readonly threadRef: ScopedThreadRef;
   readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  readonly onCaseAction: (action: FogBugzCaseAction, item: FogBugzCase) => Promise<void>;
+  readonly canProcessCase: boolean;
   readonly visible: boolean;
   readonly composerDraftTarget: ScopedThreadRef | DraftId;
   readonly keybindings: ResolvedKeybindingsConfig;
@@ -168,6 +181,32 @@ export function RightPanelSurfaceContent(props: {
     }
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
+    case "fogbugz-case-git":
+      return (
+        <Suspense fallback={null}>
+          <FogBugzCaseGitPanel
+            key={scopedThreadKey(threadRef)}
+            threadRef={threadRef}
+            composerDraftTarget={props.composerDraftTarget}
+            keybindings={props.keybindings}
+            availableEditors={props.files.availableEditors}
+            workspaceMutationId={props.workspaceMutationId}
+            openInShortcutEnabled={visible}
+          />
+        </Suspense>
+      );
+    case "fogbugz-cases":
+      return (
+        <Suspense fallback={null}>
+          <FogBugzCases
+            key={`${scopedThreadKey(threadRef)}:${props.projectId}`}
+            environmentId={props.environmentId}
+            projectId={props.projectId}
+            onCaseAction={props.onCaseAction}
+            canProcessCase={props.canProcessCase}
+          />
+        </Suspense>
+      );
     case "side-chat":
       // Not lazy: revealing a suspended tiptap editor tears down its view and crashes the composer.
       return (

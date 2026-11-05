@@ -58,6 +58,30 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it("finds MGGM thread layout and places its page directly below General", () => {
+    const results = searchSettings("MGGM idle projects");
+    expect(results.find((item) => item.id === "mggm-thread-sidebar")?.to).toBe("/settings/mggm");
+    expect(
+      searchSettings("FogBugz analysis").some((item) => item.id === "fogbugz-auto-analyze"),
+    ).toBe(true);
+    expect(SETTINGS_NAV_GROUPS[0]?.paths.slice(0, 2)).toEqual([
+      "/settings/general",
+      "/settings/mggm",
+    ]);
+  });
+  it.each(["model capacity", "same model", "capacity retry minutes"])(
+    "finds the capacity retry setting for %s",
+    (query) => {
+      expect(searchSettings(query).map((item) => item.id)).toContain("model-capacity-retry-delay");
+    },
+  );
+
+  it("finds the slow request warning threshold by the warning text", () => {
+    expect(searchSettings("some requests are slow").map((item) => item.id)).toContain(
+      "slow-request-warning-threshold",
+    );
+  });
+
   it("matches titles, sections, and remembered setting details", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
@@ -181,6 +205,17 @@ describe("searchSettings", () => {
     });
   });
 
+  it("ranks keybinding commands after other settings", () => {
+    const ids = searchSettings("model").map((item) => item.id);
+    expect(ids).toContain("default-model");
+    expect(ids.indexOf("keybinding-modelPicker.toggle")).toBeGreaterThan(
+      ids.indexOf("model-capacity-retry-delay"),
+    );
+    expect(ids.indexOf("keybinding-modelPicker.toggle")).toBeGreaterThan(
+      ids.indexOf("text-generation-model"),
+    );
+  });
+
   it("sends commands without a default binding to the section", () => {
     expect(searchSettings("thread.stop")[0]).toMatchObject({
       id: "keybinding-thread.stop",
@@ -268,6 +303,7 @@ describe("auto-settlement search availability", () => {
       hasThreadAutoSettlement: availability.eligibleEnvironmentIds.length > 0,
     });
     expect(searchSettings("auto-settle", items).map((item) => item.id)).toEqual([
+      "fogbugz-auto-settle",
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
       "days-before-auto-settle",

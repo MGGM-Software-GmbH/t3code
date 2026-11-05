@@ -1,4 +1,8 @@
-import { DEFAULT_SERVER_SETTINGS, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS, type ClientSettings } from "@t3tools/contracts/settings";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -44,13 +48,14 @@ describe("client settings hydration", () => {
 
   it("waits for saved model preferences before applying the first server edit", async () => {
     const provider = ProviderInstanceId.make("codex_work");
+    const unmigratedSettings = { ...DEFAULT_SERVER_SETTINGS, favorites: null };
     let finishRead!: (settings: ClientSettings) => void;
     persistenceMocks.getClientSettings.mockReturnValueOnce(
       new Promise((resolve) => {
         finishRead = resolve;
       }),
     );
-    const patch = prepareModelPreferencesPatch(DEFAULT_SERVER_SETTINGS, {
+    const patch = prepareModelPreferencesPatch(unmigratedSettings, {
       setModelFavorites: [{ provider, model: "new", favorite: true }],
       setModelsHidden: [{ provider, model: "new", hidden: true }],
     });
@@ -61,7 +66,7 @@ describe("client settings hydration", () => {
         [provider]: { hiddenModels: ["saved-hidden"], modelOrder: ["saved-order"] },
       },
     });
-    const edited = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, await patch);
+    const edited = applyServerSettingsPatch(unmigratedSettings, await patch);
     expect(edited.favorites).toEqual([...savedSettings.favorites, { provider, model: "new" }]);
     expect(edited.providerModelPreferences?.[provider]).toEqual({
       hiddenModels: ["saved-hidden", "new"],
@@ -264,6 +269,33 @@ describe("persistClientSettingsUpdate", () => {
 });
 
 describe("mergeEnvironmentSettings", () => {
+  it("combines the selected environment's server settings with client preferences", () => {
+    const serverSettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      favorites: null,
+      providerInstances: {
+        [ProviderInstanceId.make("codex_remote")]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+        },
+      },
+    };
+    const clientSettings = {
+      ...DEFAULT_CLIENT_SETTINGS,
+      favorites: [
+        {
+          provider: ProviderInstanceId.make("codex_remote"),
+          model: "gpt-5.4",
+        },
+      ],
+    };
+
+    const settings = mergeEnvironmentSettings(serverSettings, clientSettings);
+
+    expect(settings.providerInstances).toBe(serverSettings.providerInstances);
+    expect(settings.favorites).toBe(clientSettings.favorites);
+  });
+
   it("keeps server settlement settings when legacy client data contains retired keys", () => {
     const serverSettings = {
       ...DEFAULT_SERVER_SETTINGS,
@@ -326,8 +358,11 @@ it("uses the environment's model preferences after migration, including empty li
     favorites: [{ provider: ProviderInstanceId.make("codex_work"), model: "old" }],
     providerModelPreferences: { codex_work: { hiddenModels: ["old"], modelOrder: [] } },
   };
+  expect(
+    mergeEnvironmentSettings({ ...DEFAULT_SERVER_SETTINGS, favorites: null }, client).favorites,
+  ).toEqual(client.favorites);
   expect(mergeEnvironmentSettings(DEFAULT_SERVER_SETTINGS, client).favorites).toEqual(
-    client.favorites,
+    DEFAULT_SERVER_SETTINGS.favorites,
   );
   const merged = mergeEnvironmentSettings(
     { ...DEFAULT_SERVER_SETTINGS, favorites: [], providerModelPreferences: {} },

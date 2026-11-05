@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
@@ -14,6 +15,8 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
+import { caseGitPath, caseGitMetadataPath } from "../fogbugz/caseGitPath.ts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
 export class UnknownWorkspaceError extends Schema.TaggedError<UnknownWorkspaceError>()(
   "UnknownWorkspaceError",
@@ -90,6 +93,67 @@ export const make = Effect.gen(function* () {
       for (const project of projects) {
         if (within(yield* resolveRoot(project.workspaceRoot))) return true;
       }
+
+      // Unlinking a case or changing the account immediately revokes access to its managed root.
+      const checkouts = yield* sql<{
+        projectId: string;
+        connectionId: string;
+        personId: number;
+        caseId: number;
+        threadId: string;
+      }>`
+        SELECT json_extract(connection.payload, '$.id') AS connectionId,
+          json_extract(connection.payload, '$.personId') AS personId,
+          link.case_id AS caseId, link.thread_id AS threadId, link.project_id AS projectId
+        FROM fogbugz_threads link
+        JOIN orchestration_v2_projection_threads thread ON thread.thread_id = link.thread_id AND thread.deleted_at IS NULL
+        JOIN fogbugz_connection connection ON connection.id = 1
+        WHERE json_extract(connection.payload, '$.authenticated') = 1
+      `.pipe(
+        NodeSqliteClient.readOnly,
+        Effect.orElseSucceed(() => []),
+      );
+      const baseDir = yield* resolveRoot(config.baseDir);
+      const caseSettings = yield* settings.getSettings.pipe(Effect.option);
+      if (baseDir)
+        for (const checkout of checkouts) {
+          const project = projects.find((item) => item.id === checkout.projectId);
+          const configured =
+            project && Option.isSome(caseSettings)
+              ? resolveProjectSettings(caseSettings.value, project.id).settings
+                  .fogbugzCaseGitDirectory
+              : "";
+          const root = caseGitPath(
+            path,
+            baseDir,
+            checkout.connectionId,
+            checkout.personId,
+            checkout.caseId,
+            checkout.threadId,
+            ...(project ? [{ workspaceRoot: project.workspaceRoot, directory: configured }] : []),
+          );
+          if (
+            root &&
+            within(root) &&
+            (yield* resolveRoot(root)) === root &&
+            (yield* fileSystem
+              .readFileString(
+                path.join(
+                  caseGitMetadataPath(path, baseDir, root, configured !== ""),
+                  "repository-id",
+                ),
+              )
+              .pipe(
+                Effect.map(
+                  (identity) =>
+                    configured === "" ||
+                    identity.startsWith(`${checkout.connectionId}:${checkout.personId}:`),
+                ),
+                Effect.orElseSucceed(() => false),
+              ))
+          )
+            return true;
+        }
 
       const threads = yield* sql<{ readonly worktreePath: string; readonly projectId: string }>`
         SELECT DISTINCT

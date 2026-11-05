@@ -13,7 +13,6 @@ import { type LegendListRef } from "@legendapp/list/react";
 import {
   CHAT_TIMELINE_ANCHOR_OFFSET,
   timelineContentOverflowsViewport,
-  readTimelinePosition,
   observeTimelineRun,
   type TimelineRunObservation,
 } from "./timelineScrollAnchoring";
@@ -47,7 +46,7 @@ interface TimelineAnchor {
   readonly messageId: MessageId | null;
 }
 
-/** One visit to a thread; a switch starts a new one from the remembered position. */
+/** One visit to a thread; a switch starts a new one following the latest content. */
 interface TimelineFollowVisit {
   readonly threadKey: string | null;
   readonly followEnd: boolean;
@@ -169,7 +168,6 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   const {
     legendListRef,
     composerTimelineInset,
-    routeThreadKey,
     activeThreadKey,
     isServerThread,
     serverProjection,
@@ -188,7 +186,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   if (visit.threadKey !== activeThreadKey) {
     visit = {
       threadKey: activeThreadKey,
-      followEnd: readTimelinePosition(routeThreadKey)?.atEnd !== false,
+      followEnd: true,
     };
     setVisit(visit);
   }
