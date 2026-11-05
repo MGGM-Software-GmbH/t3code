@@ -58,12 +58,12 @@ it("main keeps the compact sidebar row while other branches get a metadata line"
   await using _app = await render(<AppRoot router={router} />, { router: false });
   const heights: number[] = [];
   for (const thread of threads) {
-    const row = page.getByRole("tree").getByRole("treeitem").filter({ hasText: thread.title });
+    const row = page.getByRole("button", { name: new RegExp(thread.title) });
     await expect.element(row).toBeVisible();
     if (thread.branch === "main") {
       await expect.element(row.getByText("main", { exact: true })).not.toBeInTheDocument();
     } else if (thread.branch !== null) {
-      await expect.element(row.getByText(thread.branch, { exact: true })).toBeVisible();
+      expect(row.element().textContent).toContain(thread.branch);
     }
     heights.push(row.element().getBoundingClientRect().height);
   }

@@ -31,6 +31,8 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 import { AppRoot } from "~/AppRoot";
+// Compile the lazy chat view before the integrated journeys enter their test timeout.
+import "~/components/ChatView";
 import { getRouter } from "~/router";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";

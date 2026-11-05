@@ -31,6 +31,10 @@ vi.mock(import("./useScopedSettings"), async (original) => ({
   useScopedSettings: (() => state.settings!) as never,
   useUpdateScopedSettings: () => state.update,
 }));
+vi.mock(import("./SettingsScopeContext"), async (original) => ({
+  ...(await original()),
+  useSettingsScope: (() => ({ target: null })) as never,
+}));
 vi.mock(import("../../localApi"), async (original) => ({
   ...(await original()),
   readLocalApi: () => ({ dialogs: { confirm: state.confirm } }) as never,
