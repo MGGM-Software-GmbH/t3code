@@ -1,7 +1,7 @@
 import { CommandId, MessageId, ThreadId, type ProjectId } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -90,7 +90,7 @@ const make = Effect.gen(function* () {
   const launches = yield* ThreadLaunchService;
   const sql = yield* SqlClient.SqlClient;
   const lock = yield* Semaphore.make(1);
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const decodeCursor = Schema.decodeEffect(Schema.fromJsonString(Cursor));
   const encodeCursor = Schema.encodeEffect(Schema.fromJsonString(Cursor));
 
@@ -145,7 +145,7 @@ const make = Effect.gen(function* () {
             return yield* new FogBugzAutomationError({ projectId, reason: "model" });
           // Stable IDs let the launch service replay its receipts after a restart without another paid turn.
           const digest = yield* crypto
-            .digest("SHA-256", new TextEncoder().encode(identity))
+            .digest(Digest.sha256, new TextEncoder().encode(identity))
             .pipe(Effect.mapError(storageError));
           const key = `fogbugz:${Buffer.from(digest).toString("hex").slice(0, 16)}:${projectId}:${item.id}:${event.id}`;
           const threadId = ThreadId.make(key);

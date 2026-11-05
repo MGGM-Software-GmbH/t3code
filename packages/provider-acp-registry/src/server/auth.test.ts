@@ -364,7 +364,7 @@ it.effect("runs Copilot's advertised legacy terminal command instead of ACP auth
     yield* h.phase("succeeded");
     assert.deepEqual(h.started, [3]);
     assert.deepEqual(h.changed, [true]);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("rejects malformed legacy terminal metadata without invoking ACP authenticate", () =>
@@ -381,7 +381,7 @@ it.effect("rejects malformed legacy terminal metadata without invoking ACP authe
     assert.isUndefined(h.terminalSpawn());
     assert.deepEqual(h.authenticated, []);
     assert.deepEqual(h.started, []);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("does not offer legacy terminal sign-in without a PTY", () =>
@@ -397,7 +397,7 @@ it.effect("does not offer legacy terminal sign-in without a PTY", () =>
     assert.deepEqual(state.methods, []);
     assert.isUndefined(h.terminalSpawn());
     assert.deepEqual(h.authenticated, []);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("cancels the login PTY and rejects further terminal input", () =>

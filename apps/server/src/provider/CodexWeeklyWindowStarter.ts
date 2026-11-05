@@ -10,7 +10,7 @@ import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -97,7 +97,7 @@ export class CodexWeeklyWindowStarter extends Context.Service<
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const home = yield* HostProcess.HomeDirectory;
   const userId = yield* HostProcess.UserId;
@@ -227,7 +227,7 @@ const make = Effect.gen(function* () {
           return yield* new CodexWeeklyWindowStartError({ stage: "invocation" });
         }
         const key = Hex.encode(
-          yield* crypto.digest("SHA-256", new TextEncoder().encode(input.config.homePath)),
+          yield* crypto.digest(Digest.sha256, new TextEncoder().encode(input.config.homePath)),
         );
         const stateFile = path.join(
           server.providerStatusCacheDir,

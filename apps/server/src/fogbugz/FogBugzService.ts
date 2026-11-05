@@ -16,7 +16,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -101,7 +101,7 @@ export const layer = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
     const secrets = yield* ServerSecretStore.ServerSecretStore;
     const lock = yield* Semaphore.make(1);
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     const decodeConnection = Schema.decodeEffect(Schema.fromJsonString(FogBugzConnection));
     const encodeConnection = Schema.encodeEffect(Schema.fromJsonString(FogBugzConnection));
     const connection = Effect.fn("FogBugz.connection")(function* () {
@@ -459,7 +459,7 @@ export const layer = Layer.effect(
             );
             const sameIdentity = previous?.personId === person.id;
             const next = {
-              id: yield* crypto.randomUUIDv4().pipe(Effect.mapError(storageError)),
+              id: yield* crypto.uuidV4().pipe(Effect.mapError(storageError)),
               baseUrl,
               username: input.username,
               personId: person.id,

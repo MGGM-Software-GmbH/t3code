@@ -29,6 +29,7 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as Scheduler from "./Scheduler.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 
 it.effect.each(["on time", "after restart", "capacity", "capacity after restart"])(
   "runs Scheduled Tasks and a persisted limit retry through the same scheduler %s",
@@ -95,6 +96,7 @@ it.effect.each(["on time", "after restart", "capacity", "capacity after restart"
       const receipts = yield* Queue.unbounded<"task" | "retry">();
       const layerDependencies = Layer.mergeAll(
         NodeCrypto.layer,
+        ManagedPolicy.layerTest(),
         Layer.mock(Orchestrator.OrchestratorV2)({}),
         Layer.mock(ThreadLaunchService.ThreadLaunchService)({
           launch: () =>

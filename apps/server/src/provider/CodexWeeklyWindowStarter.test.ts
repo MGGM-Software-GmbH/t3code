@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import {
@@ -141,7 +142,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
 `;
 
 const layerTest = ServerConfig.layerTest(process.cwd(), { prefix: "t3-weekly-starter-" }).pipe(
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 it.effect("scans every hour without a browser connection", () =>

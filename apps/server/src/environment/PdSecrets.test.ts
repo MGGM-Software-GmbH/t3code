@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { PdSecretsError } from "@t3tools/contracts";
@@ -155,7 +156,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
   };
 });
 
-it.layer(NodeServices.layer)("PdSecrets", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PdSecrets", (it) => {
   it.effect("hides an absent CLI without starting authentication", () =>
     Effect.gen(function* () {
       const h = yield* makeHarness(false);

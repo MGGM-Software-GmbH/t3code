@@ -15,7 +15,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
@@ -59,7 +59,7 @@ export const layer = Layer.effect(
     const projections = yield* ProjectionStoreV2;
     const projects = yield* ProjectStoreV2;
     const settings = yield* ServerSettingsService;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* Digest.Digest;
     const locations = new Map<RunId, { cwd: string; shared: boolean }>();
     const location = Effect.fn("FogBugzCaseGit.location")(
       function* (
@@ -272,7 +272,7 @@ export const layer = Layer.effect(
                 return {
                   revision: Hex.encode(
                     yield* crypto.digest(
-                      "SHA-256",
+                      Digest.sha256,
                       new TextEncoder().encode(
                         `${repository.connectionId}:${repository.personId}:${repository.repositoryId}:${cwd}:${head.code === 0 ? head.output : "empty"}:${tree}:${staged.raw}`,
                       ),

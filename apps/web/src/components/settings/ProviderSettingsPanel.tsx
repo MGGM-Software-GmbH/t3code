@@ -901,12 +901,13 @@ export function EnvironmentProviderSettings({
     },
   );
 
-  const resetDefaultInstance = useStableCallback(async (driverKind: ProviderDriverKind) => {
-    const instanceId = defaultInstanceIdForDriver(driverKind);
-    const instance = settings.providerInstances?.[instanceId] ?? { driver: driverKind };
+  const resetDefaultInstance = useStableCallback(async (instanceId: ProviderInstanceId) => {
+    const defaults = DEFAULT_PROVIDER_INSTANCE_CONFIGS[instanceId];
+    const instance = settings.providerInstances?.[instanceId] ?? defaults;
+    if (instance === undefined) throw new Error("Provider instance no longer exists.");
     const turnsOff =
       resolveProviderInstanceEnabled(instance) &&
-      !resolveProviderInstanceEnabled({ driver: driverKind });
+      !resolveProviderInstanceEnabled(defaults ?? { driver: instance.driver });
     const confirmed = await confirmProviderInstanceRemoval(
       `Reset the ${providerInstanceName(instance)} provider to its defaults?`,
       turnsOff ? " It will also be turned off." : "",

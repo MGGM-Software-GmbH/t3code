@@ -89,10 +89,10 @@ const stableIntegrationMigrations = [
   [75, "SubagentDeliveryState", Migration0075],
   [76, "ProjectionProjectsPinArchive", Migration0076],
 ] as const;
-import Migration0080 from "./Migrations/077_RepairBooleanSettledOverride.ts";
-import Migration0081 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
+import Migration0080 from "./Migrations/080_RepairBooleanSettledOverride.ts";
+import Migration0081 from "./Migrations/081_DropOrchestrationEventCorrelationIndex.ts";
 
-import Migration0082 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
+import Migration0082 from "./Migrations/082_DelegatedRecoveryIndexes.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],

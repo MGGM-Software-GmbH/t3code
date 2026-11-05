@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -109,7 +110,9 @@ const prepare = Effect.gen(function* () {
   return { fs, path, root, remote, git, repository, activity, shared, project, serviceLayer };
 });
 
-const runtime = ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer));
+const runtime = ProcessRunner.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 describe("per-thread case Git checkout", () => {
   it.live(

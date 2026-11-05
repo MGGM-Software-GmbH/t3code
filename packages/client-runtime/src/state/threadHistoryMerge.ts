@@ -200,6 +200,14 @@ export function mergeOlderHistoryIntoProjection(
       ...page,
       ...projection.visibleTurnItems.filter((row) => !pageKeys.has(projectedItemKey(row))),
     ];
+    if (work === undefined) {
+      visible = [
+        ...visible.filter((row) => row.sourceThreadId !== projection.thread.id),
+        ...visible
+          .filter((row) => row.sourceThreadId === projection.thread.id)
+          .sort((left, right) => left.item.ordinal - right.item.ordinal),
+      ];
+    }
   }
   if (
     visible.length === projection.visibleTurnItems.length &&

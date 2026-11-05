@@ -191,7 +191,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         });
         const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
           Effect.flatMap((reloadedService) => reloadedService.getSettings),
-          Effect.provide(ServerSettingsModule.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+          Effect.provide(
+            ServerSettingsModule.layer.pipe(
+              Layer.provide(ServerSecretStore.layer),
+              Layer.provide(ManagedPolicy.layerTest()),
+            ),
+          ),
         );
         assert.deepInclude(reloaded, {
           favorites: [],
@@ -262,7 +267,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         assert.equal(document.defaultsProfile, "mggm");
         const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
           Effect.flatMap((reloadedService) => reloadedService.getSettings),
-          Effect.provide(ServerSettingsModule.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+          Effect.provide(
+            ServerSettingsModule.layer.pipe(
+              Layer.provide(ServerSecretStore.layer),
+              Layer.provide(ManagedPolicy.layerTest()),
+            ),
+          ),
         );
         assert.deepEqual(reloaded, settings);
       }).pipe(Effect.provide(layerServerSettings())),
@@ -286,7 +296,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         assert.deepEqual(document.defaultModelSelection, selection);
         const reloaded = yield* ServerSettingsModule.ServerSettingsService.pipe(
           Effect.flatMap((reloadedService) => reloadedService.getSettings),
-          Effect.provide(ServerSettingsModule.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+          Effect.provide(
+            ServerSettingsModule.layer.pipe(
+              Layer.provide(ServerSecretStore.layer),
+              Layer.provide(ManagedPolicy.layerTest()),
+            ),
+          ),
         );
         assert.deepEqual(reloaded.defaultModelSelection, selection);
         assert.isTrue(reloaded.defaultAutoPull);
@@ -2975,6 +2990,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const stored = JSON.parse(yield* fs.readFileString(config.settingsPath));
         assert.deepEqual(stored.providerInstances[claudeId], {
           driver: claude,
+          enabled: true,
           displayName: "Claude (work)",
           environment: [{ ...bedrock, value: "0" }, { ...bedrock, value: "2" }, userVariable],
           config: { binaryPath: "/usr/local/bin/claude" },
@@ -3161,6 +3177,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const stored = JSON.parse(yield* fs.readFileString(config.settingsPath));
         assert.deepEqual(stored.providerInstances[claudeId], {
           ...storedClaude,
+          enabled: true,
           displayName: "Claude (work)",
           config: { ...storedClaude.config, autoCompactWindow: "400000" },
         });

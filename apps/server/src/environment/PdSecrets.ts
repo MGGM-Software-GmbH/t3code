@@ -9,7 +9,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { PtyAdapter, type PtyProcess } from "@t3tools/shared/PtyAdapter";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -57,7 +57,7 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const fileSystem = yield* FileSystem.FileSystem;
   const scope = yield* Scope.Scope;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const settings = yield* ServerSettings.ServerSettingsService;
   let active: LoginFlow | undefined;
   const command = () =>
@@ -179,7 +179,7 @@ const make = Effect.gen(function* () {
   ) {
     const executable = yield* command();
     if (executable === null) return yield* new PdSecretsError({ reason: "not_installed" });
-    const id = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+    const id = yield* crypto.uuidV4().pipe(Effect.orDie);
     // Reserve before spawning so concurrent clients cannot start competing cache writers.
     const flow = yield* Effect.suspend(() => {
       if (active) return Effect.fail(new PdSecretsError({ reason: "busy" }));

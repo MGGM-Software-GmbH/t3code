@@ -797,10 +797,10 @@ const make = Effect.gen(function* () {
             ),
         ),
       );
-      const stripped = {
-        ...stripDefaultServerSettings({ ...settings, providerInstances }, managed.defaults),
-        defaultsProfile: "mggm" as const,
-      };
+      const stripped = Object.assign(
+        { defaultsProfile: "mggm" as const },
+        stripDefaultServerSettings({ ...settings, providerInstances }, managed.defaults),
+      );
       const sparseSettingsJson = yield* encodeServerSettingsJson(
         managed.keepStored === undefined
           ? stripped

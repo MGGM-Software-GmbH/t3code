@@ -28,7 +28,13 @@ const fakeSpawner = (host: { readonly font?: string; readonly missingLibrary?: b
   const spawner = ChildProcessSpawner.make((command) =>
     Effect.gen(function* () {
       if (!ChildProcess.isStandardCommand(command)) return yield* Effect.die("Unexpected pipeline");
-      commands.push([command.command, ...command.args]);
+      commands.push([
+        command.command,
+        ...command.args.map((argument) => {
+          if (typeof argument !== "string") throw new Error("Unexpected redacted fixture argument");
+          return argument;
+        }),
+      ]);
       if (command.command === "apt-get" && command.args.includes("fonts-liberation")) font = FONT;
       if (command.command === "fc-match" && font === undefined) {
         return yield* PlatformError.systemError({

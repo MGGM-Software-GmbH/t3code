@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
@@ -70,7 +71,7 @@ function fixture() {
     return new Response(`<response>${content}</response>`);
   });
   const dependencies = Layer.merge(Sqlite.layerMemory, secretLayer).pipe(
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   return {
     secrets,
@@ -428,7 +429,13 @@ describe("FogBugz integration persistence and access", () => {
             (yield* sql`SELECT thread_id FROM orchestration_v2_projection_threads`).length,
           ).toBe(1);
         }).pipe(Effect.provide(layer.pipe(Layer.provide(test.dependencies))));
-      }).pipe(Effect.provide(test.dependencies.pipe(Layer.provide(NodeServices.layer))));
+      }).pipe(
+        Effect.provide(
+          test.dependencies.pipe(
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
+      );
     },
   );
 
@@ -494,7 +501,7 @@ describe("FogBugz integration persistence and access", () => {
         Effect.provide(
           test.service.pipe(
             Layer.provideMerge(test.dependencies),
-            Layer.provide(NodeServices.layer),
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
       );
@@ -518,7 +525,11 @@ describe("FogBugz integration persistence and access", () => {
         expect(fetch.mock.calls).toHaveLength(count);
         yield* service.connect(credentials);
         expect((yield* service.status()).connection?.authenticated).toBe(true);
-      }).pipe(Effect.provide(test.service.pipe(Layer.provide(NodeServices.layer))));
+      }).pipe(
+        Effect.provide(
+          test.service.pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+        ),
+      );
     },
   );
 
@@ -567,7 +578,7 @@ describe("FogBugz integration persistence and access", () => {
       Effect.provide(
         Layer.merge(test.service, threads).pipe(
           Layer.provideMerge(test.dependencies),
-          Layer.provide(NodeServices.layer),
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     );

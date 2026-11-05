@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -135,7 +136,7 @@ function fixture(mode: "initial" | "assigned" | "never" = "initial") {
           return { sequence: 1, storedEvents: [] };
         }),
     }),
-  ).pipe(Layer.provideMerge(NodeServices.layer));
+  ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
   return { state, dependencies, service: layer.pipe(Layer.provide(dependencies)) };
 }
 

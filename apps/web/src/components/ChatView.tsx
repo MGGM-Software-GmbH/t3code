@@ -113,6 +113,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { WorkspaceMutationIdContext } from "./chat/ChatMarkdownMedia";
+import { isModelCapacityError } from "@t3tools/shared/orchestrationV2ThreadError";
 import { FogBugzThreadContext } from "./fogbugz/FogBugzThreadContext";
 import { performFogBugzCaseAction, type FogBugzCaseAction } from "./fogbugz/fogbugzCaseActions";
 import type { FogBugzCase } from "@t3tools/contracts";
