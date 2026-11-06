@@ -18,14 +18,10 @@ import { ComposerControl } from "../chat/ComposerControl";
 import { providerClients } from "../settings/providerDriverMeta";
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from "../ui/sidebar";
 import { UsageIndicatorDetails } from "./UsageIndicatorDetails";
+import { resetExpiringSoon } from "./resetCreditExpiry";
 import { readUsagePagePreferences, saveUsagePagePreferences } from "./usagePagePreferences";
 
 const EMPTY_NOTICES: readonly string[] = [];
-
-function resetExpiringSoon(expiresAt: string | undefined | null, now: number) {
-  const expiresIn = expiresAt ? Date.parse(expiresAt) - now : null;
-  return expiresIn !== null && expiresIn >= 0 && expiresIn <= 120 * 60 * 60_000;
-}
 
 /** Keep the expiry attached to its account and the local timestamp on one line. */
 function BankedResetExpiry({
