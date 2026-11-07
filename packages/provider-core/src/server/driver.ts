@@ -9,6 +9,7 @@ import type {
   ResolvedProviderInstanceEnvironment,
   ProviderInstanceId,
   ServerProvider,
+  ServerProviderUsageLimits,
   ServerProviderWorkspaceSnapshot,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
@@ -45,10 +46,10 @@ export interface ProviderInstance {
   ) => Effect.Effect<ProviderWorkspaceSnapshot, ProviderDriverError>;
   readonly refreshModels?: () => Effect.Effect<void, ProviderDriverError>;
   readonly invalidateCaches?: Effect.Effect<void>;
-  readonly consumeResetCredit?: () => Effect.Effect<
-    ProviderConsumeResetCreditOutcome,
-    ProviderDriverError
-  >;
+  readonly consumeResetCredit?: (options?: {
+    /** Recheck automation conditions under the account lock against freshly read limits. */
+    readonly onlyIf?: (limits: ServerProviderUsageLimits) => boolean;
+  }) => Effect.Effect<ProviderConsumeResetCreditOutcome, ProviderDriverError>;
   readonly orchestrationAdapter: ProviderAdapter.ProviderAdapterV2["Service"];
   readonly textGeneration: ProviderTextGeneration;
   readonly auth?: ProviderAuthController;

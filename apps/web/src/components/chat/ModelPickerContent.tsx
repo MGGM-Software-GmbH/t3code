@@ -23,6 +23,7 @@ import {
 } from "react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
+import { CodexAutoResetControl } from "./CodexAutoResetControl";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
 import {
   modelPickerLegacySectionKey,
@@ -1076,6 +1077,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onOpenProviderSetup={onOpenProviderSetup}
             />
             {props.listFooter}
+            {props.environmentId !== null &&
+            instanceEntries.some(
+              (entry) =>
+                entry.driverKind === "codex" &&
+                (selectedInstanceId === "favorites" || selectedInstanceId === entry.instanceId),
+            ) ? (
+              <CodexAutoResetControl environmentId={props.environmentId} />
+            ) : null}
           </div>
         </Combobox>
       </div>

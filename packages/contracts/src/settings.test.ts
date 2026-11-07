@@ -58,6 +58,25 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodeServerSettingsPatch = Schema.encodeSync(ServerSettingsPatch);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("MGGM Codex banked reset automation", () => {
+  it("defaults to expiry protection only and preserves both explicit choices", () => {
+    expect(decodeServerSettings({}).mggmCodexAutoRedeemExpiringResets).toBe(true);
+    expect(decodeServerSettings({}).mggmCodexAutoRedeemAtWeeklyLimit).toBe(false);
+    const patch = decodeServerSettingsPatch({
+      mggmCodexAutoRedeemExpiringResets: false,
+      mggmCodexAutoRedeemAtWeeklyLimit: true,
+    });
+    const restored = decodeServerSettings(encodeServerSettings(decodeServerSettings(patch)));
+    expect(restored.mggmCodexAutoRedeemExpiringResets).toBe(false);
+    expect(restored.mggmCodexAutoRedeemAtWeeklyLimit).toBe(true);
+  });
+
+  it.each(["mggmCodexAutoRedeemExpiringResets", "mggmCodexAutoRedeemAtWeeklyLimit"])(
+    "rejects a non-boolean %s",
+    (key) => expect(() => decodeServerSettingsPatch({ [key]: "true" })).toThrow(),
+  );
+});
+
 describe("Codex weekly window starter", () => {
   it("defaults to enabled for existing configurations and preserves an explicit opt-out", () => {
     const decode = Schema.decodeUnknownSync(CodexSettings);

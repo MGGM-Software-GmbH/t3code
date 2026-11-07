@@ -1239,6 +1239,12 @@ const DEFAULT_THREAD_MODEL_SELECTION = Schema.decodeSync(ModelSelection)({
 });
 
 export const ServerSettings = Schema.Struct({
+  mggmCodexAutoRedeemExpiringResets: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  mggmCodexAutoRedeemAtWeeklyLimit: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   /** Optional Bash script run on this environment after pd-secrets signs in. */
   pdSecretsPostLoginScript: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   // Null means no client has migrated this preference yet; an empty value is
@@ -1662,6 +1668,8 @@ const ModelSelectionPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  mggmCodexAutoRedeemExpiringResets: Schema.optionalKey(Schema.Boolean),
+  mggmCodexAutoRedeemAtWeeklyLimit: Schema.optionalKey(Schema.Boolean),
   pdSecretsPostLoginScript: Schema.optionalKey(TrimmedString),
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),

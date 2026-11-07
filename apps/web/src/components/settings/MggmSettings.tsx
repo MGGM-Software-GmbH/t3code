@@ -1,4 +1,4 @@
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_CLIENT_SETTINGS, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts/settings";
 import { Switch } from "../ui/switch";
 import { searchableSetting } from "./settingsSearch";
 import {
@@ -22,6 +22,32 @@ export function MggmSettingsPanel() {
       {target ? (
         <FogBugzSettings key={target.environmentId} environmentId={target.environmentId} />
       ) : null}
+      <SettingsSection title="Codex">
+        <SettingsRow
+          {...searchableSetting("mggm-codex-expiring-resets")}
+          serverScoped
+          settingKeys={["mggmCodexAutoRedeemExpiringResets"]}
+          description="Redeem a banked reset during its last hour before expiry, even when the model picker is closed. Applies to Codex accounts on this environment."
+          resetAction={
+            settings.mggmCodexAutoRedeemExpiringResets !==
+            DEFAULT_SERVER_SETTINGS.mggmCodexAutoRedeemExpiringResets ? (
+              <SettingResetButton
+                label="Redeem expiring banked resets"
+                onClick={() => updateSettings({ mggmCodexAutoRedeemExpiringResets: true })}
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.mggmCodexAutoRedeemExpiringResets}
+              onCheckedChange={(checked) =>
+                updateSettings({ mggmCodexAutoRedeemExpiringResets: checked })
+              }
+              aria-label="Redeem expiring banked resets"
+            />
+          }
+        />
+      </SettingsSection>
       <SettingsSection title="Layout">
         <SettingsRow
           {...searchableSetting("mggm-thread-sidebar")}

@@ -442,6 +442,14 @@ export function useSettingsRestore(onRestored?: () => void) {
   const isBackgroundActivityDirty = hasChangedBackgroundActivitySettings(settings);
 
   const changedSettingLabels = [
+    ...(settings.mggmCodexAutoRedeemExpiringResets !==
+    DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemExpiringResets
+      ? ["Redeem expiring banked resets"]
+      : []),
+    ...(settings.mggmCodexAutoRedeemAtWeeklyLimit !==
+    DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemAtWeeklyLimit
+      ? ["Auto-redeem banked reset at 0% weekly limit"]
+      : []),
     ...(theme !== "system" ? ["Theme"] : []),
     ...(!followSystem ? ["Follow system"] : []),
     ...(themeHalves !== null ? ["Theme mix"] : []),
@@ -670,6 +678,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+      mggmCodexAutoRedeemExpiringResets: DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemExpiringResets,
+      mggmCodexAutoRedeemAtWeeklyLimit: DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemAtWeeklyLimit,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,

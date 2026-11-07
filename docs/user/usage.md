@@ -132,6 +132,14 @@ the bar show each account's quota, countdown, and credits. Tap a row to open its
 The same account signed in on more than one environment, or reported by a hub as well, counts once.
 Filter with the environment dropdown to see what a single machine has.
 
+For Codex CLI accounts, **Settings → MGGM → Redeem expiring banked resets** is enabled by default.
+The server checks every minute and attempts to redeem credits during their last hour before expiry.
+In the model picker, **Auto-redeem at 0%** can also redeem a credit when an account's overall weekly
+allowance is exhausted; this option is off by default. Both settings apply to Codex accounts on
+the selected environment and work with the picker closed while the server is running. Missing or
+unavailable limits do not trigger a reset. Hub accounts and managed ChatGPT sign-ins are excluded.
+Codex decides whether there is usage to reset; failed attempts are logged without replacing a thread.
+
 When a Claude or Codex account has no overall weekly quota left, its pooled session contribution
 shows 0% left. The next refill depends on both reset times: an exhausted session must also reset,
 and a partly spent session may only regain its unused portion when the week resets. Missing or

@@ -35,6 +35,14 @@ vi.mock(import("./SettingsScopeContext"), async (original) => ({
   ...(await original()),
   useSettingsScope: (() => ({ target: null })) as never,
 }));
+vi.mock(import("../../hooks/useSettings"), async (original) => ({
+  ...(await original()),
+  usePrimarySettingsAvailable: () => true,
+}));
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
+  useEnvironmentScope: () => true,
+}));
 vi.mock(import("../../localApi"), async (original) => ({
   ...(await original()),
   readLocalApi: () => ({ dialogs: { confirm: state.confirm } }) as never,
@@ -67,6 +75,21 @@ function setup() {
 }
 
 describe("restoring V2 settings", () => {
+  it("defaults expiry redemption to on, saves opt-out and restores the default", async () => {
+    setup();
+    await using screen = await render(<MggmSettingsPanel />);
+    const toggle = screen.getByRole("switch", { name: "Redeem expiring banked resets" });
+    await expect.element(toggle).toBeChecked();
+    await toggle.click();
+    expect(state.update).toHaveBeenLastCalledWith({ mggmCodexAutoRedeemExpiringResets: false });
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, mggmCodexAutoRedeemExpiringResets: false };
+    await screen.rerender(<MggmSettingsPanel />);
+    await expect.element(toggle).not.toBeChecked();
+    await screen
+      .getByRole("button", { name: "Reset Redeem expiring banked resets to default" })
+      .click();
+    expect(state.update).toHaveBeenLastCalledWith({ mggmCodexAutoRedeemExpiringResets: true });
+  });
   it("toggles the MGGM layout and restores its enabled default", async () => {
     setup();
     await using screen = await render(<MggmSettingsPanel />);
@@ -102,6 +125,8 @@ describe("restoring V2 settings", () => {
   });
 
   it.each([
+    ["mggmCodexAutoRedeemExpiringResets", "Redeem expiring banked resets"],
+    ["mggmCodexAutoRedeemAtWeeklyLimit", "Auto-redeem banked reset at 0% weekly limit"],
     ["persistComposerContextStrip", "Composer context"],
     ["autoResumeLimitedThreads", "Resume after usage limits"],
     ["snoozeLimitedThreads", "Snooze until limits reset"],

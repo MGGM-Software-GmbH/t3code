@@ -197,6 +197,7 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as CodexResetForecast from "./usage/CodexResetForecast.ts";
 import * as CodexWeeklyWindowStarter from "./provider/CodexWeeklyWindowStarter.ts";
+import * as CodexResetCreditAutomation from "./provider/CodexResetCreditAutomation.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -753,6 +754,7 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(layerUsage),
   Layer.provideMerge(CodexResetForecast.layer),
   Layer.provideMerge(CodexWeeklyWindowStarter.layer),
+  Layer.provideMerge(CodexResetCreditAutomation.layer),
   Layer.provideMerge(layerBackground),
   Layer.provideMerge(layerResourceDiagnostics),
   Layer.provideMerge(TraceDiagnostics.layer),
@@ -864,6 +866,7 @@ const layerMakeServer = Layer.unwrap(
         yield* awaitActivation;
         const weeklyWindowStarter = yield* CodexWeeklyWindowStarter.CodexWeeklyWindowStarter;
         yield* weeklyWindowStarter.start;
+        yield* (yield* CodexResetCreditAutomation.CodexResetCreditAutomation).start;
         const server = yield* HttpServer.HttpServer;
         const address = server.address;
         if (typeof address === "string" || !("port" in address)) {

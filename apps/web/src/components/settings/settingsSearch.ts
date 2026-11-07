@@ -437,6 +437,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar idle 24h projects groups pinned compact activity separators"],
   },
   {
+    id: "mggm-codex-expiring-resets",
+    title: "Redeem expiring banked resets",
+    to: "/settings/mggm",
+    scope: "environment",
+    searchTerms: ["codex banked reset credits automatic expiry hour"],
+  },
+  {
     id: "fogbugz-auto-settle",
     title: "Auto-Settle on",
     to: "/settings/mggm",

@@ -28,6 +28,8 @@ import {
   withCodexAppServerClient,
 } from "../CodexProvider.ts";
 import { resolveCodexLaunchArgs } from "../codexLaunchArgs.ts";
+import { codexRateLimitsToLimits } from "../codexUsageLimits.ts";
+import * as DateTime from "effect/DateTime";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import { applyCodexModelCatalog } from "../codexModelCatalog.ts";
@@ -314,7 +316,7 @@ export const CodexDriver: ProviderDriver<
     // until the outcome, and bound the wait so a hung app-server cannot hold the account lock.
     // Auth overlays use effectiveHomePath; the continuation key would conflate them with shared homes.
     const accountKey = homeLayout.effectiveHomePath ?? homeLayout.sharedHomePath;
-    const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = () =>
+    const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = (options) =>
       resetCreditCoordinator
         .redeem(accountKey, (idempotencyKey) =>
           Effect.gen(function* () {
@@ -325,6 +327,18 @@ export const CodexDriver: ProviderDriver<
               cwd: process.cwd(),
               environment: processEnv,
             });
+            if (options?.onlyIf) {
+              const account = (yield* client.request("account/read", {})).account;
+              if (account?.type !== "chatgpt") return "nothingToReset" as const;
+              const current = yield* client.request("account/rateLimits/read", null);
+              const limits = codexRateLimitsToLimits({
+                snapshot: current.rateLimits,
+                rateLimitsByLimitId: current.rateLimitsByLimitId,
+                resetCredits: current.rateLimitResetCredits,
+                checkedAt: DateTime.formatIso(yield* DateTime.now),
+              });
+              if (!options.onlyIf(limits)) return "nothingToReset" as const;
+            }
             const response = yield* client.request("account/rateLimitResetCredit/consume", {
               idempotencyKey,
             });
