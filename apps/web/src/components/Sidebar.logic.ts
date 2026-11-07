@@ -55,11 +55,10 @@ export function shouldNavigateAfterThreadPark(input: {
   readonly thread: (ThreadSnoozeShell & Pick<SidebarThreadSummary, "settledOverride">) | null;
 }): boolean {
   return (
+    input.action === "snooze" &&
     input.threadKey === input.currentThreadKey &&
     input.thread !== null &&
-    (input.action === "settle"
-      ? input.thread.settledOverride === "settled"
-      : effectiveSnoozed(input.thread, { now: input.now }))
+    effectiveSnoozed(input.thread, { now: input.now })
   );
 }
 

@@ -1017,7 +1017,8 @@ describe("resolveSidebarSweepKeys", () => {
 
 describe("navigation after parking a thread", () => {
   it.each([
-    ["settle", "settled", null, "thread", true],
+    ["settle", "settled", null, "thread", false],
+    ["settle", "settled", null, null, false],
     ["settle", "active", null, "thread", false],
     ["settle", "settled", null, "other-thread", false],
     ["snooze", null, "2099-01-01T00:00:00.000Z", "thread", true],
