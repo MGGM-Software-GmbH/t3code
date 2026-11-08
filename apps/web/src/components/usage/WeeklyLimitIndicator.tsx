@@ -11,6 +11,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState, type ReactElement } from "react";
 
 import { useNowMinute } from "../../hooks/useNowMinute";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { environmentPresentations } from "../../state/presentation";
 import { formatGermanTimestamp } from "../../timestampFormat";
@@ -81,12 +82,14 @@ function WeeklyLimitIndicator({
   title,
   render,
   onNavigate,
+  autoRedeemAtWeeklyLimit = false,
 }: {
   readonly accounts: readonly LimitAccount[];
   readonly notices?: readonly string[];
   readonly title: string;
   readonly render: ReactElement;
   readonly onNavigate?: () => void;
+  readonly autoRedeemAtWeeklyLimit?: boolean;
 }) {
   const [openedAt, setOpenedAt] = useState(() => Date.now());
   const minute = useNowMinute();
@@ -176,7 +179,9 @@ function WeeklyLimitIndicator({
                 textAnchor="middle"
                 className={cn(
                   "fill-current text-5xs font-medium tabular-nums",
-                  expiringSoon && "text-reset-expiry-foreground",
+                  autoRedeemAtWeeklyLimit
+                    ? "text-info-foreground"
+                    : expiringSoon && "text-reset-expiry-foreground",
                 )}
               >
                 +{banked}
@@ -310,6 +315,10 @@ export function ComposerWeeklyLimit({
   readonly instanceId: ProviderInstanceId;
   readonly size: "sm" | "xs";
 }) {
+  const autoRedeemAtWeeklyLimit = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.mggmCodexAutoRedeemAtWeeklyLimit,
+  );
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
   const presentation = presentations.get(environmentId);
   const provider = presentation?.serverConfig?.providers.find(
@@ -325,6 +334,7 @@ export function ComposerWeeklyLimit({
   return (
     <WeeklyLimitIndicator
       accounts={accounts}
+      autoRedeemAtWeeklyLimit={provider?.driver === "codex" && autoRedeemAtWeeklyLimit}
       notices={notice ? [notice] : []}
       title={`Weekly limit, ${provider?.displayName ?? providerClients.get(provider?.driver)?.label ?? instanceId}`}
       render={<ComposerControl size={size} className="px-1" data-composer-weekly-limit />}

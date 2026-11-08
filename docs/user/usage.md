@@ -161,7 +161,8 @@ accounts it shows the average of reported periods, independently of the remainin
 The `+N` below the percentage is the number of banked resets reported for that account, or the
 sum across distinct accounts in the sidebar. Missing credit counts are identified in the details
 and are not assumed to be zero. The details also show the next reported credit expiry.
-When it is within the next 120 hours, the expiry and banked count turn orange.
+When it is within the next 120 hours, the expiry and banked count turn orange. In a Codex thread,
+the banked count is blue while **Auto-redeem at 0%** is enabled, including when credits expire soon.
 
 The **Codex reset forecast** beside the combined weekly indicator estimates the chance of an
 additional reset within 24 hours. Its details include the near-term estimate, uncertainty range,

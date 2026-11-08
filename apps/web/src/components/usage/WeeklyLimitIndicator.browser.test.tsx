@@ -1,5 +1,6 @@
 import { RegistryContext } from "@effect/atom-react";
 import {
+  DEFAULT_UNIFIED_SETTINGS,
   EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -11,7 +12,19 @@ import { act, fakeTimers, render as renderScreen, type Screen } from "../../../t
 type Root = { render: Screen["rerender"]; unmount: Screen["unmount"] };
 import { expect, it, vi } from "vite-plus/test";
 
-const actions = vi.hoisted(() => ({ navigate: vi.fn(), closeSidebar: vi.fn(), touch: false }));
+const actions = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  closeSidebar: vi.fn(),
+  touch: false,
+  autoRedeemEnvironment: null as string | null,
+}));
+vi.mock(import("../../hooks/useSettings"), () => ({
+  useEnvironmentSettings: (environmentId, select) =>
+    select!({
+      ...DEFAULT_UNIFIED_SETTINGS,
+      mggmCodexAutoRedeemAtWeeklyLimit: environmentId === actions.autoRedeemEnvironment,
+    }),
+}));
 vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof import("@tanstack/react-router")>()),
   useNavigate: () => actions.navigate,
@@ -189,6 +202,18 @@ it.each([
       )!;
       expect(creditCount.classList.contains("text-reset-expiry-foreground")).toBe(warning);
     }
+    actions.autoRedeemEnvironment = wsl;
+    await render();
+    const sidebarCount = container.querySelectorAll("button")[0]!.querySelectorAll("text")[1]!;
+    const composerCount = container.querySelectorAll("button")[1]!.querySelectorAll("text")[1]!;
+    expect(composerCount.classList.contains("text-info-foreground")).toBe(true);
+    expect(composerCount.classList.contains("text-reset-expiry-foreground")).toBe(false);
+    expect(sidebarCount.classList.contains("text-info-foreground")).toBe(false);
+    expect(sidebarCount.classList.contains("text-reset-expiry-foreground")).toBe(warning);
+    actions.autoRedeemEnvironment = dgx;
+    await render();
+    expect(composerCount.classList.contains("text-info-foreground")).toBe(false);
+    expect(composerCount.classList.contains("text-reset-expiry-foreground")).toBe(warning);
     await act(async () => container.querySelectorAll("button")[1]!.click());
     const expiry = document.querySelector(`time[datetime="${expiresAt}"]`)!;
     expect(expiry.textContent).toMatch(/^\S+, \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
@@ -471,6 +496,7 @@ async function setup() {
   actions.navigate.mockReset();
   actions.closeSidebar.mockReset();
   actions.touch = false;
+  actions.autoRedeemEnvironment = null;
   vi.spyOn(globalThis, "fetch").mockRejectedValue(
     new Error("Provider requests are forbidden in indicator tests"),
   );
