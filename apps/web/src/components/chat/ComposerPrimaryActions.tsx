@@ -10,7 +10,6 @@ import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../Sideb
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { composerFloatingLayerProps } from "./composerEventScope";
 import { useTouchAlternateSubmit } from "./useTouchAlternateSubmit";
 import {
   alternateComposerDispatchAction,
@@ -128,7 +127,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const touchSubmit = useTouchAlternateSubmit(
     isRunning &&
       !pendingAction &&
-      !showPlanFollowUpPrompt &&
       !isEditingQueuedMessage &&
       hasSendableContent &&
       !isSendDisabled &&

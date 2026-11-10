@@ -222,10 +222,9 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
           input: {},
         });
         registry.refresh(atom);
-        const result = await Effect.runPromise(
+        const result = await Effect.runPromiseExit(
           AtomRegistry.getResult(registry, atom, { suspendOnWaiting: true }).pipe(
             Effect.timeout("15 seconds"),
-            Effect.exit,
           ),
         );
         return { ...snapshot, result };

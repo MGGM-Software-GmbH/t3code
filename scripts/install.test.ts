@@ -459,6 +459,7 @@ async function installOver(input: {
   const target = NodePath.join(input.home, "runtime", "versions", "1.2.3");
   await NodeFSP.mkdir(target, { recursive: true });
   await NodeFSP.writeFile(NodePath.join(target, ".install-complete"), "1.2.3\n");
+  await NodeFSP.writeFile(NodePath.join(target, "t3"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   const installer = NodePath.resolve(import.meta.dirname, input.script);
   const [command, args] =
     input.script === "install.sh"

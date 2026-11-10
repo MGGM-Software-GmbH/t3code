@@ -1774,11 +1774,18 @@ it("opens at the end after reopening and switching away from a manual reading po
     const [liveFollowEnabled, setLiveFollowEnabled] = useState(true);
     // The chat view stops following the live edge when the reader scrolls.
     return (
-      <div className="contents" onWheelCapture={() => setLiveFollowEnabled(false)}>
+      <div className="contents">
         <MessagesTimeline
           {...props}
           timelineEntries={tallEntries}
           liveFollowEnabled={liveFollowEnabled}
+          onViewportAttach={(viewport) =>
+            viewport.subscribe(() => {
+              // The real follow store notifies useSyncExternalStore synchronously.
+              flushSync(() => setLiveFollowEnabled(false));
+              viewport.followReleased();
+            })
+          }
         />
       </div>
     );
@@ -1787,7 +1794,12 @@ it("opens at the end after reopening and switching away from a manual reading po
   {
     await using _chat = await renderElement(<Chat />);
     const viewport = await waitForList(props);
-    await vi.waitFor(() => expect(readTimelinePosition(props.routeThreadKey)?.atEnd).toBe(true));
+    await vi.waitFor(() => {
+      expect(readTimelinePosition(props.routeThreadKey)?.atEnd).toBe(true);
+      expect(
+        viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop,
+      ).toBeLessThanOrEqual(1);
+    });
 
     await userEvent.wheel(viewport, { delta: { y: -600 } });
     await vi.waitFor(() => expect(readTimelinePosition(props.routeThreadKey)?.atEnd).toBe(false));

@@ -142,8 +142,6 @@ async function setup() {
     pendingAction: null,
     isRunning: true,
     canInterrupt: true,
-    showPlanFollowUpPrompt: false,
-    promptHasText: true,
     isSendBusy: false,
     sendDisabledReason: null,
     isEnvironmentUnavailable: false,
@@ -153,7 +151,6 @@ async function setup() {
     onSubmitAlternateMessage: alternate,
     onPreviousPendingQuestion: () => {},
     onInterrupt: () => {},
-    onImplementPlanInNewThread: () => {},
   };
   async function render(overrides: Partial<typeof props> = {}) {
     await act(() => root.render(<ComposerPrimaryActions {...props} {...overrides} />));
