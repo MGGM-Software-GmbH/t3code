@@ -6,6 +6,8 @@ import type {
   OrchestrationV2ThreadHistoryPage,
 } from "@t3tools/contracts";
 import {
+  isModelCapacityError,
+  modelCapacityRetryAt,
   latestExecutedRun,
   latestRootProviderFailure,
   runRanAfter,
@@ -3687,8 +3689,30 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ["runs", "runtimeRequests", "turnItems"],
         { turnItemTypes: ["error"] },
       );
-      const run = usageLimitBlockedRun(projection.runs, projection.turnItems, null);
+      const latestRun = latestExecutedRun(projection.runs);
+      const latestFailure = latestRootProviderFailure(latestRun, projection.turnItems);
+      const run = isModelCapacityError(latestFailure?.message)
+        ? latestRun
+        : usageLimitBlockedRun(projection.runs, projection.turnItems, null);
       const failure = latestRootProviderFailure(run, projection.turnItems);
+      const capacity = isModelCapacityError(failure?.message);
+      let recoveryResetAt = failure?.resetAt;
+      if (capacity && run) {
+        const preferences = yield* serverSettings.getSettings.pipe(Effect.orDie);
+        recoveryResetAt = null;
+        if (
+          preferences.modelCapacityRetryDelayMinutes > 0 ||
+          command.limitRecovery.autoResume === false
+        ) {
+          recoveryResetAt =
+            thread.limitRecovery?.runId === run.id
+              ? thread.limitRecovery.resetAt
+              : modelCapacityRetryAt(
+                  DateTime.toEpochMillis(run.completedAt ?? run.requestedAt),
+                  preferences.modelCapacityRetryDelayMinutes,
+                );
+        }
+      }
       const resetMs = Date.parse(command.limitRecovery.resetAt);
       if (command.limitRecovery.snooze === true && resetMs <= DateTime.toEpochMillis(now)) {
         return yield* new OrchestratorDispatchError({
@@ -3702,8 +3726,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         thread.archivedAt !== null ||
         thread.settledOverride === "settled" ||
         run?.id !== command.limitRecovery.runId ||
-        failure?.class !== "usage_limit" ||
-        failure.resetAt !== command.limitRecovery.resetAt ||
+        (!capacity && failure?.class !== "usage_limit") ||
+        recoveryResetAt !== command.limitRecovery.resetAt ||
         resetMs <= DateTime.toEpochMillis(run.completedAt ?? run.requestedAt) ||
         projection.runtimeRequests.some((request) => request.status === "pending")
       ) {
@@ -3807,6 +3831,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             settledAt: alreadySettled ? thread.settledAt : (command.settledAt ?? now),
             pullRequests: thread.pullRequests?.map((link) => withPullRequestWatch(link, undefined)),
             unsettledAt: null,
+            unsettledReason: undefined,
             pinnedAt: null,
             pinOrderKey: null,
             activeOrderKey: null,
@@ -3825,6 +3850,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             settledOverride: "active",
             settledAt: null,
             unsettledAt: alreadyPinnedActive ? (thread.unsettledAt ?? null) : now,
+            unsettledReason:
+              alreadyPinnedActive && command.reason === "fogbugz-reactivated"
+                ? thread.unsettledReason
+                : command.reason,
             updatedAt: alreadyPinnedActive ? thread.updatedAt : now,
           };
         }
@@ -5724,7 +5753,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         command.dispatchMode.type !== "start_immediately" ||
         source === undefined ||
         (source.status !== "interrupted" &&
-          !(source.status === "failed" && limited?.class === "usage_limit")) ||
+          !(
+            source.status === "failed" &&
+            (limited?.class === "usage_limit" || isModelCapacityError(limited?.message))
+          )) ||
         latestExecutedRun(projection.runs)?.id !== source.id ||
         projection.thread.archivedAt !== null ||
         projection.thread.deletedAt !== null ||
@@ -5738,18 +5770,31 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
     }
     if (command.usageLimitContinuationOfRunId !== undefined) {
-      const run = usageLimitBlockedRun(projection.runs, projection.turnItems, null);
+      const latestRun = latestExecutedRun(projection.runs);
+      const latestFailure = latestRootProviderFailure(latestRun, projection.turnItems);
+      const capacity = isModelCapacityError(latestFailure?.message);
+      const run = capacity
+        ? latestRun
+        : usageLimitBlockedRun(projection.runs, projection.turnItems, null);
       const failure = latestRootProviderFailure(run, projection.turnItems);
       const recovery = projection.thread.limitRecovery;
+      const capacityDelay = capacity
+        ? (yield* serverSettings.getSettings.pipe(Effect.orDie)).modelCapacityRetryDelayMinutes
+        : 0;
       const now = yield* DateTime.now;
       if (
         run?.id !== command.usageLimitContinuationOfRunId ||
-        failure?.class !== "usage_limit" ||
-        threadShellFromProjection(projection).lastErrorClass !== "usage_limit" ||
+        (!capacity && failure?.class !== "usage_limit") ||
+        (capacity
+          ? capacityDelay <= 0 ||
+            !isModelCapacityError(threadShellFromProjection(projection).lastError) ||
+            (run != null &&
+              !modelSelectionsEqual(projection.thread.modelSelection, run.modelSelection))
+          : threadShellFromProjection(projection).lastErrorClass !== "usage_limit") ||
         !recovery?.autoResume ||
         recovery.requestId !== command.usageLimitRecoveryRequestId ||
         recovery.runId !== run.id ||
-        recovery.resetAt !== failure.resetAt ||
+        (!capacity && recovery.resetAt !== failure?.resetAt) ||
         Date.parse(recovery.resetAt) > DateTime.toEpochMillis(now) ||
         projection.thread.archivedAt !== null ||
         projection.thread.deletedAt !== null ||
@@ -5851,6 +5896,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           projection.thread.settledOverride === "active"
             ? (projection.thread.unsettledAt ?? null)
             : now,
+        unsettledReason: "user",
         updatedAt: now,
       };
       const event = yield* emit(

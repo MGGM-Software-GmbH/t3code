@@ -1,5 +1,5 @@
 diff --git a/dist/components/CodeView.d.ts b/dist/components/CodeView.d.ts
-index 234ec4baa4..274ff5e32b 100644
+index 234ec4baa4a9364088917b24a64a6377d16583f8..274ff5e32b65379b30ac645f1f64bfdc96a12da2 100644
 --- a/dist/components/CodeView.d.ts
 +++ b/dist/components/CodeView.d.ts
 @@ -158,6 +158,12 @@ interface CodeViewOptions<LAnnotation, Caret> extends CodeViewPassThroughOptions
@@ -30,7 +30,7 @@ index 234ec4baa4..274ff5e32b 100644
     * Returns the editor while this item is being edited. Partial diffs get an
     * editor after their files load; scrolling away or collapsing keeps it.
 diff --git a/dist/components/CodeView.js b/dist/components/CodeView.js
-index ee5c91c5ab..7d0a2901e4 100644
+index ee5c91c5ab44742994d900a81dbd8e9c508efb49..7d0a2901e48de0d356dd784896d7f8eb4c9ad0e8 100644
 --- a/dist/components/CodeView.js
 +++ b/dist/components/CodeView.js
 @@ -18,6 +18,7 @@ import { resolvePreferredHighlighter } from "../utils/resolvePreferredHighlighte
@@ -330,7 +330,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  	if (item.type === "diff") return item.instance.updateCodeViewLayout(item.item.fileDiff, item.top, void 0, item.item.annotations ?? []);
 diff --git a/dist/components/CodeViewSearch.js b/dist/components/CodeViewSearch.js
 new file mode 100644
-index 0000000000..29370adf88
+index 0000000000000000000000000000000000000000..29370adf88299d8f7572d4054334b6ce81bdaf9e
 --- /dev/null
 +++ b/dist/components/CodeViewSearch.js
 @@ -0,0 +1,360 @@
@@ -694,8 +694,21 @@ index 0000000000..29370adf88
 +export { CodeViewSearch, collectMatches };
 +
 +//# sourceMappingURL=CodeViewSearch.js.map
+diff --git a/dist/components/File.js b/dist/components/File.js
+index 2ac57c54403465ffba3f825dd7bd353018ce69e7..893b4e7f9d29ce9fd93de758912c7667467f144c 100644
+--- a/dist/components/File.js
++++ b/dist/components/File.js
+@@ -448,7 +448,7 @@ var File = class {
+ 		};
+ 		const theme = this.getTheme();
+ 		const lang = file.lang ?? getFiletypeFromFileName(file.name);
+-		const highlighter = getHighlighterIfLoaded({
++		const highlighter = this.options.highlighter ?? getHighlighterIfLoaded({
+ 			theme,
+ 			lang
+ 		});
 diff --git a/dist/components/FileDiff.js b/dist/components/FileDiff.js
-index 12f4f8949f..e33a5ed319 100644
+index 12f4f8949f3a1907ac9877f83937b53a966c9411..e33a5ed31920c858ce8be37fbf6a4bcbe3bf7480 100644
 --- a/dist/components/FileDiff.js
 +++ b/dist/components/FileDiff.js
 @@ -1,6 +1,7 @@
@@ -744,31 +757,51 @@ index 12f4f8949f..e33a5ed319 100644
  			} catch (error) {
  				if (disableErrorHandling) throw error;
 diff --git a/dist/components/VirtualizedFile.d.ts b/dist/components/VirtualizedFile.d.ts
-index 90ef575932..0fd262cbb7 100644
+index 90ef575932174c3bc73e5051d2d75c3353631b75..11eb7044d09501d91fc68eec4a22765115f1a3bf 100644
 --- a/dist/components/VirtualizedFile.d.ts
 +++ b/dist/components/VirtualizedFile.d.ts
-@@ -50,7 +50,7 @@ declare class VirtualizedFile<LAnnotation = undefined, Caret = undefined> extend
+@@ -50,8 +50,9 @@ declare class VirtualizedFile<LAnnotation = undefined, Caret = undefined> extend
    rerender(): void;
    protected get isComponentManaged(): boolean;
    syncGhostTextRows(): void;
 -  applyDocumentChange(textDocument: TextDocument<'file', LAnnotation>, newLineAnnotations?: LineAnnotation<LAnnotation>[], shouldUpdateBuffer?: boolean): void;
 +  applyDocumentChange(textDocument: TextDocument<'file', LAnnotation>, newLineAnnotations?: LineAnnotation<LAnnotation>[], shouldUpdateBuffer?: boolean, startLine?: number): void;
    render({ fileContainer, file, forceRender, lineAnnotations, ...props }: FileRenderProps<LAnnotation>): boolean;
++  protected updateFileLayoutCache(previous: FileContents | undefined, file: FileContents, anchorLine?: number): number | undefined;
    protected finalizeRender(): void;
    private updatePendingRender;
+   syncVirtualizedTop(): void;
 diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFile.js
-index 95d4ca8fdf..24a980672d 100644
+index 95d4ca8fdf9e176e23d354094a11022eefdb2321..e8fcddd789ddf35d8543da0df0bcd659680adf7a 100644
 --- a/dist/components/VirtualizedFile.js
 +++ b/dist/components/VirtualizedFile.js
-@@ -23,6 +23,7 @@ var VirtualizedFile = class extends File {
+@@ -5,6 +5,7 @@ import { areFileTargetsEqual } from "../utils/areFileTargetsEqual.js";
+ import { computeVirtualFileMetrics, getVirtualFileHeaderHeight, getVirtualFileHeaderRegion, getVirtualFilePaddingBottom } from "../utils/computeVirtualFileMetrics.js";
+ import { FILE_ANNOTATION_DOM_KEY, includesFileAnnotations, shouldRenderFileAnnotations } from "../utils/includesFileAnnotations.js";
+ import { File } from "./File.js";
++import { diffArrays } from "diff";
+ //#region src/components/VirtualizedFile.ts
+ const LAYOUT_CHECKPOINT_INTERVAL = 5e3;
+ const NO_GHOST_TEXT_ROWS = /* @__PURE__ */ new Map();
+@@ -21,19 +22,26 @@ var VirtualizedFile = class extends File {
+ 	height = 0;
+ 	cache = {
  		heights: /* @__PURE__ */ new Map(),
++		annotationHeights: /* @__PURE__ */ new Map(),
  		checkpoints: [],
  		fileAnnotationHeight: 0,
 +		codeWidth: void 0,
  		ghostTextRows: NO_GHOST_TEXT_ROWS
  	};
  	pendingRender;
-@@ -34,6 +35,8 @@ var VirtualizedFile = class extends File {
+ 	isVisible = false;
+ 	isSetup = false;
+ 	layoutDirty = true;
++	forceRenderOverride;
++	pendingRefreshAnchor;
++	layoutCacheFile;
+ 	currentCollapsed;
+ 	constructor(options, virtualizer, metrics = DEFAULT_VIRTUAL_FILE_METRICS, workerManager, requestOwnerRender) {
  		super(options, workerManager, requestOwnerRender);
  		this.virtualizer = virtualizer;
  		this.metrics = metrics;
@@ -777,7 +810,28 @@ index 95d4ca8fdf..24a980672d 100644
  	}
  	setMetrics(metrics, force = false) {
  		const nextMetrics = computeVirtualFileMetrics(metrics);
-@@ -85,10 +88,12 @@ var VirtualizedFile = class extends File {
+@@ -47,6 +55,20 @@ var VirtualizedFile = class extends File {
+ 	syncLineAnnotations(lineAnnotations) {
+ 		if (lineAnnotations == null || !this.isNewAnnotations(lineAnnotations)) return false;
+ 		if (lineAnnotations.length === 0 && this.getLatestAnnotations().length === 0) return false;
++		// Subtract only annotation height on removal, preserving measured wrapped code rows.
++		const nextLines = new Set(lineAnnotations.map((annotation) => annotation.lineNumber));
++		for (const annotation of this.getLatestAnnotations()) {
++			if (nextLines.has(annotation.lineNumber)) continue;
++			if (annotation.lineNumber === 0) this.cache.fileAnnotationHeight = 0;
++			else {
++				const lineIndex = annotation.lineNumber - 1;
++				const annotationHeight = this.cache.annotationHeights.get(lineIndex) ?? 0;
++				const height = this.cache.heights.get(lineIndex);
++				if (height != null) this.cache.heights.set(lineIndex, height - annotationHeight);
++				this.cache.annotationHeights.delete(lineIndex);
++			}
++		}
++		this.cache.checkpoints.length = 0;
+ 		super.setLineAnnotations(lineAnnotations);
+ 		return true;
+ 	}
+@@ -85,10 +107,14 @@ var VirtualizedFile = class extends File {
  		if (this.isAdvancedMode()) throw new Error("VirtualizedFile.setThemeType cannot be used inside CodeView. Update CodeView options instead.");
  		super.setThemeType(themeType);
  	}
@@ -790,10 +844,12 @@ index 95d4ca8fdf..24a980672d 100644
 +		// Dropping unchanged wrapped rows moves the viewport before they can be remeasured.
 +		if (startLine === 0) this.cache.heights.clear();
 +		else for (const lineIndex of this.cache.heights.keys()) if (lineIndex >= startLine) this.cache.heights.delete(lineIndex);
++		if (startLine === 0) this.cache.annotationHeights.clear();
++		else for (const lineIndex of this.cache.annotationHeights.keys()) if (lineIndex >= startLine) this.cache.annotationHeights.delete(lineIndex);
  		if (this.cache.checkpoints.length > 0) this.cache.checkpoints.length = 0;
  		this.cache.ghostTextRows = NO_GHOST_TEXT_ROWS;
  		if (this.renderRange != null && resetRenderRange) this.renderRange = void 0;
-@@ -134,6 +139,13 @@ var VirtualizedFile = class extends File {
+@@ -134,6 +160,13 @@ var VirtualizedFile = class extends File {
  		if (this.code == null) return hasHeightChange;
  		const content = this.code.children[1];
  		if (!(content instanceof HTMLElement)) return hasHeightChange;
@@ -807,7 +863,35 @@ index 95d4ca8fdf..24a980672d 100644
  		if (this.renderRange != null && shouldRenderFileAnnotations(this.renderRange)) {
  			const nextFileAnnotationHeight = measureFileAnnotationHeight(content) ?? 0;
  			if (nextFileAnnotationHeight !== this.cache.fileAnnotationHeight) {
-@@ -366,12 +378,12 @@ var VirtualizedFile = class extends File {
+@@ -151,9 +184,12 @@ var VirtualizedFile = class extends File {
+ 			if (!measureAllRows && (cachedHeight == null || cachedHeight === lineHeight + ghostHeight)) continue;
+ 			let measuredHeight = line.getBoundingClientRect().height + ghostHeight;
+ 			let hasMetadata = false;
++			this.cache.annotationHeights.delete(lineIndex);
+ 			if (line.nextElementSibling instanceof HTMLElement && ("lineAnnotation" in line.nextElementSibling.dataset || "noNewline" in line.nextElementSibling.dataset)) {
+ 				if ("noNewline" in line.nextElementSibling.dataset) hasMetadata = true;
+-				measuredHeight += line.nextElementSibling.getBoundingClientRect().height;
++				const metadataHeight = line.nextElementSibling.getBoundingClientRect().height;
++				measuredHeight += metadataHeight;
++				if ("lineAnnotation" in line.nextElementSibling.dataset) this.cache.annotationHeights.set(lineIndex, metadataHeight);
+ 			}
+ 			const expectedHeight = this.getLineHeight(lineIndex, hasMetadata);
+ 			if (measuredHeight === expectedHeight) continue;
+@@ -171,10 +207,12 @@ var VirtualizedFile = class extends File {
+ 		return this.render({ file });
+ 	};
+ 	updateCodeViewLayout(file, top, reset, lineAnnotations) {
++		const previousLayoutFile = this.getLayoutFile();
+ 		const targetChanged = !areFileTargetsEqual(this.getInputFile(), file);
+ 		if (targetChanged) this.updateInputFile(file, lineAnnotations);
+ 		const { pendingRenderFile, layoutFileChanged, renderedFileChanged, annotationsChanged } = this.updatePendingRender(file, lineAnnotations);
+-		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true || layoutFileChanged;
++		if (layoutFileChanged) this.updateFileLayoutCache(previousLayoutFile, pendingRenderFile);
++		let shouldResetLayoutCache = reset?.resetFileLayoutCache === true;
+ 		if (reset?.metrics != null) {
+ 			this.metrics = reset.metrics;
+ 			shouldResetLayoutCache = true;
+@@ -366,12 +404,13 @@ var VirtualizedFile = class extends File {
  			codeView.instanceChanged(this, true);
  		} else this.getSimpleVirtualizer()?.requestHeightReconcile(this);
  	}
@@ -816,14 +900,104 @@ index 95d4ca8fdf..24a980672d 100644
  		const { renderRange: previousRenderRange } = this;
  		this.getAdvancedVirtualizer()?.capturePendingLayoutAnchor();
  		super.applyDocumentChange(textDocument, newLineAnnotations);
++		this.layoutCacheFile = this.getWorkingFile();
  		this.getSimpleVirtualizer()?.markDOMDirty();
 -		this.resetLayoutCache(this.isSimpleMode(), false);
 +		this.resetLayoutCache(this.isSimpleMode(), false, startLine);
  		const file = this.getRenderedFile();
  		if (!this.isSimpleMode()) this.computeApproximateSize(true);
  		else if (shouldUpdateBuffer && previousRenderRange != null && file != null) {
+@@ -382,8 +421,46 @@ var VirtualizedFile = class extends File {
+ 		this.forceRenderOverride = true;
+ 		this.virtualizer.instanceChanged(this, true);
+ 	}
++	// Measurements of unchanged code rows remain valid across external updates.
++	updateFileLayoutCache(previous, file, anchorLine) {
++		previous = this.layoutCacheFile ?? previous;
++		this.layoutCacheFile = file;
++		if (previous == null || previous.name !== file.name || previous.lang !== file.lang) {
++			this.resetLayoutCache();
++			return;
++		}
++		if (previous.contents === file.contents) return anchorLine;
++		const oldLines = previous.contents.split(/\r\n|\n|\r/);
++		const newLines = file.contents.split(/\r\n|\n|\r/);
++		const heights = new Map();
++		let oldIndex = 0;
++		let newIndex = 0;
++		let nextAnchor;
++		for (const change of diffArrays(oldLines, newLines)) {
++			if (change.added) newIndex += change.count;
++			else if (change.removed) {
++				if (anchorLine >= oldIndex && anchorLine < oldIndex + change.count) nextAnchor = Math.min(newIndex, newLines.length - 1);
++				oldIndex += change.count;
++			} else {
++				if (anchorLine >= oldIndex && anchorLine < oldIndex + change.count) nextAnchor = anchorLine + newIndex - oldIndex;
++				for (let offset = 0; offset < change.count; offset++) {
++					const height = this.cache.heights.get(oldIndex + offset);
++					if (height !== void 0) heights.set(newIndex + offset, height - (this.cache.annotationHeights.get(oldIndex + offset) ?? 0));
++				}
++				oldIndex += change.count;
++				newIndex += change.count;
++			}
++		}
++		this.resetLayoutCache();
++		this.cache.heights = heights;
++		return nextAnchor;
++	}
+ 	render({ fileContainer, file, forceRender = false, lineAnnotations, ...props }) {
++		const previousLayoutFile = this.pendingRender?.file ?? this.getRenderedFile();
+ 		const didFileChange = !areFileTargetsEqual(this.getInputFile(), file);
++		// Replacing an editor session can remove annotation geometry before the next render.
++		const simpleVirtualizer = this.getSimpleVirtualizer();
++		const refreshAnchor = this.isSetup && simpleVirtualizer != null && (didFileChange || !areFileTargetsEqual(previousLayoutFile, this.getWorkingFile(file) ?? file)) ? simpleVirtualizer.getScrollAnchor(simpleVirtualizer.getHeight()) : void 0;
+ 		if (didFileChange) {
+ 			this.updateInputFile(file, lineAnnotations);
+ 			this.cachedHeaderHTML = void 0;
+@@ -399,7 +476,11 @@ var VirtualizedFile = class extends File {
+ 		})();
+ 		const { forceRenderOverride, isSetup } = this;
+ 		this.forceRenderOverride = void 0;
+-		if (layoutFileChanged) this.resetLayoutCache();
++		if (layoutFileChanged && this.isSimpleMode()) {
++			const ownAnchor = refreshAnchor?.fileElement === this.fileContainer && refreshAnchor.lineIndex != null ? refreshAnchor : void 0;
++			const nextLine = this.updateFileLayoutCache(previousLayoutFile, pendingRenderFile, ownAnchor == null ? void 0 : Number(ownAnchor.lineIndex));
++			this.pendingRefreshAnchor = ownAnchor != null && nextLine !== void 0 ? { ...ownAnchor, lineIndex: String(nextLine) } : void 0;
++		} else if (layoutFileChanged) this.resetLayoutCache();
+ 		fileContainer = this.getOrCreateFileContainerNode(fileContainer);
+ 		if (!isSetup) {
+ 			this.computeApproximateSize(false, pendingRenderFile);
+@@ -420,7 +501,16 @@ var VirtualizedFile = class extends File {
+ 			}
+ 		}
+ 		if (!this.isVisible && this.isSimpleMode() && (!didFileChange || !isSetup)) return this.renderPlaceholder(this.height);
+-		const windowSpecs = this.virtualizer.getWindowSpecs();
++		let windowSpecs = this.virtualizer.getWindowSpecs();
++		if (this.pendingRefreshAnchor != null) {
++			const position = this.getLinePosition(Number(this.pendingRefreshAnchor.lineIndex) + 1);
++			if (position != null) {
++				// Render the mapped row before restoring its measured viewport offset.
++				const anchorTop = (this.top ?? 0) + position.top;
++				const margin = (windowSpecs.bottom - windowSpecs.top) / 2;
++				windowSpecs = { top: anchorTop - margin, bottom: anchorTop + margin };
++			}
++		}
+ 		const fileTop = this.top ?? 0;
+ 		const renderRange = this.computeRenderRangeFromWindow(pendingRenderFile, fileTop, windowSpecs);
+ 		return super.render({
+@@ -435,6 +525,10 @@ var VirtualizedFile = class extends File {
+ 	finalizeRender() {
+ 		if (this.getRenderedFile() !== this.pendingRender?.file) throw new Error("VirtualizedFile.render: rendered a different file than its prepared layout");
+ 		this.pendingRender = void 0;
++		if (this.isSimpleMode() && this.pendingRefreshAnchor != null && this.fileContainer?.shadowRoot?.querySelector(`[data-line][data-line-index="${this.pendingRefreshAnchor.lineIndex}"]`) instanceof HTMLElement) {
++			this.getSimpleVirtualizer()?.scrollFix(this.pendingRefreshAnchor);
++			this.pendingRefreshAnchor = void 0;
++		}
+ 		if (this.isSimpleMode()) this.getSimpleVirtualizer()?.requestHeightReconcile(this);
+ 	}
+ 	updatePendingRender(nextFile, lineAnnotations) {
 diff --git a/dist/components/VirtualizedFileDiff.js b/dist/components/VirtualizedFileDiff.js
-index eb34dd4a77..821bb0ab11 100644
+index eb34dd4a774cb06add3280fe6abd5f0dc292505e..821bb0ab114f52ec41eab54505a1eb08e511f47a 100644
 --- a/dist/components/VirtualizedFileDiff.js
 +++ b/dist/components/VirtualizedFileDiff.js
 @@ -551,7 +551,7 @@ var VirtualizedFileDiff = class extends FileDiff {
@@ -844,8 +1018,47 @@ index eb34dd4a77..821bb0ab11 100644
  		this.pendingRender = {
  			workingDiff,
  			diff: pendingRenderDiff
+diff --git a/dist/components/Virtualizer.js b/dist/components/Virtualizer.js
+index 4063b992bf7c4958c0d8a305977280ea9a3a7330..e68249ce25cfd855a5d20a45b25d51e0808b8235 100644
+--- a/dist/components/Virtualizer.js
++++ b/dist/components/Virtualizer.js
+@@ -25,6 +25,7 @@ var Virtualizer = class Virtualizer {
+ 	type = "simple";
+ 	intersectionObserver;
+ 	scrollTop = 0;
++	scrollFixVersion = 0;
+ 	height = 0;
+ 	scrollHeight = 0;
+ 	windowSpecs = {
+@@ -245,13 +246,15 @@ var Virtualizer = class Virtualizer {
+ 		this.visibleInstancesDirty = false;
+ 		this.renderedObservers = this.observers.size;
+ 		const anchor = this.getScrollAnchor(this.height);
++		const scrollFixVersion = this.scrollFixVersion;
+ 		const updatedInstances = /* @__PURE__ */ new Set();
+ 		for (const instance of wrapperDirty ? this.observers.values() : this.visibleInstances.values()) if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		for (const instance of this.instancesChanged) {
+ 			if (updatedInstances.has(instance)) continue;
+ 			if (instance.onRender(wrapperDirty)) updatedInstances.add(instance);
+ 		}
+-		this.scrollFix(anchor);
++		// A mapped file refresh may already have corrected scroll during onRender.
++		if (this.scrollFixVersion === scrollFixVersion) this.scrollFix(anchor);
+ 		for (const instance of updatedInstances) {
+ 			this.reconcileQueue.delete(instance);
+ 			instance.reconcileHeights();
+@@ -288,6 +291,9 @@ var Virtualizer = class Virtualizer {
+ 		}
+ 	}
+ 	applyScrollFix(scrollOffset) {
++		this.scrollFixVersion++;
++		// A synchronous follow-up render must use the corrected viewport.
++		this.windowSpecs = { top: 0, bottom: 0 };
+ 		if (this.root == null || this.root instanceof Document) window.scrollTo({
+ 			top: window.scrollY + scrollOffset,
+ 			behavior: "instant"
 diff --git a/dist/components/web-components.js b/dist/components/web-components.js
-index 6e7b486a02..5b7290f181 100644
+index 6e7b486a02a0f9f9d2c57ea3d9e95b706925e72a..5b7290f1814f4883e9fd13ffdf22b9bacad461c0 100644
 --- a/dist/components/web-components.js
 +++ b/dist/components/web-components.js
 @@ -2,8 +2,17 @@ import { DIFFS_TAG_NAME } from "../constants.js";
@@ -879,7 +1092,7 @@ index 6e7b486a02..5b7290f181 100644
  		connectedCallback() {
  			const shadowRoot = this.shadowRoot ?? this.attachShadow({ mode: "open" });
 diff --git a/dist/editor/editor.js b/dist/editor/editor.js
-index bf17cea32f..671e77b8cd 100644
+index bf17cea32f39ee60ff7520b17f44d99a8e7e98aa..3d440b812faf6cf75da3e55090873ece8387f610 100644
 --- a/dist/editor/editor.js
 +++ b/dist/editor/editor.js
 @@ -436,7 +436,9 @@ var Editor = class {
@@ -893,7 +1106,15 @@ index bf17cea32f..671e77b8cd 100644
  		this.#scrollToPrimaryCaret();
  	}
  	setMarkers(markers) {
-@@ -1903,7 +1905,11 @@ var Editor = class {
+@@ -1058,6 +1060,7 @@ var Editor = class {
+ 				onBlur?.();
+ 			}, { passive: true }),
+ 			addEventListener(contentEl, "pointerdown", (e) => {
++				if (!targetIsContentElement(e)) return;
+ 				this.#canMountSelectionAction = true;
+ 				this.#suppressNativeSelectionSync = false;
+ 				if (e.pointerType !== "mouse") return;
+@@ -1903,7 +1906,11 @@ var Editor = class {
  			changedDocumentLines: this.#isDiff && !didLineCountChange ? getChangedDocumentLines(textDocument, change) : void 0,
  			documentLineCount: textDocument.lineCount
  		});
@@ -907,7 +1128,7 @@ index bf17cea32f..671e77b8cd 100644
  		if (newLineAnnotations != null) {
  			this.#lineAnnotations = newLineAnnotations;
 diff --git a/dist/editor/searchPanel.d.ts b/dist/editor/searchPanel.d.ts
-index 9542849786..1c1a51f56d 100644
+index 9542849786b98a7b11f98894847a2f53a9aac113..1c1a51f56da381105113d9b731e0573296edd9be 100644
 --- a/dist/editor/searchPanel.d.ts
 +++ b/dist/editor/searchPanel.d.ts
 @@ -15,6 +15,8 @@ interface SearchPanelOptions {
@@ -920,7 +1141,7 @@ index 9542849786..1c1a51f56d 100644
    scrollToMatch: (nextMatch: MatchRange, retainFocus: boolean) => void;
    applyReplace: (edits: ResolvedTextEdit[]) => void;
 diff --git a/dist/editor/searchPanel.js b/dist/editor/searchPanel.js
-index df1ba637c2..676751bb0e 100644
+index df1ba637c2f7834f21f087eba7a416c802f4ac68..676751bb0ea518e24df95477183f647a78a59c98 100644
 --- a/dist/editor/searchPanel.js
 +++ b/dist/editor/searchPanel.js
 @@ -12,7 +12,7 @@ var SearchPanelWidget = class {
@@ -941,8 +1162,156 @@ index df1ba637c2..676751bb0e 100644
  			this.#inputElement.focus();
  			this.#inputElement.select();
  		};
+diff --git a/dist/highlighter/DiffsHighlighter.d.ts b/dist/highlighter/DiffsHighlighter.d.ts
+index 222241302c8f927ef53f75ccf39a527f091061fa..ca3c09bf0e1660d61e8eeadc008bbb80d3f1d202 100644
+--- a/dist/highlighter/DiffsHighlighter.d.ts
++++ b/dist/highlighter/DiffsHighlighter.d.ts
+@@ -14,7 +14,7 @@ declare abstract class DiffsHighlighter {
+   readonly name: HighlighterTypes;
+   readonly themeResolver: ThemeResolver<DiffsTheme>;
+   protected disposed: boolean;
+-  constructor(name: HighlighterTypes, themeResolver: ThemeResolver<DiffsTheme>);
++  constructor(name: HighlighterTypes, themeResolver: ThemeResolver<DiffsTheme>, independent?: boolean);
+   /**
+    * Previously used themes remain available after the shared cache is cleared.
+    */
+diff --git a/dist/highlighter/DiffsHighlighter.js b/dist/highlighter/DiffsHighlighter.js
+index 9e0481ed826beb41d7d283730fef79010b7e9dce..a1e1e5bd671dec1a7896b9214a7ab5e162e9700f 100644
+--- a/dist/highlighter/DiffsHighlighter.js
++++ b/dist/highlighter/DiffsHighlighter.js
+@@ -9,10 +9,12 @@ var DiffsHighlighter = class {
+ 	name;
+ 	themeResolver;
+ 	disposed = false;
+-	constructor(name, themeResolver) {
++	independent;
++	constructor(name, themeResolver, independent = false) {
+ 		this.name = name;
+ 		this.themeResolver = themeResolver;
+-		acquireHighlighterType(name);
++		this.independent = independent;
++		if (!independent) acquireHighlighterType(name);
+ 	}
+ 	codeToHtml(code, options) {
+ 		return tokensToHtml(code, this.codeToTokens(code, options), options, this.name === "highlights");
+@@ -27,7 +29,7 @@ var DiffsHighlighter = class {
+ 		if (this.disposed) return;
+ 		this.disposed = true;
+ 		this.releaseResources();
+-		releaseHighlighterType();
++		if (!this.independent) releaseHighlighterType();
+ 	}
+ 	assertNotDisposed() {
+ 		if (this.disposed) throw new HighlighterDisposedError();
+diff --git a/dist/highlighter/backends/shiki.d.ts b/dist/highlighter/backends/shiki.d.ts
+index 912c8df36c62b548595e5bbcd2be78a426bc291b..d23fb073143ecaa06b0c2cc9764fd56e3fec33b2 100644
+--- a/dist/highlighter/backends/shiki.d.ts
++++ b/dist/highlighter/backends/shiki.d.ts
+@@ -4,13 +4,14 @@ import { DiffsEditorTokenizerOptions, DiffsStreamTokenizer } from "../tokenizer-
+ import { DiffsHighlighter } from "../DiffsHighlighter.js";
+ import { CodeToTokensOptions, TokensResult } from "../types.js";
+ import { ShikiEditorTokenizer } from "../shiki-editor.js";
++export { createCssVariablesTheme, normalizeTheme } from "shiki/core";
+ //#region src/highlighter/backends/shiki.d.ts
+ type ShikiHighlighterTypes = 'shiki-js' | 'shiki-wasm';
+ declare class ShikiHighlighter extends DiffsHighlighter {
+   private readonly raw;
+   private readonly loadedThemes;
+   private readonly attachedLanguages;
+-  static create(name: ShikiHighlighterTypes): Promise<ShikiHighlighter>;
++  static create(name: ShikiHighlighterTypes, independent?: boolean): Promise<ShikiHighlighter>;
+   private constructor();
+   getTheme(themeName: string): DiffsTheme;
+   codeToTokens(code: string, options: CodeToTokensOptions): TokensResult;
+diff --git a/dist/highlighter/backends/shiki.js b/dist/highlighter/backends/shiki.js
+index caabba5e17d18d4d5618a58b56c6ecd3756765f8..b5e0f980882f9a7d4e648129f478f075b2388f12 100644
+--- a/dist/highlighter/backends/shiki.js
++++ b/dist/highlighter/backends/shiki.js
+@@ -5,23 +5,23 @@ import { resolveLanguages } from "../languages/resolveLanguages.js";
+ import { DiffsHighlighter } from "../DiffsHighlighter.js";
+ import { ShikiEditorTokenizer } from "../shiki-editor.js";
+ import { ShikiStreamTokenizer } from "../shiki-stream.js";
+-import { createCssVariablesTheme, createHighlighterCore } from "shiki/core";
++import { createCssVariablesTheme, createHighlighterCore, normalizeTheme } from "shiki/core";
+ //#region src/highlighter/backends/shiki.ts
+ var ShikiHighlighter = class ShikiHighlighter extends DiffsHighlighter {
+ 	raw;
+ 	loadedThemes = /* @__PURE__ */ new Map();
+ 	attachedLanguages = /* @__PURE__ */ new Set(["text", "ansi"]);
+-	static async create(name) {
++	static async create(name, independent = false) {
+ 		const engine = name === "shiki-wasm" ? (await import("shiki/engine/oniguruma")).createOnigurumaEngine(import("shiki/wasm")) : (await import("shiki/engine/javascript")).createJavaScriptRegexEngine();
+ 		const raw = await createHighlighterCore({
+ 			themes: [],
+ 			langs: [],
+ 			engine
+ 		});
+-		return new ShikiHighlighter(name, raw);
++		return new ShikiHighlighter(name, raw, independent);
+ 	}
+-	constructor(name, raw) {
+-		super(name, createDiffsThemeResolver(name));
++	constructor(name, raw, independent = false) {
++		super(name, createDiffsThemeResolver(name), independent);
+ 		this.raw = raw;
+ 	}
+ 	getTheme(themeName) {
+@@ -102,6 +102,6 @@ var ShikiHighlighter = class ShikiHighlighter extends DiffsHighlighter {
+ 	}
+ };
+ //#endregion
+-export { ShikiHighlighter };
++export { ShikiHighlighter, createCssVariablesTheme, normalizeTheme };
+ 
+ //# sourceMappingURL=shiki.js.map
+diff --git a/dist/highlighter/shared_highlighter.d.ts b/dist/highlighter/shared_highlighter.d.ts
+index ea847fa7222d37df0e45869ed4fa1b843e21dfa1..401fd7f49460eb6373c9584cb3f60fa7de58d96a 100644
+--- a/dist/highlighter/shared_highlighter.d.ts
++++ b/dist/highlighter/shared_highlighter.d.ts
+@@ -11,7 +11,7 @@ interface HighlighterOptions {
+  * Creates an instance the caller must dispose. Defaults to the active type
+  * or DEFAULT_HIGHLIGHTER; rejects if a different type is already active.
+  */
+-declare function createHighlighter(type?: HighlighterTypes): Promise<DiffsHighlighter>;
++declare function createHighlighter(type?: HighlighterTypes, options?: { independent?: boolean }): Promise<DiffsHighlighter>;
+ declare function getSharedHighlighter({ themes, langs, preferredHighlighter }: HighlighterOptions): Promise<DiffsHighlighter>;
+ declare function isHighlighterLoaded(): boolean;
+ interface GetHighlighterIfLoadedProps {
+diff --git a/dist/highlighter/shared_highlighter.js b/dist/highlighter/shared_highlighter.js
+index 4386eba7dccc590f5193c9cb0b9af36c777b21a0..baee4b4a4c47b7e4589a8a869cc94cfa20dbf108 100644
+--- a/dist/highlighter/shared_highlighter.js
++++ b/dist/highlighter/shared_highlighter.js
+@@ -8,8 +8,13 @@ let highlighter;
+ * Creates an instance the caller must dispose. Defaults to the active type
+ * or DEFAULT_HIGHLIGHTER; rejects if a different type is already active.
+ */
+-async function createHighlighter(type) {
++async function createHighlighter(type, { independent = false } = {}) {
+ 	const resolvedType = resolveHighlighterType(type);
++	if (independent) {
++		if (resolvedType === "highlights") throw new Error("Independent highlighters require Shiki");
++		const { ShikiHighlighter } = await import("./backends/shiki.js");
++		return ShikiHighlighter.create(resolvedType, true);
++	}
+ 	acquireHighlighterType(resolvedType);
+ 	try {
+ 		if (resolvedType === "highlights") {
+diff --git a/dist/highlighter/themes/themeResolver.js b/dist/highlighter/themes/themeResolver.js
+index 3dfd135f54771d85c04807b474884938c105bca6..e09fd53fc4142899cc93be5e6942c2b4e28ad953 100644
+--- a/dist/highlighter/themes/themeResolver.js
++++ b/dist/highlighter/themes/themeResolver.js
+@@ -6,7 +6,8 @@ const customThemes = /* @__PURE__ */ new Map();
+ const resolvers = /* @__PURE__ */ new Map();
+ const loadHighlightsThemeCatalog = createCachedLoader(() => import("@pierre/highlights/themes/loader"));
+ const loadPierreThemeCatalog = createCachedLoader(() => import("@pierre/theming/themes"));
+-const loadShikiCore = createCachedLoader(() => import("shiki/core"));
++// Der Shiki-Kern wird über denselben Lazy-Einstieg wie der Highlighter geladen.
++const loadShikiCore = createCachedLoader(() => import("../backends/shiki.js"));
+ const ZED_COLOR_ALIASES = [
+ 	["editor.lineHighlightBackground", "editor.active_line.background"],
+ 	["editor.selectionBackground", "element.selected"],
 diff --git a/dist/managers/ResizeManager.d.ts b/dist/managers/ResizeManager.d.ts
-index 3efafc4132..9e5b7511f9 100644
+index 3efafc41324e09c546e66645c0dc474e68417896..9e5b7511f9f82702c4e15fe7063b3e9a0b05a79d 100644
 --- a/dist/managers/ResizeManager.d.ts
 +++ b/dist/managers/ResizeManager.d.ts
 @@ -5,6 +5,8 @@ interface ResizeManagerSetupOptions {
@@ -955,7 +1324,7 @@ index 3efafc4132..9e5b7511f9 100644
    private static managersByElement;
    private static getResizeObserver;
 diff --git a/dist/managers/ResizeManager.js b/dist/managers/ResizeManager.js
-index 9724cb1e34..14145d8329 100644
+index 9724cb1e344af1ac8763b592f671a9ceb63f1a76..14145d832900e7a9734786dbb6223d03424f7cb6 100644
 --- a/dist/managers/ResizeManager.js
 +++ b/dist/managers/ResizeManager.js
 @@ -19,6 +19,7 @@ var ResizeManager = class ResizeManager {
@@ -975,7 +1344,7 @@ index 9724cb1e34..14145d8329 100644
  	}
  	applyAnnotationUpdates(annotationUpdates) {
 diff --git a/dist/react/CodeView.d.ts b/dist/react/CodeView.d.ts
-index 12e12c50cd..684c7a89fa 100644
+index 12e12c50cd0442c230fb5a9ac00fb097f6dfb01e..684c7a89faa6a7ef0d81242159fec586ba1e51a9 100644
 --- a/dist/react/CodeView.d.ts
 +++ b/dist/react/CodeView.d.ts
 @@ -57,6 +57,8 @@ interface CodeViewBaseProps<LAnnotation, Caret> {
@@ -988,7 +1357,7 @@ index 12e12c50cd..684c7a89fa 100644
    renderHeaderPrefix?(item: CodeViewItem<LAnnotation>): ReactNode;
    renderHeaderFilenameSuffix?(item: CodeViewItem<LAnnotation>): ReactNode;
 diff --git a/dist/react/CodeView.js b/dist/react/CodeView.js
-index 4dfed6bd0a..ac35a5a455 100644
+index 4dfed6bd0af6511b7325620ae78d25a8857cfa8b..ac35a5a455bfd3228c8976e4d97eba8bc0e4d75c 100644
 --- a/dist/react/CodeView.js
 +++ b/dist/react/CodeView.js
 @@ -24,7 +24,7 @@ function createDefaultCache(controlled) {
@@ -1052,8 +1421,76 @@ index 4dfed6bd0a..ac35a5a455 100644
  	if (hasCustomHeader) managedOptions.renderCustomHeader = noopRender;
  	if (hasGutterRenderer) managedOptions.renderGutterUtility = noopRender;
  	if (hasCodeViewHeader) managedOptions.renderCodeViewHeader = noopRender;
+diff --git a/dist/renderers/FileRenderer.js b/dist/renderers/FileRenderer.js
+index 4c65f0554cbb6403c5e45affb33ff6e8d18adcf3..32f0094d93ba82607629644f756520444af6a158 100644
+--- a/dist/renderers/FileRenderer.js
++++ b/dist/renderers/FileRenderer.js
+@@ -182,7 +182,7 @@ var FileRenderer = class {
+ 		const workerManager = this.getHighlightWorkerManager(file);
+ 		if (workerManager != null) {
+ 			if (this.renderCache.result == null && !massiveFile) workerManager.highlightFileAST(this, file);
+-		} else if (getHighlighterIfLoaded({ theme: this.getLocalHighlightTheme() }) == null) {
++		} else if ((this.options.highlighter ?? getHighlighterIfLoaded({ theme: this.getLocalHighlightTheme() })) == null) {
+ 			this.computedLang = file.lang ?? getFiletypeFromFileName(file.name);
+ 			this.initializeHighlighter().catch((error) => {
+ 				if (!(error instanceof HighlighterDisposedError)) this.onHighlightError(error);
+@@ -190,6 +190,7 @@ var FileRenderer = class {
+ 		}
+ 	}
+ 	getHighlightWorkerManager(file) {
++		if (this.options.highlighter != null) return;
+ 		const { editSessionActive, workerManager } = this;
+ 		return !editSessionActive && workerManager?.isWorkingPool() === true && !workerManager.shouldHighlightOnMainThread(file) ? workerManager : void 0;
+ 	}
+@@ -254,6 +255,7 @@ var FileRenderer = class {
+ 		return this.canRenderFile(file, options, forcePlainText) ? file : renderCache.file;
+ 	}
+ 	canRenderFile(file, options, forcePlainText) {
++		if (this.options.highlighter != null) return true;
+ 		const { renderCache } = this;
+ 		if (renderCache == null || areFileTargetsEqual(renderCache.file, file)) return true;
+ 		if (forcePlainText) return renderCache.result == null && renderCache.hydrated !== true || this.workerManager?.isWorkingPool() === true && !this.workerManager.shouldHighlightOnMainThread(file) || getHighlighterIfLoaded({ theme: options.theme }) != null;
+@@ -446,7 +448,7 @@ var FileRenderer = class {
+ 			if (!forcePlainText && hasContent && (!this.renderCache.highlighted || forceHighlight)) workerManager.highlightFileAST(this, file);
+ 		} else {
+ 			this.computedLang = file.lang ?? getFiletypeFromFileName(file.name);
+-			const highlighter = getHighlighterIfLoaded();
++			const highlighter = this.options.highlighter ?? getHighlighterIfLoaded();
+ 			const hasThemes = highlighter != null && areThemesAttached(options.theme, highlighter);
+ 			const hasLangs = highlighter != null && areLanguagesAttached(this.computedLang, highlighter);
+ 			const canHighlight = !forcePlainText && hasLangs;
+@@ -485,7 +487,7 @@ var FileRenderer = class {
+ 	async asyncHighlight(file, lazyLineAST = false) {
+ 		const forcePlainText = isFileMassive(this.getOrCreateLineCache(file).length, this.getTokenizeMaxLength());
+ 		this.computedLang = forcePlainText ? "text" : file.lang ?? getFiletypeFromFileName(file.name);
+-		let highlighter = getHighlighterIfLoaded();
++		let highlighter = this.options.highlighter ?? getHighlighterIfLoaded();
+ 		const hasThemes = highlighter != null && areThemesAttached(this.getLocalHighlightTheme(), highlighter);
+ 		const hasLangs = forcePlainText || highlighter != null && areLanguagesAttached(this.computedLang, highlighter);
+ 		if (highlighter == null || !hasThemes || !hasLangs) highlighter = await this.initializeHighlighter();
+@@ -599,6 +601,7 @@ var FileRenderer = class {
+ 		}));
+ 	}
+ 	initializeHighlighter() {
++		if (this.options.highlighter != null) return Promise.resolve(this.options.highlighter);
+ 		return getSharedHighlighter(getHighlighterOptions(this.computedLang, {
+ 			theme: this.getLocalHighlightTheme(),
+ 			preferredHighlighter: resolvePreferredHighlighter(this.workerManager, this.options)
+diff --git a/dist/types.d.ts b/dist/types.d.ts
+index d4d445d87c6d6483ed8ff0448a2e10997bdb42f9..49d9552ba3b355f4bb9231d7982dfaf6e4dc382c 100644
+--- a/dist/types.d.ts
++++ b/dist/types.d.ts
+@@ -337,6 +337,8 @@ type HunkSeparators = 'simple' | 'metadata' | 'line-info' | 'line-info-basic' |
+ type LineDiffTypes = 'word-alt' | 'word-line' | 'word' | 'char' | 'none';
+ type DiffIndicators = 'classic' | 'bars' | 'none';
+ interface BaseCodeOptions {
++  /** Instanzgebundener Highlighter für Dateiansichten mit eigener Grammatik. */
++  highlighter?: DiffsHighlighter;
+   theme?: DiffsThemeNames | ThemesType;
+   disableLineNumbers?: boolean;
+   overflow?: 'scroll' | 'wrap';
 diff --git a/dist/utils/createFileHeaderElement.js b/dist/utils/createFileHeaderElement.js
-index 39fe30e47b..600442e3eb 100644
+index 39fe30e47b3e524a72eec9b25bdcd37559b7b9d3..600442e3eb9697e8657f5f7e93ff282309960d10 100644
 --- a/dist/utils/createFileHeaderElement.js
 +++ b/dist/utils/createFileHeaderElement.js
 @@ -73,12 +73,12 @@ function createMetadataElement(fileDiff) {
@@ -1071,8 +1508,20 @@ index 39fe30e47b..600442e3eb 100644
  			properties: { "data-additions-count": "" }
  		}));
  	}
+diff --git a/dist/utils/getFileRendererOptions.js b/dist/utils/getFileRendererOptions.js
+index 7d08e24534488b97a4e3dec96c44dd8ccf3fee36..b5e32377d69147323adbc98f93cea79a4432b6f1 100644
+--- a/dist/utils/getFileRendererOptions.js
++++ b/dist/utils/getFileRendererOptions.js
+@@ -2,6 +2,7 @@ import { shouldUseTokenTransformer } from "./shouldUseTokenTransformer.js";
+ //#region src/utils/getFileRendererOptions.ts
+ function getFileRendererOptions(options) {
+ 	return {
++		highlighter: options?.highlighter,
+ 		theme: options?.theme,
+ 		disableLineNumbers: options?.disableLineNumbers,
+ 		overflow: options?.overflow,
 diff --git a/package.json b/package.json
-index 0cc43c4a7d..60b7d17d61 100644
+index 0cc43c4a7de60dc1a80a4b383f1fe4a477ae6d07..60b7d17d619bc5efcdc4e871b673e878e67d3710 100644
 --- a/package.json
 +++ b/package.json
 @@ -60,6 +60,18 @@

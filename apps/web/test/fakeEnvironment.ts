@@ -191,8 +191,15 @@ export interface FakeThread {
   readonly sideChatOf?: ThreadId;
   readonly id: ThreadId;
   readonly title: string;
+  readonly branch?: string | null;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
+  readonly lifecycle?: Partial<
+    Pick<
+      OrchestrationV2ThreadShell,
+      "unsettledAt" | "unsettledReason" | "settledOverride" | "lastVisitedAt"
+    >
+  >;
 }
 
 /** A thread of `turns` user prompts, each answered in markdown with a list and inline code. */
@@ -228,7 +235,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     modelSelection: MODEL,
     runtimeMode: "full-access",
     interactionMode: "default",
-    branch: "main",
+    branch: thread.branch === undefined ? "main" : thread.branch,
     worktreePath: null,
     activeProviderThreadId: null,
     lineage: {
@@ -257,6 +264,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     settledAt: null,
     lastVisitedAt: AT,
     deletedAt: null,
+    ...thread.lifecycle,
   };
 }
 
@@ -292,8 +300,9 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
       archivedAt: null,
       settledOverride: null,
       settledAt: null,
-      lastVisitedAt: AT,
       deletedAt: null,
+      ...thread.lifecycle,
+      lastVisitedAt: thread.lifecycle?.lastVisitedAt ?? AT,
     },
     runs: [...thread.runs],
     attempts: [],
@@ -326,6 +335,8 @@ let dispatched: OrchestrationV2Command[] = [];
 let acceptCommands = false;
 let sequence = 1;
 let vcsStatusSubscriber: Queue.Queue<VcsStatusStreamEvent> | null = null;
+const shellSubscribers = new Set<Queue.Queue<OrchestrationV2ShellStreamItem>>();
+let extraHandlers: Record<string, (input: never) => unknown> = {};
 
 const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>) => () => void) =>
   Stream.unwrap(
@@ -356,19 +367,27 @@ const handlers: Record<string, (input: never) => unknown> = {
       };
     }),
   [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: () =>
-    subscribe<OrchestrationV2ShellStreamItem>([
-      {
-        kind: "snapshot",
-        snapshot: {
-          schemaVersion: 1,
-          snapshotSequence: sequence,
-          projects: [project],
-          threads: threads.map(shellOf),
-          archivedThreads: [],
+    subscribe<OrchestrationV2ShellStreamItem>(
+      [
+        {
+          kind: "snapshot",
+          snapshot: {
+            schemaVersion: 1,
+            snapshotSequence: sequence,
+            projects: [project],
+            threads: threads.map(shellOf),
+            archivedThreads: [],
+          },
         },
+        { kind: "synchronized" },
+      ],
+      (queue) => {
+        shellSubscribers.add(queue);
+        return () => {
+          shellSubscribers.delete(queue);
+        };
       },
-      { kind: "synchronized" },
-    ]),
+    ),
   [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input: { readonly threadId: ThreadId }) => {
     const thread = threads.find((candidate) => candidate.id === input.threadId);
     if (!thread) return Stream.never;
@@ -401,6 +420,7 @@ const handlers: Record<string, (input: never) => unknown> = {
 // Unanswered calls stay pending, like a server that has not replied yet.
 const client = new Proxy(handlers, {
   get: (target, method: string) =>
+    extraHandlers[method] ??
     target[method] ??
     (() => {
       const rpc = WsRpcGroup.requests.get(method);
@@ -448,11 +468,14 @@ const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
 /** Serves the environment's HTTP API and these threads until disposed. */
 export function installFakeEnvironment(
   fixtures: ReadonlyArray<FakeThread>,
-  options?: { readonly acceptCommands?: boolean },
+  options: { readonly acceptCommands?: boolean } & Record<string, unknown> = {},
 ): Disposable {
   threads = fixtures;
   dispatched = [];
-  acceptCommands = options?.acceptCommands === true;
+  acceptCommands = options.acceptCommands === true;
+  extraHandlers = Object.fromEntries(
+    Object.entries(options).filter(([, value]) => typeof value === "function"),
+  ) as Record<string, (input: never) => unknown>;
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
@@ -476,6 +499,7 @@ export function installFakeEnvironment(
       threads = [];
       dispatched = [];
       acceptCommands = false;
+      extraHandlers = {};
     },
   };
 }
@@ -490,6 +514,17 @@ type ThreadEvent = Extract<OrchestrationV2ThreadStreamItem, { readonly kind: "ev
 export async function emitTerminalMetadata(event: TerminalMetadataStreamEvent): Promise<void> {
   if (terminalMetadataSubscriber === null) throw new Error("No terminal metadata subscription");
   await Effect.runPromise(Queue.offer(terminalMetadataSubscriber, event));
+}
+
+export async function emitThreadShell(thread: FakeThread): Promise<void> {
+  sequence += 1;
+  const event: OrchestrationV2ShellStreamItem = {
+    kind: "thread.updated",
+    sequence,
+    location: "active",
+    thread: shellOf(thread),
+  };
+  await Effect.runPromise(Effect.forEach(shellSubscribers, (queue) => Queue.offer(queue, event)));
 }
 
 /** Whether the app holds a live subscription to the thread, so events reach it. */
@@ -522,7 +557,7 @@ export function runningRun(threadId: ThreadId, id: string, ordinal: number, user
   };
 }
 
-export { userItem };
+export { userItem, projectionOf };
 
 export async function emitVcsStatus(event: VcsStatusStreamEvent): Promise<void> {
   if (vcsStatusSubscriber === null) throw new Error("No VCS status subscription");

@@ -1,4 +1,5 @@
 import * as AssetSigner from "../../assets/AssetSigner.ts";
+import { FogBugzService } from "../../fogbugz/FogBugzService.ts";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -10,6 +11,7 @@ import {
   EnvironmentId,
   NodeId,
   OrchestratorMcpThreadReadResult,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   RunId,
@@ -65,6 +67,18 @@ import * as PeerLinks from "../../peer/PeerLinks.ts";
 const layerOrchestratorToolkit = McpHttpServer.layerOrchestratorToolkit.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  Layer.provide(
+    Layer.mock(FogBugzService)({
+      thread: (threadId) =>
+        Effect.succeed({
+          threadId,
+          projectId: ProjectId.make("fogbugz-project"),
+          caseId: 42,
+          title: "Linked case",
+          url: "https://fogbugz.example/default.asp?ixBug=42",
+        }),
+    }),
+  ),
 );
 
 const declaredFailure = (result: McpSchema.CallToolResult) => {
@@ -941,6 +955,7 @@ it.effect("discovers workflow stop targets and requires orchestration capability
       );
     expect(read.isError).toBe(false);
     const result = yield* decodeThreadReadResult(read.structuredContent);
+    expect(result.fogbugz).toMatchObject({ caseId: 42, title: "Linked case" });
     expect(result.items[0]?.subagentId).toBe(subagentId);
     const call = (invocation: McpInvocationContext.McpInvocationScope) =>
       server

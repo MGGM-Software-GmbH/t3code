@@ -14,6 +14,18 @@ const descriptor = {
 } as const;
 
 describe("ExecutionEnvironmentDescriptor", () => {
+  it("keeps pd-secrets optional for older hosts and preserves advertised support", () => {
+    expect(decodeDescriptor(descriptor).capabilities.pdSecrets).toBeUndefined();
+    for (const supported of [true, false]) {
+      expect(
+        decodeDescriptor({
+          ...descriptor,
+          capabilities: { ...descriptor.capabilities, pdSecrets: supported },
+        }).capabilities.pdSecrets,
+      ).toBe(supported);
+    }
+  });
+
   it("decodes old, recognized and future manual installation descriptors", () => {
     expect(decodeDescriptor(descriptor).capabilities.serverInstallation).toBeUndefined();
     for (const installation of [{ kind: "npx" }, { kind: "npm-global", prefix: "/opt/node" }]) {

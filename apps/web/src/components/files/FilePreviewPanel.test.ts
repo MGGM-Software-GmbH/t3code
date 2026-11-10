@@ -77,6 +77,7 @@ describe("isMarkdownPreviewFile", () => {
 
 describe("resolveFilePreviewPath", () => {
   it.each([
+    ["", null],
     ["/repo/project", null],
     ["/repo/project/", null],
     [".", null],

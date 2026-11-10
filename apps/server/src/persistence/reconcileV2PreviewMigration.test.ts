@@ -56,10 +56,13 @@ describe("V2 preview upgrade", () => {
         [74, "ExcludeAttachmentPlaceholdersFromSearch"],
         [75, "SubagentDeliveryState"],
         [76, "ProjectionProjectsPinArchive"],
-        [77, "RepairBooleanSettledOverride"],
-        [78, "DropOrchestrationEventCorrelationIndex"],
-        [79, "DelegatedRecoveryIndexes"],
-        [80, "ScheduledTaskThreadMode"],
+        [77, "FogBugz"],
+        [78, "FogBugzProjectGroups"],
+        [79, "FogBugzAutomation"],
+        [80, "RepairBooleanSettledOverride"],
+        [81, "DropOrchestrationEventCorrelationIndex"],
+        [82, "DelegatedRecoveryIndexes"],
+        [83, "ScheduledTaskThreadMode"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -159,10 +162,13 @@ describe("V2 preview upgrade", () => {
         [74, "ExcludeAttachmentPlaceholdersFromSearch"],
         [75, "SubagentDeliveryState"],
         [76, "ProjectionProjectsPinArchive"],
-        [77, "RepairBooleanSettledOverride"],
-        [78, "DropOrchestrationEventCorrelationIndex"],
-        [79, "DelegatedRecoveryIndexes"],
-        [80, "ScheduledTaskThreadMode"],
+        [77, "FogBugz"],
+        [78, "FogBugzProjectGroups"],
+        [79, "FogBugzAutomation"],
+        [80, "RepairBooleanSettledOverride"],
+        [81, "DropOrchestrationEventCorrelationIndex"],
+        [82, "DelegatedRecoveryIndexes"],
+        [83, "ScheduledTaskThreadMode"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

@@ -3,7 +3,7 @@ import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 import { isHostPath, workspaceRelativeFilePath } from "@t3tools/shared/path";
 
 export function resolveFilePreviewPath(path: string | null, cwd: string): string | null {
-  if (path === null) return null;
+  if (path === null || path === "") return null;
   return path === "." || workspaceRelativeFilePath(path, cwd) === "." ? null : path;
 }
 

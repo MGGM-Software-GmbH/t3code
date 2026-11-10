@@ -1,6 +1,13 @@
 import type { FileDiffMetadata, SelectedLineRange, SelectionSide } from "@pierre/diffs";
 import { PullRequestContextMetadata, type PullRequestReviewPosition } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+export {
+  buildFileReviewComment,
+  inferReviewCommentFenceLanguage,
+  refreshFileReviewComments,
+  remapFileReviewComments,
+  restoreFileReviewCommentRange,
+} from "@t3tools/shared/fileReviewComments";
 
 import { isLineInFileDiff } from "./components/pullRequest/pullRequestDiff.logic";
 
@@ -21,10 +28,13 @@ export const ReviewCommentContextSchema = Schema.Struct({
   endIndex: Schema.Number,
   rangeLabel: Schema.String,
   text: Schema.String,
+  editDraft: Schema.optional(Schema.String),
   diff: Schema.String,
   fenceLanguage: Schema.optional(Schema.String),
   selection: Schema.optional(ReviewCommentSelectionSchema),
   pullRequest: Schema.optional(PullRequestContextMetadata),
+  sourceAnchor: Schema.optional(Schema.Struct({ before: Schema.String, after: Schema.String })),
+  sourceStatus: Schema.optional(Schema.Literals(["current", "removed", "unresolved"])),
 });
 
 export interface ReviewCommentContext {
@@ -36,10 +46,13 @@ export interface ReviewCommentContext {
   readonly endIndex: number;
   readonly rangeLabel: string;
   readonly text: string;
+  readonly editDraft?: string | undefined;
   readonly diff: string;
   readonly fenceLanguage?: string | undefined;
   readonly selection?: ReviewCommentSelection | undefined;
   readonly pullRequest?: PullRequestContextMetadata | undefined;
+  readonly sourceAnchor?: { readonly before: string; readonly after: string } | undefined;
+  readonly sourceStatus?: "current" | "removed" | "unresolved" | undefined;
 }
 
 interface DiffReviewLine {
@@ -56,44 +69,6 @@ export function formatReviewCommentFence(language: string, contents: string): st
   );
   const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
   return [`${fence}${language}`, contents.trimEnd(), fence].join("\n");
-}
-
-export function buildFileReviewComment(input: {
-  id: string;
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  text: string;
-  contents: string;
-}): ReviewCommentContext {
-  const startLine = Math.max(1, Math.min(input.startLine, input.endLine));
-  const endLine = Math.max(startLine, Math.max(input.startLine, input.endLine));
-  const selectedLines = input.contents.split("\n").slice(startLine - 1, endLine);
-  return {
-    id: input.id,
-    sectionId: `file:${input.filePath}`,
-    sectionTitle: "File comment",
-    filePath: input.filePath,
-    startIndex: startLine - 1,
-    endIndex: endLine - 1,
-    rangeLabel: startLine === endLine ? `L${startLine}` : `L${startLine} to L${endLine}`,
-    text: input.text.trim(),
-    diff: selectedLines.join("\n"),
-    fenceLanguage: inferReviewCommentFenceLanguage(input.filePath),
-  };
-}
-
-export function inferReviewCommentFenceLanguage(filePath: string): string {
-  const normalizedPath = filePath.replaceAll("\\", "/");
-  const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1).toLowerCase();
-  const extensionIndex = fileName.lastIndexOf(".");
-  if (extensionIndex > 0 && extensionIndex < fileName.length - 1) {
-    return fileName.slice(extensionIndex + 1);
-  }
-  if (fileName.startsWith(".") && fileName.length > 1) {
-    return fileName.slice(1);
-  }
-  return "text";
 }
 
 function stripTrailingNewline(value: string): string {
@@ -223,7 +198,18 @@ export function restoreDiffReviewCommentRange(
   fileDiff: FileDiffMetadata,
   comment: ReviewCommentContext,
 ): SelectedLineRange | null {
-  if (comment.selection) return comment.selection;
+  if (comment.selection) {
+    const current = buildDiffReviewComment({
+      id: comment.id,
+      sectionId: comment.sectionId,
+      sectionTitle: comment.sectionTitle,
+      filePath: comment.filePath,
+      fileDiff,
+      range: comment.selection,
+      text: comment.text,
+    });
+    return current?.diff === comment.diff ? comment.selection : null;
+  }
 
   const includeExpandedContext = !fileDiff.isPartial;
   const startLine = buildDiffReviewLines(fileDiff, includeExpandedContext, {
@@ -241,12 +227,22 @@ export function restoreDiffReviewCommentRange(
   const start = getDiffReviewSelectionPoint(startLine);
   const end = getDiffReviewSelectionPoint(endLine);
   if (!start || !end) return null;
-  return {
+  const range: SelectedLineRange = {
     start: start.lineNumber,
     side: start.side,
     end: end.lineNumber,
     endSide: end.side,
   };
+  const current = buildDiffReviewComment({
+    id: comment.id,
+    sectionId: comment.sectionId,
+    sectionTitle: comment.sectionTitle,
+    filePath: comment.filePath,
+    fileDiff,
+    range,
+    text: comment.text,
+  });
+  return current?.diff === comment.diff ? range : null;
 }
 
 function findDiffReviewLineIndex(
