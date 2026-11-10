@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import {
   FogBugzError,
   ThreadId,
@@ -667,19 +668,11 @@ describe("per-thread case Git checkout", () => {
           yield* Effect.gen(function* () {
             const service = yield* CaseGit.FogBugzCaseGit;
             const threadId = ThreadId.make("first-thread");
-            const previousGitDirectory = process.env.GIT_DIR;
-            process.env.GIT_DIR = path.join(root, "unrelated.git");
+            vi.stubEnv("GIT_DIR", path.join(root, "unrelated.git"));
             const [first, repeated] = yield* Effect.all(
               [service.ensure(threadId), service.ensure(threadId)],
               { concurrency: "unbounded" },
-            ).pipe(
-              Effect.ensuring(
-                Effect.sync(() => {
-                  if (previousGitDirectory === undefined) delete process.env.GIT_DIR;
-                  else process.env.GIT_DIR = previousGitDirectory;
-                }),
-              ),
-            );
+            ).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
             expect(first).toEqual(repeated);
             expect(first.cwd).toBe(
               path.join(root, "case-files/connection-fixture/7/42/first-thread/repo"),
