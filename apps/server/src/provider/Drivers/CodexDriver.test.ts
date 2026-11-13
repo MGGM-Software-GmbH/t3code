@@ -104,6 +104,87 @@ const noSpawn = ChildProcessSpawner.make(() =>
 const encodeCredentials = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 it.layer(layerTest)("CodexDriver", (it) => {
+  it.effect(
+    "checks fresh limits inside redemption and leaves manual redemption unconditional",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-reset-driver-" });
+        const fixturePath = NodePath.join(directory, "codex-fixture.mjs");
+        const callsPath = NodePath.join(directory, "calls.jsonl");
+        yield* fs.writeFileString(
+          fixturePath,
+          `import * as fs from "node:fs";
+import * as readline from "node:readline";
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  const { id, method, params } = JSON.parse(line);
+  if (id === undefined) return;
+  fs.appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ method, params }) + "\\n");
+  const results = {
+    initialize: { userAgent: "codex/0.163.0", codexHome: process.env.CODEX_HOME, platformFamily: "unix", platformOs: "linux" },
+    "account/read": { account: { type: "chatgpt", email: "synthetic@example.test", planType: "pro" }, requiresOpenaiAuth: false },
+    "account/rateLimits/read": { rateLimits: { secondary: { usedPercent: 100, windowDurationMins: 10080 } }, rateLimitResetCredits: { availableCount: 1 } },
+    "account/rateLimitResetCredit/consume": { outcome: "alreadyRedeemed" },
+  };
+  process.stdout.write(JSON.stringify({ id, result: results[method] }) + "\\n");
+});
+`,
+        );
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const fixtureSpawner = ChildProcessSpawner.make((command) => {
+          if (!ChildProcess.isStandardCommand(command) || command.args[0] !== "app-server")
+            return Effect.die("Unexpected reset fixture process");
+          return spawner.spawn(
+            ChildProcess.make(process.execPath, [fixturePath], {
+              ...command.options,
+              shell: false,
+            }),
+          );
+        });
+        yield* Effect.gen(function* () {
+          const instance = yield* CodexDriver.create({
+            instanceId: ProviderInstanceId.make("reset-driver-fixture"),
+            displayName: undefined,
+            enabled: false,
+            environment: [],
+            config: {
+              ...CodexDriver.defaultConfig(),
+              binaryPath: process.execPath,
+              homePath: directory,
+            },
+          });
+          let observed = 0;
+          yield* instance.consumeResetCredit!({
+            onlyIf: (limits) => {
+              expect(limits.windows[0]?.usedPercent).toBe(100);
+              expect(limits.resetCredits?.availableCount).toBe(1);
+              observed += 1;
+              return false;
+            },
+          });
+          expect(yield* fs.readFileString(callsPath)).not.toContain(
+            "account/rateLimitResetCredit/consume",
+          );
+          yield* instance.consumeResetCredit!({ onlyIf: () => true });
+          yield* instance.consumeResetCredit!();
+          const calls = (yield* fs.readFileString(callsPath))
+            .trim()
+            .split("\n")
+            .map(
+              (line) => JSON.parse(line) as { method: string; params?: { idempotencyKey: string } },
+            );
+          const consumptions = calls.filter(
+            (call) => call.method === "account/rateLimitResetCredit/consume",
+          );
+          expect(observed).toBe(1);
+          expect(consumptions).toHaveLength(2);
+          expect(consumptions[0]!.params!.idempotencyKey).not.toBe(
+            consumptions[1]!.params!.idempotencyKey,
+          );
+          expect(calls.filter((call) => call.method === "account/rateLimits/read")).toHaveLength(2);
+        }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, fixtureSpawner));
+      }).pipe(Effect.scoped),
+  );
   const checkManagedAccount = (replacementTiming: "unchanged" | "during-probe") =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("restored-managed-account");

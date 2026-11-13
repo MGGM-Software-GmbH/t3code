@@ -10,6 +10,10 @@ if [ "$1" = "prefix" ] && [ "$2" = "--global" ]; then
   exit 0
 fi
 if [ "$1" = "install" ] && [ "$2" = "--global" ]; then
+  if [ "$FAKE_NPM_REQUIRE_LIB" = "1" ] && [ ! -d "$prefix/lib" ]; then
+    printf 'ENOENT: missing global prefix lib directory\n' >&2
+    exit 254
+  fi
   package_root="$prefix/lib/node_modules/@example/acp"
   executable="$prefix/bin/example-agent"
   mkdir -p "$package_root" "$prefix/bin"

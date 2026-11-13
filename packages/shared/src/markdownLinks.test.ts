@@ -57,6 +57,15 @@ describe("parseMarkdownFileLink", () => {
     ["+page.svelte", "+page.svelte"],
     ["[id].tsx", "[id].tsx"],
     ["/\\server\\share\\x.ts", "/\\server\\share\\x.ts"],
+    [
+      "/tmp/case-files/mcp%3Alaunch%3A123/repo/PRP.md",
+      "/tmp/case-files/mcp%3Alaunch%3A123/repo/PRP.md",
+    ],
+    [
+      "file:///tmp/case-files/mcp%253Alaunch%253A123/repo/PRP.md",
+      "/tmp/case-files/mcp%3Alaunch%3A123/repo/PRP.md",
+    ],
+    ["file:///tmp/name%3Apart/PRP.md", "/tmp/name:part/PRP.md"],
   ])("recognizes %s as a file", (href, path) => {
     expect(parseMarkdownFileLink(href)?.path).toBe(path);
   });

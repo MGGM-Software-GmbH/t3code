@@ -309,7 +309,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = Effect.fn(
       "ClaudeDriver.consumeResetCredit",
     )(
-      function* (creditId) {
+      function* (input) {
+        const creditId = typeof input === "string" ? input : undefined;
         const current = yield* snapshot.getSnapshot;
         const credits = current.usageLimits?.resetCredits;
         const grantId =

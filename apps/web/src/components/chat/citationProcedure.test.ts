@@ -108,6 +108,7 @@ describe("citedThreadSnapshot", () => {
     error: null,
     expanded: false,
     latestLocalTurnOrdinal: null,
+    oldestLoadedTurnOrdinal: null,
   };
   const unloaded = {
     thread: null,

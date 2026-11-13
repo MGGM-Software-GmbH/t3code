@@ -128,11 +128,47 @@ the bar show each account's quota, countdown, and credits. Tap a row to open its
 The same account signed in on more than one environment, or reported by a hub as well, counts once.
 Filter with the environment dropdown to see what a single machine has.
 
+For Codex CLI accounts, **Settings → MGGM → Redeem expiring banked resets** is enabled by default.
+The server checks every minute and attempts to redeem credits during their last hour before expiry.
+In the model picker, **Auto-redeem at 0%** can also redeem a credit when an account's overall weekly
+allowance is exhausted; this option is off by default. Both settings apply to Codex accounts on
+the selected environment and work with the picker closed while the server is running. Missing or
+unavailable limits do not trigger a reset. Hub accounts and managed ChatGPT sign-ins are excluded.
+Codex decides whether there is usage to reset; failed attempts are logged without replacing a thread.
+
 When a Claude or Codex account has no overall weekly quota left, its pooled session contribution
 shows 0% left. The next refill depends on both reset times: an exhausted session must also reset,
 and a partly spent session may only regain its unused portion when the week resets. Missing or
 stale reset times have no refill estimate; refresh Limits for a new reading. Claude's
 model-specific weekly allowances keep their reported values.
+
+The weekly indicators in the sidebar and next to the composer's access selector show the remaining
+seven-day allowance across accounts and for the selected account. The combined percentage weights
+each reporting account equally, regardless of plan size. Hover or focus an indicator for account
+details, the regular reset time in your local time zone, and when the balance was checked. Click to
+open Usage. On touch screens, tap either indicator to read these details, then choose **Usage details**.
+A question mark means no account-wide weekly allowance was reported; other time windows
+and model-specific quotas are not substituted. These indicators reuse cached snapshots and provider
+updates without additional polling. A passed reset does not assume a fresh balance before the
+provider reports it.
+
+The inner ring has seven day segments showing elapsed time in the weekly period. For several
+accounts it shows the average of reported periods, independently of the remaining allowance.
+The `+N` below the percentage is the number of banked resets reported for that account, or the
+sum across distinct accounts in the sidebar. Missing credit counts are identified in the details
+and are not assumed to be zero. The details also show the next reported credit expiry.
+When it is within the next 120 hours, the expiry and banked count turn orange. In a Codex thread,
+the banked count is blue while **Auto-redeem at 0%** is enabled, including when credits expire soon.
+
+The **Codex reset forecast** beside the combined weekly indicator estimates the chance of an
+additional reset within 24 hours. Its details include the near-term estimate, uncertainty range,
+and a link to [LunarWerx Codex Forecast](https://codex.lunarwerx.com/). These are third-party
+statistical estimates, not guaranteed resets or your account's regular rollover time. On touch
+screens, tap the gauge to read the forecast, then choose **Open Codex Forecast** to visit its source.
+Forecasts refresh every 60 minutes, with one shared cache per T3 server across clients. The details
+show the forecast's original timestamp and time since the last reported additional reset. Resets
+less than eight hours old are highlighted in green. Both usage indicators show local timestamps
+with German weekdays and numeric dates. Failed requests and snapshots already stale on retrieval show `?`.
 
 Opening Limits checks the selected connected environments automatically. Each client waits at
 least five minutes between automatic checks of an environment, including after a failed check.
@@ -170,6 +206,18 @@ Until then it shows no limits. Readings are not kept across a server restart.
 
 API-key accounts may not report subscription limits. This also applies to Claude connections
 using a proxy through `ANTHROPIC_AUTH_TOKEN`.
+
+## Start a fresh Codex week automatically
+
+**Settings → Providers → Codex → Automatically start weekly window** is enabled by default
+for each CLI account. T3 checks hourly, even with no browser open. When fresh limits report an
+unused seven-day window, it sends a brief read-only task using GPT-5.6 Luna to start that period
+and confirms that the reset time has stopped moving. This uses a small amount of the account's
+quota and does not redeem banked resets or change a thread's model.
+
+The account must have an existing Codex CLI login and report weekly limits. T3 uses that
+account's configured profile, including a shadow home when configured. Managed ChatGPT
+connections are not supported. Turn the setting off for accounts you want to leave unused.
 
 ## Connect a CLIProxyAPI hub
 

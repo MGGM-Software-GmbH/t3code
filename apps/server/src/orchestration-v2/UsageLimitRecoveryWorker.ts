@@ -1,4 +1,8 @@
 import { CommandId, MessageId, type OrchestrationV2Command } from "@t3tools/contracts";
+import {
+  isModelCapacityError,
+  modelCapacityRetryAt,
+} from "@t3tools/shared/orchestrationV2ThreadError";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -19,18 +23,34 @@ export function limitRecoveryCommand(
   autoResume: boolean,
   nowMs: number,
   snooze = false,
+  modelCapacityRetryDelayMinutes = 0,
 ): OrchestrationV2Command | null {
+  const capacity = isModelCapacityError(thread.lastError);
+  const recovery = thread.limitRecovery;
+  let resetAt = thread.usageLimitResetAt;
+  if (capacity) {
+    if (modelCapacityRetryDelayMinutes <= 0) return null;
+    resetAt =
+      recovery?.runId === thread.latestRunId
+        ? recovery.resetAt
+        : modelCapacityRetryAt(
+            DateTime.toEpochMillis(thread.latestRunCompletedAt ?? thread.updatedAt),
+            modelCapacityRetryDelayMinutes,
+          );
+  }
+  const shouldAutoResume = capacity || autoResume;
+  const shouldSnooze = !capacity && snooze;
   if (
     thread.status !== "failed" ||
-    thread.lastErrorClass !== "usage_limit" ||
+    (!capacity && thread.lastErrorClass !== "usage_limit") ||
     !thread.latestRunId ||
-    !thread.usageLimitResetAt ||
+    !resetAt ||
     thread.archivedAt !== null ||
     thread.settledOverride === "settled" ||
     thread.pendingRuntimeRequest !== null
   )
     return null;
-  const resetMs = Date.parse(thread.usageLimitResetAt);
+  const resetMs = Date.parse(resetAt);
   // An already-expired window reported with a fresh failure cannot start a retry loop.
   if (
     !Number.isFinite(resetMs) ||
@@ -38,19 +58,18 @@ export function limitRecoveryCommand(
   )
     return null;
   const identity = `${thread.id}:${thread.latestRunId}:${resetMs}`;
-  const recovery = thread.limitRecovery;
-  if (recovery?.runId !== thread.latestRunId || recovery.resetAt !== thread.usageLimitResetAt) {
+  if (recovery?.runId !== thread.latestRunId || recovery.resetAt !== resetAt) {
     if (nowMs - resetMs > MAX_OVERDUE_ARM_MS) return null;
-    if (!autoResume && (!snooze || resetMs <= nowMs)) return null;
+    if (!shouldAutoResume && (!shouldSnooze || resetMs <= nowMs)) return null;
     return {
       type: "thread.metadata.update",
       commandId: CommandId.make(`limit-arm:${identity}`),
       threadId: thread.id,
       limitRecovery: {
         runId: thread.latestRunId,
-        resetAt: thread.usageLimitResetAt,
-        autoResume,
-        snooze: snooze && resetMs > nowMs,
+        resetAt,
+        autoResume: shouldAutoResume,
+        snooze: shouldSnooze && resetMs > nowMs,
       },
     };
   }
@@ -109,6 +128,7 @@ const makeSweep = Effect.gen(function* () {
       now,
       autoResume: preferences.autoResumeLimitedThreads,
       snooze: preferences.snoozeLimitedThreads,
+      modelCapacityRetryDelayMinutes: preferences.modelCapacityRetryDelayMinutes,
     });
     let acted = false;
     for (const thread of candidates) {
@@ -117,6 +137,7 @@ const makeSweep = Effect.gen(function* () {
         preferences.autoResumeLimitedThreads,
         nowMs,
         preferences.snoozeLimitedThreads,
+        preferences.modelCapacityRetryDelayMinutes,
       );
       if (command === null) continue;
       acted = true;

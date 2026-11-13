@@ -1,3 +1,4 @@
+import { FogBugzService } from "../fogbugz/FogBugzService.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -168,7 +169,12 @@ const layerTools = Layer.mergeAll(
   Layer.provide(
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/p" }),
   ),
-  Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+      Layer.mock(FogBugzService)({ thread: () => Effect.succeed(null) }),
+    ),
+  ),
   Layer.provide(
     Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
       cloneRepository: (input) =>

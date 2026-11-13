@@ -79,11 +79,22 @@ import Migration0073 from "./Migrations/073_ActiveTurnItemIndexes.ts";
 import Migration0074 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSearch.ts";
 import Migration0075 from "./Migrations/075_SubagentDeliveryState.ts";
 import Migration0076 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
-import Migration0077 from "./Migrations/077_RepairBooleanSettledOverride.ts";
-import Migration0078 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
-import Migration0079 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
-import Migration0080 from "./Migrations/080_ScheduledTaskThreadMode.ts";
-import Migration0081 from "./Migrations/081_ProjectionMessageSearchText.ts";
+import Migration0077 from "./Migrations/077_FogBugz.ts";
+import Migration0078 from "./Migrations/078_FogBugzProjectGroups.ts";
+import Migration0079 from "./Migrations/079_FogBugzAutomation.ts";
+
+const stableIntegrationMigrations = [
+  [73, "ActiveTurnItemIndexes", Migration0073],
+  [74, "ExcludeAttachmentPlaceholdersFromSearch", Migration0074],
+  [75, "SubagentDeliveryState", Migration0075],
+  [76, "ProjectionProjectsPinArchive", Migration0076],
+] as const;
+import Migration0080 from "./Migrations/080_RepairBooleanSettledOverride.ts";
+import Migration0081 from "./Migrations/081_DropOrchestrationEventCorrelationIndex.ts";
+
+import Migration0082 from "./Migrations/082_DelegatedRecoveryIndexes.ts";
+import Migration0083 from "./Migrations/083_ScheduledTaskThreadMode.ts";
+import Migration0084 from "./Migrations/081_ProjectionMessageSearchText.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -159,15 +170,15 @@ const migrationEntries = [
   [70, "PeerLinks", Migration0070],
   [71, "PeerLinkFence", Migration0071],
   [72, "WaitingLinkRequestIndex", Migration0072],
-  [73, "ActiveTurnItemIndexes", Migration0073],
-  [74, "ExcludeAttachmentPlaceholdersFromSearch", Migration0074],
-  [75, "SubagentDeliveryState", Migration0075],
-  [76, "ProjectionProjectsPinArchive", Migration0076],
-  [77, "RepairBooleanSettledOverride", Migration0077],
-  [78, "DropOrchestrationEventCorrelationIndex", Migration0078],
-  [79, "DelegatedRecoveryIndexes", Migration0079],
-  [80, "ScheduledTaskThreadMode", Migration0080],
-  [81, "ProjectionMessageSearchText", Migration0081],
+  ...stableIntegrationMigrations,
+  [77, "FogBugz", Migration0077],
+  [78, "FogBugzProjectGroups", Migration0078],
+  [79, "FogBugzAutomation", Migration0079],
+  [80, "RepairBooleanSettledOverride", Migration0080],
+  [81, "DropOrchestrationEventCorrelationIndex", Migration0081],
+  [82, "DelegatedRecoveryIndexes", Migration0082],
+  [83, "ScheduledTaskThreadMode", Migration0083],
+  [84, "ProjectionMessageSearchText", Migration0084],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -218,6 +229,43 @@ const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function*
 
 const run = Migrator.make({});
 
+// FogBugz previews occupied 73-75; preserve their data while reserving main's migration ids.
+const reconcileFogBugzPreview = Effect.fn("reconcileFogBugzPreview")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const tables =
+        yield* sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'effect_sql_migrations'`;
+      if (tables.length === 0) return [];
+      const recorded = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+      SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id >= 73 ORDER BY migration_id
+    `;
+      if (!recorded.some((row) => row.migration_id === 73 && row.name === "FogBugz")) return [];
+      const names = ["FogBugz", "FogBugzProjectGroups", "FogBugzAutomation"];
+      if (
+        recorded.some((row, index) => row.migration_id !== 73 + index || row.name !== names[index])
+      ) {
+        return yield* new Migrator.MigrationError({
+          kind: "BadState",
+          message: "Cannot upgrade FogBugz preview with unexpected later migrations.",
+        });
+      }
+      yield* assertV2MigrationsCanRun(72);
+      for (const row of recorded) {
+        yield* sql`UPDATE effect_sql_migrations SET migration_id = ${row.migration_id + 4}
+        WHERE migration_id = ${row.migration_id} AND name = ${row.name}`;
+      }
+      const executed: Array<readonly [number, string]> = [];
+      for (const [id, name, migration] of stableIntegrationMigrations) {
+        yield* migration;
+        yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (${id}, ${name})`;
+        executed.push([id, name]);
+      }
+      return executed;
+    }),
+  );
+});
+
 export interface RunMigrationsOptions {
   readonly toMigrationInclusive?: number | undefined;
 }
@@ -228,11 +276,16 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   const includesV2 =
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
   const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
+  const fogbugzMigrations =
+    toMigrationInclusive === undefined || toMigrationInclusive >= 79
+      ? yield* reconcileFogBugzPreview()
+      : [];
   if (includesV2) {
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
   }
   const executedMigrations = [
     ...previewMigrations,
+    ...fogbugzMigrations,
     ...(yield* run({ loader: makeMigrationLoader(toMigrationInclusive) })),
   ];
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
