@@ -94,7 +94,7 @@ import Migration0081 from "./Migrations/081_DropOrchestrationEventCorrelationInd
 
 import Migration0082 from "./Migrations/082_DelegatedRecoveryIndexes.ts";
 import Migration0083 from "./Migrations/083_ScheduledTaskThreadMode.ts";
-import Migration0084 from "./Migrations/081_ProjectionMessageSearchText.ts";
+import Migration0084 from "./Migrations/084_ProjectionMessageSearchText.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],

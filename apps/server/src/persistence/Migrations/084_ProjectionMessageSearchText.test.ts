@@ -32,7 +32,7 @@ const indexed = (sql: SqlClient.SqlClient, phrase: string) =>
   `.pipe(Effect.map((rows) => rows.map((row) => row.message_id)));
 
 it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
-  "081_ProjectionMessageSearchText",
+  "084_ProjectionMessageSearchText",
   (it) => {
     it.effect("backfills readable text only for messages whose citations read differently", () =>
       Effect.gen(function* () {
