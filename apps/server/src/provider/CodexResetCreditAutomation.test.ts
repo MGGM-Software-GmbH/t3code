@@ -154,7 +154,8 @@ it.effect(
         consumeResetCredit: (options) =>
           Effect.sync(() => {
             checks += 1;
-            if (options?.onlyIf && !options.onlyIf(fresh)) return "nothingToReset" as const;
+            if (typeof options === "object" && options.onlyIf && !options.onlyIf(fresh))
+              return "nothingToReset" as const;
             consumptions += 1;
             fresh = {
               ...limits(HOUR * 24, 0),
