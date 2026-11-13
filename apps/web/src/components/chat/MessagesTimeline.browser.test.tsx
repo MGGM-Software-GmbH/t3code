@@ -576,7 +576,7 @@ describe("MessagesTimeline messages", () => {
     });
   });
 
-  it("enables the minimap's next turn button on a thread restored above its bottom", async () => {
+  it("enables the minimap's next turn button on a search position restored above its bottom", async () => {
     setup();
     const base = baseProps();
     const turns = (prefix: string) =>
@@ -605,6 +605,7 @@ describe("MessagesTimeline messages", () => {
         routeThreadKey={other}
         timelineEntries={turns("b")}
         liveFollowEnabled={false}
+        findOpen
       />,
     );
     await vi.waitFor(() => {
