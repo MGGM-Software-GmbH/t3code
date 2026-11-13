@@ -532,7 +532,10 @@ async function makeFixture(
     ],
     contentWidth,
   );
-  const apply = (change: { startLine: number } | undefined, passStartLine = true) => {
+  const apply = (
+    change: Parameters<MeasuredFile["applyChange"]>[1] | undefined,
+    passStartLine = true,
+  ) => {
     if (change === undefined) throw new Error("Expected a document change");
     file.contents = document.getText();
     instance.applyChange(document, passStartLine ? change : { ...change, startLine: 0 });
