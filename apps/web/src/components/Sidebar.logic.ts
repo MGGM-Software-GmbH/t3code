@@ -1156,14 +1156,23 @@ type SidebarThreadActivity = Pick<
   | "updatedAt"
   | "latestUserMessageAt"
   | "latestRun"
+  | "snoozedUntil"
+  | "lastSnoozeWakeAt"
 >;
 
-export function resolveSidebarThreadActivityTimestamp(thread: SidebarThreadActivity): string {
+export function resolveSidebarThreadActivityTimestamp(
+  thread: SidebarThreadActivity,
+  now = Date.now(),
+): string {
   const activity = [
     thread.latestUserMessageAt,
     thread.latestRun?.requestedAt,
     thread.latestRun?.startedAt,
     thread.latestRun?.completedAt,
+    thread.snoozedUntil != null && Date.parse(thread.snoozedUntil) <= now
+      ? thread.snoozedUntil
+      : null,
+    thread.lastSnoozeWakeAt,
   ].flatMap((timestamp) => {
     const parsed = toSortableTimestamp(timestamp ?? undefined);
     return parsed === null ? [] : [parsed];
@@ -1194,7 +1203,7 @@ export function groupIdleSidebarThreads<TThread extends SidebarThreadActivity>(
   const sorted = threads
     .map((thread) => ({
       thread,
-      activity: Date.parse(resolveSidebarThreadActivityTimestamp(thread)),
+      activity: Date.parse(resolveSidebarThreadActivityTimestamp(thread, now)),
     }))
     .sort(
       (left, right) =>
@@ -1230,6 +1239,7 @@ export function groupIdleSidebarThreads<TThread extends SidebarThreadActivity>(
   const projectRank = new Map(projects.map((project, index) => [project.projectKey, index]));
   const projectGroups = [...groups.values()].sort(
     (left, right) =>
+      Date.parse(right.latestActivityAt) - Date.parse(left.latestActivityAt) ||
       (projectRank.get(left.projectKey) ?? Number.MAX_SAFE_INTEGER) -
         (projectRank.get(right.projectKey) ?? Number.MAX_SAFE_INTEGER) ||
       left.projectKey.localeCompare(right.projectKey),

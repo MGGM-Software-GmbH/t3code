@@ -4,6 +4,22 @@ import * as DateTime from "effect/DateTime";
 import { isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
 
 describe("scheduled task schedule calculation", () => {
+  it.each([
+    ["2026-11-01T08:00:00Z", 1, "2026-11-04T08:00:00.000Z"],
+    ["2026-11-04T08:00:00Z", 1, "2026-12-02T08:00:00.000Z"],
+    ["2026-12-03T08:00:00Z", 1, "2027-01-06T08:00:00.000Z"],
+    ["2026-11-01T08:00:00Z", 5, "2026-12-30T08:00:00.000Z"],
+    ["2026-11-01T08:00:00Z", -1, "2026-11-25T08:00:00.000Z"],
+    ["2027-02-01T08:00:00Z", -1, "2027-02-24T08:00:00.000Z"],
+    ["2027-03-03T08:00:00Z", 1, "2027-04-07T07:00:00.000Z"],
+  ])("finds monthly Wednesday from %s, occurrence %s", (from, weekOfMonth, expected) => {
+    const next = nextScheduledRunAt(
+      { type: "fixed_time", timeOfDay: "09:00", weekdays: [3], weekOfMonth },
+      DateTime.makeZonedUnsafe(from, { timeZone: "Europe/Berlin" }),
+    );
+    expect(next && DateTime.formatIso(next)).toBe(expected);
+  });
+
   it("skips to the next matching fixed-time weekday", () => {
     const next = nextScheduledRunAt(
       { type: "fixed_time", timeOfDay: "09:00", weekdays: [1, 2, 3, 4, 5] },
@@ -27,6 +43,21 @@ describe("scheduled task schedule calculation", () => {
   });
 
   it("compares schedules structurally", () => {
+    const monthly = {
+      type: "fixed_time",
+      timeOfDay: "09:00",
+      weekdays: [3],
+      weekOfMonth: 1,
+    } as const;
+    expect(isSameSchedule(monthly, { ...monthly })).toBe(true);
+    expect(isSameSchedule(monthly, { ...monthly, weekOfMonth: 2 })).toBe(false);
+    expect(isSameSchedule(monthly, { ...monthly, weekOfMonth: null })).toBe(false);
+    expect(
+      isSameSchedule(
+        { ...monthly, weekOfMonth: null },
+        { type: "fixed_time", timeOfDay: "09:00", weekdays: [3] },
+      ),
+    ).toBe(true);
     expect(
       isSameSchedule(
         { type: "once", runAt: "2026-11-01T03:00:00-05:00" },

@@ -34,6 +34,14 @@ const ScheduledTaskIntervalSchedule = Schema.Struct({
 const ScheduledTaskFixedTimeSchedule = Schema.Struct({
   type: Schema.Literal("fixed_time"),
   timeOfDay: TimeOfDay,
+  weekOfMonth: Schema.optional(
+    Schema.NullOr(
+      Schema.Int.check(Schema.makeFilter((value) => value === -1 || (value >= 1 && value <= 5))),
+    ),
+  ).annotate({
+    description:
+      "Weekday occurrence in each month: 1 to 5, -1 for last. Omit to keep stored; null clears.",
+  }),
   weekdays: Schema.optional(
     Schema.Array(
       Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 6 })).annotate({

@@ -152,6 +152,14 @@ import {
 
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const MONTHLY_WEEKDAY_LABELS: Readonly<Record<number, string>> = {
+  [-1]: "Last",
+  1: "First",
+  2: "Second",
+  3: "Third",
+  4: "Fourth",
+  5: "Fifth",
+};
 const WEEKDAY_SHORT = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const;
 
 // Thread ids are trimmed, so the leading space keeps this from matching one.
@@ -343,7 +351,9 @@ export function scheduleLabel(schedule: ScheduledTaskSchedule): string {
       : weekdays.length === 5 && weekdays.every((day) => day >= 1 && day <= 5)
         ? "Weekdays"
         : weekdays.map((day) => WEEKDAY_LABELS[day]).join(", ");
-  return `${days} at ${schedule.timeOfDay}`;
+  const occurrence =
+    schedule.weekOfMonth == null ? "" : `${MONTHLY_WEEKDAY_LABELS[schedule.weekOfMonth]} `;
+  return `${occurrence}${days}${occurrence ? " of every month" : ""} at ${schedule.timeOfDay}`;
 }
 
 /** formatRelativeTime handles only the past; upcoming runs need future labels. */
@@ -1508,6 +1518,17 @@ function ScheduledTaskEditorForm({
       );
       return;
     }
+    if (
+      schedule.type === "fixed_time" &&
+      schedule.weekOfMonth != null &&
+      environment?.serverConfig?.environment.capabilities.monthlyWeekdaySchedules !== true
+    ) {
+      reportFailure(
+        "Monthly weekdays are not available here",
+        "Update this environment to schedule a weekday of each month.",
+      );
+      return;
+    }
     if (draft.workspaceMode === "existing_worktree" && !draft.existingWorktreePath.trim()) {
       reportFailure("Checkout path is required", "Enter the path of the checkout to run in.");
       return;
@@ -2058,6 +2079,43 @@ function ScheduledTaskEditorForm({
               </div>
             ) : draft.scheduleMode === "fixed" ? (
               <div className="flex flex-wrap items-center gap-3">
+                <Field label="Repeat" htmlFor="scheduled-task-month-week">
+                  <Select
+                    value={String(draft.weekOfMonth ?? 0)}
+                    onValueChange={(value) =>
+                      setDraft((current) => ({
+                        ...current,
+                        weekOfMonth: Number(value) === 0 ? null : Number(value),
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="scheduled-task-month-week" aria-label="Week of month">
+                      <SelectValue>
+                        {draft.weekOfMonth == null
+                          ? "Every week"
+                          : `${MONTHLY_WEEKDAY_LABELS[draft.weekOfMonth]} of every month`}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      <SelectItem value="0">Every week</SelectItem>
+                      {(environment?.serverConfig?.environment.capabilities
+                        .monthlyWeekdaySchedules === true ||
+                        draft.weekOfMonth != null) &&
+                        [
+                          [1, "First"],
+                          [2, "Second"],
+                          [3, "Third"],
+                          [4, "Fourth"],
+                          [5, "Fifth"],
+                          [-1, "Last"],
+                        ].map(([value, label]) => (
+                          <SelectItem key={value} value={String(value)}>
+                            {label} of every month
+                          </SelectItem>
+                        ))}
+                    </SelectPopup>
+                  </Select>
+                </Field>
                 <div className="flex items-center gap-2">
                   <Label htmlFor="scheduled-task-time">Run at</Label>
                   <Input

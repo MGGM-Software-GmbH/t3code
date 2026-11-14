@@ -1712,6 +1712,7 @@ export function threadShellFromProjection(
     unsettledReason: projection.thread.unsettledReason,
     snoozedUntil: projection.thread.snoozedUntil ?? null,
     snoozedAt: projection.thread.snoozedAt ?? null,
+    lastSnoozeWakeAt: projection.thread.lastSnoozeWakeAt ?? null,
     pinnedAt: projection.thread.pinnedAt ?? null,
 
     autoSettleDisabledAt: projection.thread.autoSettleDisabledAt ?? null,
@@ -2000,6 +2001,7 @@ function shellFromState(input: {
     unsettledReason: input.state.thread.unsettledReason,
     snoozedUntil: input.state.thread.snoozedUntil ?? null,
     snoozedAt: input.state.thread.snoozedAt ?? null,
+    lastSnoozeWakeAt: input.state.thread.lastSnoozeWakeAt ?? null,
     pinnedAt: input.state.thread.pinnedAt ?? null,
 
     autoSettleDisabledAt: input.state.thread.autoSettleDisabledAt ?? null,

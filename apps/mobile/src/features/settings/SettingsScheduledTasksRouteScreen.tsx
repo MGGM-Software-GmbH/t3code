@@ -101,6 +101,15 @@ type ScheduledTaskRoutes = {
   SettingsScheduledTaskThread: undefined;
 };
 
+const MONTHLY_WEEKDAY_LABELS: Readonly<Record<number, string>> = {
+  [-1]: "Last",
+  1: "First",
+  2: "Second",
+  3: "Third",
+  4: "Fourth",
+  5: "Fifth",
+};
+
 const DAYS = [
   { index: 1, label: "Mon" },
   { index: 2, label: "Tue" },
@@ -125,7 +134,11 @@ function describeSchedule(task: ScheduledTask): string {
   }
   if (task.schedule.type === "interval") return formatScheduledTaskInterval(task.schedule.everyMs);
   const days = task.schedule.weekdays?.length ? repeatLabel(task.schedule.weekdays) : "Every day";
-  return `${days} at ${formatTime(task.schedule.timeOfDay)}`;
+  const occurrence =
+    task.schedule.weekOfMonth == null
+      ? ""
+      : `${MONTHLY_WEEKDAY_LABELS[task.schedule.weekOfMonth]} `;
+  return `${occurrence}${days}${occurrence ? " of every month" : ""} at ${formatTime(task.schedule.timeOfDay)}`;
 }
 
 function formatTime(value: string): string {
@@ -732,6 +745,17 @@ function TaskForm({
       );
       return;
     }
+    if (
+      draft.schedule.mode === "fixed_time" &&
+      draft.schedule.weekOfMonth != null &&
+      config?.environment.capabilities.monthlyWeekdaySchedules !== true
+    ) {
+      Dialog.alert(
+        "Monthly weekdays are not available here",
+        "Update this environment to schedule a weekday of each month.",
+      );
+      return;
+    }
     const parsedFilters = parseWebhookFilterDrafts(draft.schedule.filters);
     if (draft.schedule.mode === "webhook" && "error" in parsedFilters) {
       Dialog.alert("Invalid filter", parsedFilters.error);
@@ -1129,6 +1153,39 @@ function TaskForm({
                           })();
                   setDraft({ ...draft, schedule: { ...draft.schedule, weekdays } });
                 }}
+              />
+              <SelectRow
+                label="Week of month"
+                value={
+                  draft.schedule.weekOfMonth == null
+                    ? "Every week"
+                    : MONTHLY_WEEKDAY_LABELS[draft.schedule.weekOfMonth]!
+                }
+                borderTop
+                actions={[
+                  {
+                    id: "0",
+                    title: "Every week",
+                    state: draft.schedule.weekOfMonth == null ? "on" : undefined,
+                  },
+                  ...(config?.environment.capabilities.monthlyWeekdaySchedules === true ||
+                  draft.schedule.weekOfMonth != null
+                    ? ([1, 2, 3, 4, 5, -1] as const).map((week) => ({
+                        id: String(week),
+                        title: `${MONTHLY_WEEKDAY_LABELS[week]} of every month`,
+                        state: draft.schedule.weekOfMonth === week ? ("on" as const) : undefined,
+                      }))
+                    : []),
+                ]}
+                onSelect={(id) =>
+                  setDraft({
+                    ...draft,
+                    schedule: {
+                      ...draft.schedule,
+                      weekOfMonth: Number(id) === 0 ? null : Number(id),
+                    },
+                  })
+                }
               />
             </>
           ) : draft.schedule.mode === "webhook" && webhookDenial !== undefined && draft.enabled ? (

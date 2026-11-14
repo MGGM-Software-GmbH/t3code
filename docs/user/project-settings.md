@@ -126,6 +126,12 @@ environment's time zone, which may differ from your phone's. Choose **Once**
 to run a task a single time at a date and time in your own time zone. If the
 environment is offline then, the task runs when it is back.
 
+For a monthly weekday, choose **At a time**, select **First of every month**
+under **Week of month** (or **Repeat** on the web), and select Wednesday.
+The same menu offers the second, third, fourth, fifth, or last occurrence.
+A fifth weekday skips months without that occurrence. These schedules use
+the environment's time zone and keep their local time across daylight-saving changes.
+
 Under **Destination**, choose where runs go. **New thread each run** keeps every
 run separate. The two one-thread choices start a thread on the first run and post
 later runs there: one continues the same conversation, the other starts each run

@@ -543,16 +543,16 @@ function useSidebarThreads(input: {
         : activeThreads.filter((thread) => !isThreadWorking(thread))
       : EMPTY_THREADS,
     input.projectGroups,
-    Date.parse(`${nowMinute}Z`),
+    Math.max(Date.parse(`${nowMinute}Z`), snoozeWakeClock),
   );
   const visibleIdleRecent = idleRecentExpanded
     ? idle.recent
     : routeThreadOnly(idle.recent, routeRowThreadKey);
   const visibleIdleProjects = idle.projectGroups.map((group) => ({
     ...group,
-    expanded: idleProjectExpandedByKey[group.projectKey] !== false,
+    expanded: idleProjectExpandedByKey[group.projectKey] === true,
     visibleThreads:
-      idleProjectsExpanded && idleProjectExpandedByKey[group.projectKey] !== false
+      idleProjectsExpanded && idleProjectExpandedByKey[group.projectKey] === true
         ? group.threads
         : routeThreadOnly(group.threads, routeRowThreadKey),
   }));
@@ -662,7 +662,7 @@ function useSidebarThreads(input: {
     toggleIdleProject: (projectKey: string) =>
       setIdleProjectExpandedByKey((current) => ({
         ...current,
-        [projectKey]: current[projectKey] === false,
+        [projectKey]: current[projectKey] !== true,
       })),
     searchableThreads: [
       ...pinnedThreads,

@@ -28,6 +28,7 @@ describe("V2 client presentation", () => {
       ...v2ThreadShell,
       snoozedAt: DateTime.makeUnsafe("2026-06-19T23:59:00.000Z"),
       snoozedUntil: DateTime.makeUnsafe("2026-06-20T01:00:00.000Z"),
+      lastSnoozeWakeAt: DateTime.makeUnsafe("2026-06-19T12:00:00.000Z"),
       latestRunId: runId,
       activeRunId: runId,
       status: "running" as const,
@@ -39,6 +40,7 @@ describe("V2 client presentation", () => {
       },
     };
     const active = presentThreadShell(environmentId, running);
+    expect(active.lastSnoozeWakeAt).toBe("2026-06-19T12:00:00.000Z");
     expect(active.hasPendingUserInput).toBe(true);
     expect(isThreadWorking(active)).toBe(false);
     expect(canSnooze(active, { now: "2026-06-20T00:05:00.000Z" })).toBe(true);

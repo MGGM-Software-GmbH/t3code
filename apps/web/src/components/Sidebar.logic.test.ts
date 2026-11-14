@@ -690,7 +690,7 @@ describe("groupIdleSidebarThreads", () => {
     expect(result.projectGroups[0]?.threads.map((entry) => entry.id)).toEqual(["stale"]);
   });
 
-  it("uses the project filter order and sorts each project's threads by activity", () => {
+  it("sorts projects by their most recent thread activity and threads by activity", () => {
     const result = groupIdleSidebarThreads(
       [
         thread("alpha-new", "2026-03-08T11:00:00.000Z"),
@@ -707,13 +707,34 @@ describe("groupIdleSidebarThreads", () => {
         group.threads.map((entry) => entry.id),
       ]),
     ).toEqual([
-      ["Zebra", ["zebra-new", "zebra-old"]],
       ["Alpha", ["alpha-new", "alpha-old"]],
+      ["Zebra", ["zebra-new", "zebra-old"]],
     ]);
     expect(result.projectGroups.map((group) => group.latestActivityAt)).toEqual([
-      "2026-03-08T00:00:00.000Z",
       "2026-03-08T11:00:00.000Z",
+      "2026-03-08T00:00:00.000Z",
     ]);
+  });
+
+  it("counts an expired snooze as activity without counting a future wake", () => {
+    const waking = {
+      ...thread("waking", "2026-03-01T00:00:00.000Z"),
+      latestUserMessageAt: "2026-03-01T00:00:00.000Z",
+      snoozedUntil: "2026-03-10T11:00:00.000Z",
+    };
+    const future = {
+      ...waking,
+      id: ThreadId.make("future"),
+      snoozedUntil: "2026-03-11T11:00:00.000Z",
+    };
+    const result = groupIdleSidebarThreads([waking, future], projects, now);
+    expect(result.recent.map((entry) => entry.id)).toEqual(["waking"]);
+    expect(result.projectGroups[0]?.threads.map((entry) => entry.id)).toEqual(["future"]);
+    const dismissed = { ...waking, snoozedUntil: null, lastSnoozeWakeAt: waking.snoozedUntil };
+    expect(
+      groupIdleSidebarThreads([dismissed], projects, now).recent.map((entry) => entry.id),
+    ).toEqual(["waking"]);
+    expect(groupIdleSidebarThreads([waking], projects, now + 24 * 60 * 60_000).recent).toEqual([]);
   });
 
   it("groups logical project members across environments without merging unrelated project IDs", () => {
