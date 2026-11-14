@@ -2690,6 +2690,7 @@ export const layerWsRpc = (
         [WS_METHODS.fogbugzDisconnect]: () => fogbugz.disconnect(),
         [WS_METHODS.fogbugzTest]: () => fogbugz.test(),
         [WS_METHODS.fogbugzProjects]: () => fogbugz.projects(),
+        [WS_METHODS.fogbugzAreas]: (input) => fogbugz.areas(input.fogbugzProjectId),
         [WS_METHODS.fogbugzLinkProject]: (input) => fogbugz.linkProject(input),
         [WS_METHODS.fogbugzCases]: (input) => fogbugz.cases(input),
         [WS_METHODS.fogbugzCaseContext]: (input) => fogbugz.caseContext(input),

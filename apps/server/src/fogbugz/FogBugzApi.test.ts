@@ -2,6 +2,32 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { FogBugzApi, normalizeFogBugzUrl } from "./FogBugzApi.ts";
 
 describe("FogBugz API", () => {
+  it("loads areas for one project and rejects invalid or foreign areas", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_url, request) => {
+      const parameters = new URLSearchParams(String(request?.body));
+      expect(parameters.get("cmd")).toBe("listAreas");
+      expect(parameters.get("ixProject")).toBe("12");
+      return new Response(
+        "<response><areas><area><ixArea>5</ixArea><sArea>Support &amp; Maintenance</sArea><ixProject>12</ixProject></area></areas></response>",
+      );
+    });
+    const api = new FogBugzApi("https://fogbugz.example/", fetch);
+    expect(await api.areas("private-token", 12)).toEqual([
+      { id: 5, name: "Support & Maintenance" },
+    ]);
+    for (const area of [
+      "<area><ixArea>5</ixArea><sArea>Foreign</sArea><ixProject>99</ixProject></area>",
+      "<area><ixArea>0</ixArea><sArea>Invalid</sArea><ixProject>12</ixProject></area>",
+      "<area><ixArea>5</ixArea><sArea>Missing project</sArea></area>",
+    ]) {
+      fetch.mockImplementation(
+        async () => new Response(`<response><areas>${area}</areas></response>`),
+      );
+      await expect(api.areas("private-token", 12)).rejects.toThrow();
+    }
+    fetch.mockImplementation(async () => new Response("<response><areas/></response>"));
+    expect(await api.areas("private-token", 12)).toEqual([]);
+  });
   it("detects optional extensions without creating a browser session or case repository", async () => {
     let modern = false;
     const fetch = vi.fn<typeof globalThis.fetch>(async (_url, request) => {
@@ -63,7 +89,7 @@ describe("FogBugz API", () => {
           "<response><cases><case><ixBug>42</ixBug><events><event><ixBugEvent>1</ixBugEvent><sVerb>Opened</sVerb><ixPersonAssignedTo>0</ixPersonAssignedTo><dt>2026-10-30T12:00:00Z</dt></event><event><ixBugEvent>2</ixBugEvent><sVerb>Assigned</sVerb><ixPersonAssignedTo>7</ixPersonAssignedTo><dt>2026-10-30T12:01:00Z</dt></event></events></case></cases></response>",
         );
       return new Response(
-        "<response><cases><case><ixBug>42</ixBug><ixProject>12</ixProject><ixStatus>9</ixStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>2</ixBugEventLatest><dtOpened>2026-10-30T12:00:00Z</dtOpened></case><case><ixBug>43</ixBug><ixProject>12</ixProject><ixStatus>9</ixStatus><fOpen>false</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>3</ixBugEventLatest><dtOpened>2026-10-30T12:00:00Z</dtOpened></case></cases></response>",
+        "<response><cases><case><ixBug>42</ixBug><ixProject>12</ixProject><ixArea>1</ixArea><ixStatus>9</ixStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>2</ixBugEventLatest><dtOpened>2026-10-30T12:00:00Z</dtOpened></case><case><ixBug>43</ixBug><ixProject>12</ixProject><ixArea>1</ixArea><ixStatus>9</ixStatus><fOpen>false</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>3</ixBugEventLatest><dtOpened>2026-10-30T12:00:00Z</dtOpened></case></cases></response>",
       );
     });
     const api = new FogBugzApi("https://fogbugz.example/", fetch);
@@ -85,7 +111,7 @@ describe("FogBugz API", () => {
         new Response(
           new URLSearchParams(String(request?.body)).get("cmd") === "listStatuses"
             ? "<response><statuses/></response>"
-            : "<response><cases><case><ixBug>42</ixBug><ixProject>12</ixProject><ixStatus>1</ixStatus><fOpen>unknown</fOpen></case></cases></response>",
+            : "<response><cases><case><ixBug>42</ixBug><ixProject>12</ixProject><ixArea>1</ixArea><ixStatus>1</ixStatus><fOpen>unknown</fOpen></case></cases></response>",
         ),
     );
     await expect(api.caseStates("private-token", "project:=12")).rejects.toMatchObject({
@@ -145,7 +171,7 @@ describe("FogBugz API", () => {
 
   it("decodes the XML fields, entities and CDATA emitted by our FogBugz", async () => {
     const caseResponse =
-      '<response><cases count="1"><case ixBug="42"><ixBug>42</ixBug><sTitle><![CDATA[Fix <title>]]></sTitle><ixProject>12</ixProject><sProject>OPS</sProject><sStatus>Active</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><sPersonAssignedTo>Test Person</sPersonAssignedTo><ixPriority>2</ixPriority><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>2026-10-29T08:00:00Z</dtCaseNotified><dtLastUpdated></dtLastUpdated></case></cases></response>';
+      '<response><cases count="1"><case ixBug="42"><ixBug>42</ixBug><sTitle><![CDATA[Fix <title>]]></sTitle><ixProject>12</ixProject><ixArea>1</ixArea><sProject>OPS</sProject><sStatus>Active</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><sPersonAssignedTo>Test Person</sPersonAssignedTo><ixPriority>2</ixPriority><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>2026-10-29T08:00:00Z</dtCaseNotified><dtLastUpdated></dtLastUpdated></case></cases></response>';
     const fetch = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(
@@ -174,6 +200,7 @@ describe("FogBugz API", () => {
         id: 42,
         title: "Fix <title>",
         projectId: 12,
+        areaId: 1,
         projectName: "OPS",
         status: "Active",
         open: true,

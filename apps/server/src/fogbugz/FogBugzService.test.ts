@@ -27,8 +27,9 @@ const caseXml = (
   assigned = 7,
   notified = "",
   updated = "2026-01-01T00:00:00Z",
+  area = 1,
 ) =>
-  `<case ixBug="${id}"><ixBug>${id}</ixBug><sTitle>Case ${id}</sTitle><ixProject>${project}</ixProject><sProject>Project ${project}</sProject><sStatus>1 ToDo</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>${assigned}</ixPersonAssignedTo><sPersonAssignedTo>Person ${assigned}</sPersonAssignedTo><ixPriority>2</ixPriority><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>${notified}</dtCaseNotified><dtLastUpdated>${updated}</dtLastUpdated></case>`;
+  `<case ixBug="${id}"><ixBug>${id}</ixBug><sTitle>Case ${id}</sTitle><ixProject>${project}</ixProject><ixArea>${area}</ixArea><sProject>Project ${project}</sProject><sStatus>1 ToDo</sStatus><fOpen>true</fOpen><ixPersonAssignedTo>${assigned}</ixPersonAssignedTo><sPersonAssignedTo>Person ${assigned}</sPersonAssignedTo><ixPriority>2</ixPriority><sPriority>Normal</sPriority><ixCategory>1</ixCategory><sCategory>Bug</sCategory><dtCaseNotified>${notified}</dtCaseNotified><dtLastUpdated>${updated}</dtLastUpdated></case>`;
 
 function fixture() {
   const secrets = new Map<string, Uint8Array>();
@@ -90,6 +91,108 @@ const seed = Effect.gen(function* () {
 
 describe("FogBugz integration persistence and access", () => {
   it.effect(
+    "restricts direct project links to a validated area across case access and automation",
+    () => {
+      const test = fixture();
+      let area = 1;
+      const queries: string[] = [];
+      return Effect.gen(function* () {
+        using _fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+          const parameters = new URLSearchParams(String(init?.body));
+          if (parameters.get("cmd") === "listAreas") {
+            expect(parameters.get("ixProject")).toBe("12");
+            return new Response(
+              "<response><areas><area><ixArea>1</ixArea><sArea>General</sArea><ixProject>12</ixProject></area><area><ixArea>2</ixArea><sArea>Support</sArea><ixProject>12</ixProject></area></areas></response>",
+            );
+          }
+          if (parameters.get("cmd") === "listStatuses")
+            return new Response("<response><statuses/></response>");
+          if (parameters.get("cmd") === "search" && parameters.get("cols") !== "ixBug,events") {
+            queries.push(parameters.get("q")!);
+            const content = parameters.get("cols")?.includes("ixBugEventLatest")
+              ? [42, 45]
+                  .map(
+                    (id) =>
+                      `<case><ixBug>${id}</ixBug><ixProject>12</ixProject><ixArea>${id === 42 ? area : 2}</ixArea><ixStatus>1</ixStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>${id}</ixBugEventLatest><dtOpened>2026-11-14T08:00:00Z</dtOpened></case>`,
+                  )
+                  .join("")
+              : (parameters.get("q") === "45"
+                  ? ""
+                  : caseXml(42, 12, 7, "", "2026-01-01T00:00:00Z", area)) +
+                caseXml(45, 12, 7, "", "2026-01-01T00:00:00Z", 2);
+            // Return both areas even for a scoped query to exercise the local access checks.
+            return new Response(`<response><cases>${content}</cases></response>`);
+          }
+          return test.fetch(url, init);
+        });
+        yield* seed;
+        const sql = yield* SqlClient.SqlClient;
+        const service = yield* FogBugzService;
+        yield* service.connect(credentials);
+        expect(yield* service.areas(12)).toEqual([
+          { id: 1, name: "General" },
+          { id: 2, name: "Support" },
+        ]);
+        yield* service.linkProject({ projectId, fogbugzProjectId: 12, fogbugzAreaId: 1 });
+        expect((yield* service.status()).projects).toEqual([
+          { projectId, fogbugzProjectId: 12, fogbugzProjectGroupId: null, fogbugzAreaId: 1 },
+        ]);
+        expect(yield* sql`SELECT fogbugz_area_id FROM fogbugz_projects`).toEqual([
+          { fogbugz_area_id: 1 },
+        ]);
+        yield* service.linkThread({ threadId, caseId: 42 });
+        for (const input of [
+          { projectId, fogbugzProjectId: null, fogbugzAreaId: 1 },
+          { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3, fogbugzAreaId: 1 },
+          { projectId, fogbugzProjectId: 12, fogbugzAreaId: 999 },
+        ])
+          expect((yield* service.linkProject(input).pipe(Effect.flip)).code).toBe("area");
+        expect((yield* service.thread(threadId))?.caseId).toBe(42);
+        const input = { query: "", state: "open" as const, assignedToMe: true, projectId };
+        expect((yield* service.cases(input)).cases.map((item) => item.id)).toEqual([42]);
+        expect(queries.at(-1)).toContain("(project:=12 area:=1)");
+        expect((yield* service.cases({ ...input, query: "45" })).cases).toEqual([]);
+        expect((yield* service.caseContext({ projectId, caseId: 45 }).pipe(Effect.flip)).code).toBe(
+          "case_area",
+        );
+        expect((yield* service.linkThread({ threadId, caseId: 45 }).pipe(Effect.flip)).code).toBe(
+          "case_area",
+        );
+        expect(
+          (yield* service
+            .prepareThread({ projectId, threadId: ThreadId.make("outside-area"), caseId: 45 })
+            .pipe(Effect.flip)).code,
+        ).toBe("case_area");
+        expect((yield* service.assignmentEvents(projectId, 45).pipe(Effect.flip)).code).toBe(
+          "case_area",
+        );
+        expect((yield* service.threadCases()).map((item) => item.case.id)).toEqual([42]);
+        const snapshot = yield* service.automationSnapshot(projectId);
+        expect(snapshot.mapping).toBe("12:1");
+        expect(snapshot.cases.map((item) => item.id)).toEqual([42]);
+        expect(queries.at(-1)).toContain("(project:=12 area:=1)");
+        area = 2;
+        expect(yield* service.threadCases()).toEqual([]);
+        expect((yield* service.automationSnapshot(projectId)).cases).toEqual([]);
+        expect((yield* service.caseGitRepository(threadId).pipe(Effect.flip)).code).toBe(
+          "case_area",
+        );
+        yield* sql`INSERT INTO fogbugz_automation (project_id, payload) VALUES (${projectId}, '{}')`;
+        yield* service.linkProject({ projectId, fogbugzProjectId: 12, fogbugzAreaId: 2 });
+        expect(yield* service.thread(threadId)).toBeNull();
+        expect(yield* sql`SELECT project_id FROM fogbugz_automation`).toEqual([]);
+        expect((yield* service.automationSnapshot(projectId)).mapping).toBe("12:2");
+        yield* service.linkProject({ projectId, fogbugzProjectId: 12, fogbugzAreaId: null });
+        expect((yield* service.automationSnapshot(projectId)).mapping).toBe("12");
+        area = 1;
+        expect((yield* service.cases(input)).cases.map((item) => item.id)).toEqual([45, 42]);
+        yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
+        expect((yield* service.status()).projects[0]?.fogbugzAreaId).toBeNull();
+        expect((yield* service.cases(input)).cases.map((item) => item.id)).toEqual([45, 42]);
+      }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
+    },
+  );
+  it.effect(
     "keeps links and sign-in when optional extensions disappear and rechecks after an update",
     () => {
       const test = fixture();
@@ -126,7 +229,7 @@ describe("FogBugz integration persistence and access", () => {
           caseGit: false,
         });
         expect((yield* service.status()).projects).toEqual([
-          { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 },
+          { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3, fogbugzAreaId: null },
         ]);
         expect(
           (yield* service.cases({ query: "", state: "open", assignedToMe: true }).pipe(Effect.flip))
@@ -136,10 +239,16 @@ describe("FogBugz integration persistence and access", () => {
         const sql = yield* SqlClient.SqlClient;
         const directProject = ProjectId.make("direct-project");
         yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at) VALUES (${directProject}, 'Direct project', '/tmp/direct-project', '[]', '2026-01-01', '2026-01-01')`;
-        yield* service.linkProject({ projectId: directProject, fogbugzProjectId: 12 });
+        yield* service.linkProject({
+          projectId: directProject,
+          fogbugzProjectId: 12,
+          fogbugzAreaId: null,
+        });
         const partial = yield* service.cases({ query: "", state: "open", assignedToMe: true });
         expect(partial.cases.map((item) => item.id)).toEqual([42]);
-        expect(partial.projects).toEqual([{ projectId: directProject, fogbugzProjectId: 12 }]);
+        expect(partial.projects).toEqual([
+          { projectId: directProject, fogbugzProjectId: 12, fogbugzAreaId: null },
+        ]);
         legacy = false;
         expect((yield* service.test()).capabilities).toEqual({
           projectGroups: true,
@@ -199,7 +308,7 @@ describe("FogBugz integration persistence and access", () => {
             ? [300]
             : Array.from({ length: 201 }, (_, index) => 500 - index);
           return new Response(
-            `<response><cases>${ids.map((id) => `<case><ixBug>${id}</ixBug><ixProject>12</ixProject><ixStatus>1</ixStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>${id}</ixBugEventLatest><dtOpened>2026-10-30T12:00:00Z</dtOpened></case>`).join("")}</cases></response>`,
+            `<response><cases>${ids.map((id) => `<case><ixBug>${id}</ixBug><ixProject>12</ixProject><ixArea>1</ixArea><ixStatus>1</ixStatus><fOpen>true</fOpen><ixPersonAssignedTo>7</ixPersonAssignedTo><ixBugEventLatest>${id}</ixBugEventLatest><dtOpened>2026-10-30T12:00:00Z</dtOpened></case>`).join("")}</cases></response>`,
           );
         }
         return test.fetch(url, init);
@@ -321,7 +430,7 @@ describe("FogBugz integration persistence and access", () => {
         yield* service.connect(credentials);
         yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
         expect((yield* service.status()).projects).toEqual([
-          { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 },
+          { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3, fogbugzAreaId: null },
         ]);
         expect(
           (yield* Effect.flip(
@@ -347,7 +456,7 @@ describe("FogBugz integration persistence and access", () => {
           return originalFetch(url, init);
         });
         const result = yield* service.cases({ query: "", state: "open", assignedToMe: true });
-        expect(result.projects).toEqual([{ projectId, fogbugzProjectId: 13 }]);
+        expect(result.projects).toEqual([{ projectId, fogbugzProjectId: 13, fogbugzAreaId: null }]);
         expect(result.cases.map((item) => item.id)).toEqual([40, 43, 42, 41]);
         yield* service.linkThread({ threadId, caseId: 43 });
         yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
@@ -401,7 +510,7 @@ describe("FogBugz integration persistence and access", () => {
           expect(updated.baseUrl).toBe("http://192.168.2.159:18080/");
           expect(test.requests.filter((request) => request.get("cmd") === "logon")).toHaveLength(1);
           expect((yield* service.status()).projects).toEqual([
-            { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 },
+            { projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3, fogbugzAreaId: null },
           ]);
           expect(yield* sql`SELECT payload FROM fogbugz_automation`).toEqual([
             { payload: '{"cursor":42}' },

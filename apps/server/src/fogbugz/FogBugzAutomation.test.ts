@@ -29,6 +29,7 @@ const baselineAt = "2026-10-30T12:00:00.000Z";
 const caseState = {
   id: 42,
   projectId: 12,
+  areaId: 1,
   resolved: false,
   open: true,
   assignedTo: 7,

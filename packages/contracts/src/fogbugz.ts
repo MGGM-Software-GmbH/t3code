@@ -4,6 +4,7 @@ import { ModelSelection } from "./modelSelection.ts";
 
 export const FogBugzId = Schema.Int.check(Schema.isGreaterThan(0));
 export const FogBugzProjectGroup = Schema.Struct({ id: FogBugzId, name: Schema.String });
+export const FogBugzArea = Schema.Struct({ id: FogBugzId, name: Schema.String });
 export const FogBugzProject = Schema.Struct({
   id: FogBugzId,
   name: Schema.String,
@@ -28,6 +29,7 @@ export const FogBugzProjectLink = Schema.Struct({
   projectId: ProjectId,
   fogbugzProjectId: Schema.NullOr(FogBugzId),
   fogbugzProjectGroupId: Schema.NullOr(FogBugzId),
+  fogbugzAreaId: Schema.optionalKey(Schema.NullOr(FogBugzId)),
 });
 export const FogBugzStatus = Schema.Struct({
   connection: Schema.NullOr(FogBugzConnection),
@@ -38,6 +40,7 @@ export const FogBugzCase = Schema.Struct({
   id: FogBugzId,
   title: Schema.String,
   projectId: FogBugzId,
+  areaId: Schema.optionalKey(FogBugzId),
   projectName: Schema.String,
   status: Schema.String,
   open: Schema.Boolean,
@@ -124,7 +127,13 @@ export const FogBugzCaseList = Schema.Struct({
   cases: Schema.Array(FogBugzCase),
   threads: Schema.Array(FogBugzThreadLink),
   truncated: Schema.Boolean,
-  projects: Schema.Array(Schema.Struct({ projectId: ProjectId, fogbugzProjectId: FogBugzId })),
+  projects: Schema.Array(
+    Schema.Struct({
+      projectId: ProjectId,
+      fogbugzProjectId: FogBugzId,
+      fogbugzAreaId: Schema.optionalKey(Schema.NullOr(FogBugzId)),
+    }),
+  ),
 });
 export const FogBugzConnectInput = Schema.Struct({
   baseUrl: TrimmedNonEmptyString,
@@ -173,6 +182,8 @@ const messages = {
   url: "Use an HTTPS base URL without credentials, a query, or a fragment. HTTP is allowed for localhost and private IP addresses.",
   storage: "Could not save or load the FogBugz integration.",
   project: "Link this T3 project to the case's FogBugz project first.",
+  area: "The FogBugz area must belong to the directly linked project. Project groups cannot be restricted to an area.",
+  case_area: "This case is outside the FogBugz area linked to this T3 project.",
   thread: "Could not create or load the T3 thread.",
   case_git:
     "Could not prepare the case Git checkout. Check the case file storage, permissions, and Git connection.",

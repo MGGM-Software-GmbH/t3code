@@ -60,6 +60,16 @@ describe("runMigrations", () => {
         assert.deepStrictEqual(yield* sql`SELECT * FROM fogbugz_connection`, [
           { id: 1, payload: "connection" },
         ]);
+        assert.deepStrictEqual(yield* sql`SELECT * FROM fogbugz_projects`, [
+          { project_id: "project", fogbugz_project_id: 7, fogbugz_area_id: null },
+        ]);
+        yield* sql`UPDATE fogbugz_projects SET fogbugz_area_id = 5 WHERE project_id = 'project'`;
+        assert.deepStrictEqual(yield* sql`SELECT fogbugz_area_id FROM fogbugz_projects`, [
+          { fogbugz_area_id: 5 },
+        ]);
+        assert.isTrue(
+          Exit.isFailure(yield* Effect.exit(sql`UPDATE fogbugz_projects SET fogbugz_area_id = 0`)),
+        );
         assert.deepStrictEqual(
           yield* sql`SELECT created_at FROM effect_sql_migrations WHERE migration_id = 77`,
           [{ created_at: "2026-10-30" }],

@@ -13,6 +13,7 @@ import {
   type FogBugzCaseFilesInput,
   type FogBugzConnectInput,
   type FogBugzConnection,
+  type FogBugzProjectLink,
   type FogBugzThreadLink,
   type FogBugzLinkThreadInput,
   type PreviewOpenInput,
@@ -580,6 +581,135 @@ it("saves global and project FogBugz automation choices", async () => {
     .closest("section")
     ?.scrollIntoView();
   await page.screenshot({ path: ".t3/fogbugz-project-settings-wide.png" });
+});
+
+it("selects an optional project area, preserves it on navigation, and clears it for groups", async () => {
+  type ProjectLink = typeof FogBugzProjectLink.Type;
+  let selected: ProjectLink | null = null;
+  let areasUnavailable = true;
+  const saved: ProjectLink[] = [];
+  using _environment = installFakeEnvironment([], {
+    [WS_METHODS.fogbugzStatus]: () =>
+      Effect.succeed({
+        connection: {
+          id: "areas",
+          baseUrl: "https://fogbugz.example/",
+          username: "test@example.test",
+          personId: 7,
+          personName: "Test User",
+          authenticated: true,
+        },
+        projects: selected ? [selected] : [],
+      }),
+    [WS_METHODS.fogbugzProjects]: () =>
+      Effect.succeed([
+        { id: 12, name: "OPS", groups: [{ id: 3, name: "MGGM" }] },
+        { id: 13, name: "OMS", groups: [{ id: 3, name: "MGGM" }] },
+      ]),
+    [WS_METHODS.fogbugzAreas]: ({ fogbugzProjectId }: { fogbugzProjectId: number }) =>
+      areasUnavailable
+        ? Effect.fail(new FogBugzError({ code: "network" }))
+        : Effect.succeed(
+            fogbugzProjectId === 12
+              ? [
+                  { id: 1, name: "General" },
+                  { id: 2, name: "Support" },
+                ]
+              : [{ id: 3, name: "Development" }],
+          ),
+    [WS_METHODS.fogbugzLinkProject]: (input: ProjectLink) =>
+      Effect.sync(() => {
+        selected = input;
+        saved.push(input);
+      }),
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    panelAnimationDurationMs: 0,
+  });
+  await page.viewport(1400, 1000);
+  const router = getRouter(createMemoryHistory({ initialEntries: ["/settings/projects"] }));
+  await router.load();
+  const container = document.createElement("div");
+  container.className = "h-[1000px] w-[1400px]";
+  // AppRoot owns the router for the project mapping journey.
+  await using screen = await render(<AppRoot router={router} />, { container, router: false });
+  await vi.waitFor(() => expect(readProjects().length).toBeGreaterThan(0));
+  const projectKey = buildSidebarProjectSnapshots({
+    projects: readProjects(),
+    settings: DEFAULT_CLIENT_SETTINGS,
+    primaryEnvironmentId: ENVIRONMENT_ID,
+    resolveEnvironmentLabel: () => "Test",
+  })[0]!.projectKey;
+  await router.navigate({
+    to: "/settings/projects",
+    search: { machine: ENVIRONMENT_ID, project: projectKey },
+  });
+  const project = page.getByRole("combobox", { name: /FogBugz project/ });
+  const area = page.getByRole("combobox", { name: /FogBugz area/ });
+  await page.screenshot({ path: ".t3/fogbugz-area-unlinked.png" });
+  await expect.element(project).toBeVisible();
+  await expect.element(area).not.toBeInTheDocument();
+  await userEvent.click(project);
+  await userEvent.click(page.getByRole("option", { name: "OPS", exact: true }));
+  await expect
+    .element(page.getByText(new FogBugzError({ code: "network" }).message, { exact: false }))
+    .toBeVisible();
+  await expect.element(area).toBeDisabled();
+  areasUnavailable = false;
+  await userEvent.click(page.getByRole("button", { name: "Retry", exact: true }));
+  await expect.element(area).toBeEnabled();
+  await expect.element(area).toHaveTextContent("All areas");
+  await userEvent.click(area);
+  await userEvent.click(page.getByRole("option", { name: "Support", exact: true }));
+  await expect.element(area).toHaveTextContent("Support");
+  expect(saved.at(-1)).toMatchObject({
+    fogbugzProjectId: 12,
+    fogbugzProjectGroupId: null,
+    fogbugzAreaId: 2,
+  });
+  area.element().closest("section")?.scrollIntoView();
+  await page.screenshot({ path: ".t3/fogbugz-area-wide.png" });
+  await page.viewport(390, 1000);
+  screen.container.className = "h-[1000px] w-[390px]";
+  area.element().closest("[data-slot=settings-row]")?.scrollIntoView({ block: "center" });
+  await expect.element(area).toBeVisible();
+  await page.screenshot({ path: ".t3/fogbugz-area-narrow.png" });
+  await router.navigate({ to: "/settings/mggm" });
+  await router.navigate({
+    to: "/settings/projects",
+    search: { machine: ENVIRONMENT_ID, project: projectKey },
+  });
+  await expect.element(area).toHaveTextContent("Support");
+  await userEvent.click(area);
+  await userEvent.click(page.getByRole("option", { name: "All areas", exact: true }));
+  await expect.element(area).toHaveTextContent("All areas");
+  expect(saved.at(-1)?.fogbugzAreaId).toBeNull();
+  await userEvent.click(area);
+  await userEvent.click(page.getByRole("option", { name: "Support", exact: true }));
+  await userEvent.click(project);
+  await userEvent.click(page.getByRole("option", { name: "Group: MGGM", exact: true }));
+  await expect.element(area).not.toBeInTheDocument();
+  expect(saved.at(-1)).toMatchObject({
+    fogbugzProjectId: null,
+    fogbugzProjectGroupId: 3,
+    fogbugzAreaId: null,
+  });
+  await userEvent.click(project);
+  await userEvent.click(page.getByRole("option", { name: "OMS", exact: true }));
+  await expect.element(area).toHaveTextContent("All areas");
+  await userEvent.click(area);
+  await expect
+    .element(page.getByRole("option", { name: "Development", exact: true }))
+    .toBeVisible();
+  await expect
+    .element(page.getByRole("option", { name: "Support", exact: true }))
+    .not.toBeInTheDocument();
+  await userEvent.click(page.getByRole("option", { name: "All areas", exact: true }));
+  await userEvent.click(project);
+  await userEvent.click(page.getByRole("option", { name: "Not linked", exact: true }));
+  await expect.element(area).not.toBeInTheDocument();
 });
 
 it.each([

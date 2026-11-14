@@ -39,6 +39,7 @@ import {
   FogBugzConnection,
   FogBugzStatus,
   FogBugzProject,
+  FogBugzArea,
   FogBugzCaseList,
   FogBugzCaseContext,
   FogBugzCaseContextInput,
@@ -477,6 +478,7 @@ export const WS_METHODS = {
   fogbugzDisconnect: "fogbugz.disconnect",
   fogbugzTest: "fogbugz.test",
   fogbugzProjects: "fogbugz.projects",
+  fogbugzAreas: "fogbugz.areas",
   fogbugzLinkProject: "fogbugz.link-project",
   fogbugzCases: "fogbugz.cases",
   fogbugzCaseContext: "fogbugz.case-context",
@@ -2197,11 +2199,17 @@ export const WsRpcGroup = RpcGroup.make(
     success: Schema.Array(FogBugzProject),
     error: FogBugzError,
   }),
+  Rpc.make(WS_METHODS.fogbugzAreas, {
+    payload: { fogbugzProjectId: FogBugzId },
+    success: Schema.Array(FogBugzArea),
+    error: FogBugzError,
+  }),
   Rpc.make(WS_METHODS.fogbugzLinkProject, {
     payload: Schema.Struct({
       projectId: ProjectId,
       fogbugzProjectId: Schema.NullOr(FogBugzId),
       fogbugzProjectGroupId: Schema.optionalKey(Schema.NullOr(FogBugzId)),
+      fogbugzAreaId: Schema.optionalKey(Schema.NullOr(FogBugzId)),
     }),
     success: Schema.Void,
     error: FogBugzError,

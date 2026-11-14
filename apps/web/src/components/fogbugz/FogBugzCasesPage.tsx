@@ -351,6 +351,7 @@ export function FogBugzCases({
               cases.data?.projects.some(
                 (link) =>
                   link.fogbugzProjectId === item.projectId &&
+                  (link.fogbugzAreaId == null || link.fogbugzAreaId === item.areaId) &&
                   link.projectId === project.id &&
                   (projectId === "all" || link.projectId === projectId),
               ),

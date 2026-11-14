@@ -82,6 +82,7 @@ import Migration0076 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
 import Migration0077 from "./Migrations/077_FogBugz.ts";
 import Migration0078 from "./Migrations/078_FogBugzProjectGroups.ts";
 import Migration0079 from "./Migrations/079_FogBugzAutomation.ts";
+import Migration0085 from "./Migrations/085_FogBugzAreas.ts";
 
 const stableIntegrationMigrations = [
   [73, "ActiveTurnItemIndexes", Migration0073],
@@ -179,6 +180,7 @@ const migrationEntries = [
   [82, "DelegatedRecoveryIndexes", Migration0082],
   [83, "ScheduledTaskThreadMode", Migration0083],
   [84, "ProjectionMessageSearchText", Migration0084],
+  [85, "FogBugzAreas", Migration0085],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

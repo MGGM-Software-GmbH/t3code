@@ -1,4 +1,10 @@
-import { FogBugzCase, FogBugzError, FogBugzId, FogBugzProject } from "@t3tools/contracts";
+import {
+  FogBugzArea,
+  FogBugzCase,
+  FogBugzError,
+  FogBugzId,
+  FogBugzProject,
+} from "@t3tools/contracts";
 import { isPrivateNetworkHost, normalizeHostname } from "@t3tools/shared/hostClassification";
 import * as NodeNet from "node:net";
 import * as Schema from "effect/Schema";
@@ -14,6 +20,7 @@ type XmlNode = {
 };
 const decodeId = Schema.decodeSync(FogBugzId);
 const decodeProject = Schema.decodeSync(FogBugzProject);
+const decodeArea = Schema.decodeSync(FogBugzArea);
 const decodeCase = Schema.decodeSync(FogBugzCase);
 const isFogBugzError = Schema.is(FogBugzError);
 const decodeCaseGitRepository = Schema.decodeUnknownSync(
@@ -33,6 +40,7 @@ const decodeCaseGitRepository = Schema.decodeUnknownSync(
 const CaseState = Schema.Struct({
   id: FogBugzId,
   projectId: FogBugzId,
+  areaId: FogBugzId,
   resolved: Schema.Boolean,
   open: Schema.Boolean,
   assignedTo: Schema.Int,
@@ -270,6 +278,20 @@ export class FogBugzApi {
       );
   }
 
+  async areas(token: string, projectId: number) {
+    const areas = child(
+      await this.request({ cmd: "listAreas", token, ixProject: String(projectId) }),
+      "areas",
+    );
+    return areas.children
+      .filter((node) => node.name === "area")
+      .map((area) => {
+        if (id(value(area, "ixProject")) !== projectId)
+          throw new FogBugzError({ code: "response" });
+        return decodeArea({ id: id(value(area, "ixArea")), name: value(area, "sArea") });
+      });
+  }
+
   async cases(token: string, query: string) {
     const categories = child(await this.request({ cmd: "listCategories", token }), "categories");
     const cases = child(
@@ -279,7 +301,7 @@ export class FogBugzApi {
         q: query,
         max: "201",
         includeReadNotifications: "1",
-        cols: "ixBug,sTitle,ixProject,sProject,sStatus,fOpen,ixPersonAssignedTo,sPersonAssignedTo,ixPriority,sPriority,ixCategory,sCategory,dtCaseNotified,dtLastUpdated",
+        cols: "ixBug,sTitle,ixProject,ixArea,sProject,sStatus,fOpen,ixPersonAssignedTo,sPersonAssignedTo,ixPriority,sPriority,ixCategory,sCategory,dtCaseNotified,dtLastUpdated",
       }),
       "cases",
     );
@@ -290,6 +312,7 @@ export class FogBugzApi {
           id: id(value(item, "ixBug")),
           title: value(item, "sTitle"),
           projectId: id(value(item, "ixProject")),
+          areaId: id(value(item, "ixArea")),
           projectName: value(item, "sProject"),
           status: value(item, "sStatus"),
           open: boolean(value(item, "fOpen")),
@@ -349,7 +372,7 @@ export class FogBugzApi {
         token,
         q: query,
         max: "201",
-        cols: "ixBug,ixProject,ixStatus,fOpen,ixPersonAssignedTo,ixBugEventLatest,dtOpened",
+        cols: "ixBug,ixProject,ixArea,ixStatus,fOpen,ixPersonAssignedTo,ixBugEventLatest,dtOpened",
       }),
       "cases",
     );
@@ -359,6 +382,7 @@ export class FogBugzApi {
         decodeCaseState({
           id: id(value(item, "ixBug")),
           projectId: id(value(item, "ixProject")),
+          areaId: id(value(item, "ixArea")),
           resolved: resolved.has(id(value(item, "ixStatus"))),
           open: boolean(value(item, "fOpen")),
           assignedTo: Number(value(item, "ixPersonAssignedTo")),

@@ -51,6 +51,11 @@ export function createFogBugzEnvironmentAtoms<R, E>(
       tag: WS_METHODS.fogbugzProjects,
       refreshTrigger,
     }),
+    areas: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "fogbugz:areas",
+      tag: WS_METHODS.fogbugzAreas,
+      refreshTrigger,
+    }),
     cases: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "fogbugz:cases",
       tag: WS_METHODS.fogbugzCases,
