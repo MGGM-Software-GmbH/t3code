@@ -8,7 +8,7 @@ The FogBugz settings show when your server lacks project groups, automatic brows
 
 In **Settings > Projects**, select a T3 project and choose a **FogBugz project or group** visible to your account. A group includes all its currently accessible projects, including later membership changes. Each T3 project has its own assignment. Choose **Not linked** to remove it.
 
-For a directly linked FogBugz project, optionally choose a **FogBugz area**. **All areas** includes the entire project. A selected area restricts case lists, case links, new linked threads, and automation to cases in that area. Project groups cannot have an area restriction. Changing the project, group, or area removes affected case links and resets automation tracking while preserving T3 threads and FogBugz cases.
+For a directly linked FogBugz project, optionally choose a **FogBugz area**. **All areas** includes the entire project. A selected area restricts case lists, new case links, new linked threads, and automation to cases in that area. Project groups cannot have an area restriction. Changing or clearing only the area preserves existing thread-case links and resets automation tracking. Changing the project or group removes affected case links while preserving T3 threads and FogBugz cases.
 
 Open **Fogbugz Cases** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. The **+** menu processes a case in a new linked thread. When several T3 projects match, choose the destination project first. Existing threads appear as direct links; a thread can also link a case by number or remove that association.
 

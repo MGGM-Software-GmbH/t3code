@@ -617,7 +617,12 @@ export const layer = Layer.effect(
               .withTransaction(
                 Effect.gen(function* () {
                   yield* sql`DELETE FROM fogbugz_automation WHERE project_id = ${input.projectId}`;
-                  yield* sql`DELETE FROM fogbugz_threads WHERE project_id = ${input.projectId}`;
+                  // Area changes filter cases without removing existing thread associations.
+                  if (
+                    previous?.fogbugzProjectId !== input.fogbugzProjectId ||
+                    previous?.fogbugzProjectGroupId !== groupId
+                  )
+                    yield* sql`DELETE FROM fogbugz_threads WHERE project_id = ${input.projectId}`;
                   yield* sql`DELETE FROM fogbugz_project_groups WHERE project_id = ${input.projectId}`;
                   if (input.fogbugzProjectId === null)
                     yield* sql`DELETE FROM fogbugz_projects WHERE project_id = ${input.projectId}`;
