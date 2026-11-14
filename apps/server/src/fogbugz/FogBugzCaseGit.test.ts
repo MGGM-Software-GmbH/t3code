@@ -116,31 +116,31 @@ const runtime = ProcessRunner.layer.pipe(
 );
 
 describe("per-thread case Git checkout", () => {
-  it.live(
-    "allows ordinary turns without unsupported case storage but preserves real failures",
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const fixture = yield* prepare;
-          yield* Effect.gen(function* () {
-            const service = yield* CaseGit.FogBugzCaseGit;
-            const thread = ThreadId.make("legacy-fogbugz");
-            const run = RunId.make("legacy-run");
-            fixture.shared.repositoryError = "unsupported";
+  it.live("allows ordinary turns without available case storage but preserves real failures", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* prepare;
+        yield* Effect.gen(function* () {
+          const service = yield* CaseGit.FogBugzCaseGit;
+          const thread = ThreadId.make("legacy-fogbugz");
+          const run = RunId.make("legacy-run");
+          for (const code of ["unsupported", "case_git_unavailable"] as const) {
+            fixture.shared.repositoryError = code;
             expect(yield* service.prepareTurn(thread, run)).toBeNull();
             yield* service.finishTurn(thread, run);
-            expect((yield* service.ensure(thread).pipe(Effect.flip)).code).toBe("unsupported");
-            fixture.shared.repositoryError = "network";
-            expect((yield* service.prepareTurn(thread, run).pipe(Effect.flip)).code).toBe(
-              "network",
-            );
-            expect((yield* service.finishTurn(thread, run).pipe(Effect.flip)).code).toBe("network");
-            expect(yield* fixture.fs.exists(fixture.path.join(fixture.root, "case-files"))).toBe(
-              false,
-            );
-          }).pipe(Effect.provide(fixture.serviceLayer));
-        }),
-      ).pipe(Effect.provide(runtime)),
+            expect((yield* service.ensure(thread).pipe(Effect.flip)).code).toBe(code);
+          }
+          for (const code of ["network", "authentication", "access", "case_git"] as const) {
+            fixture.shared.repositoryError = code;
+            expect((yield* service.prepareTurn(thread, run).pipe(Effect.flip)).code).toBe(code);
+            expect((yield* service.finishTurn(thread, run).pipe(Effect.flip)).code).toBe(code);
+          }
+          expect(yield* fixture.fs.exists(fixture.path.join(fixture.root, "case-files"))).toBe(
+            false,
+          );
+        }).pipe(Effect.provide(fixture.serviceLayer));
+      }),
+    ).pipe(Effect.provide(runtime)),
   );
   it.live(
     "commits and publishes case changes, rejects stale confirmations, and reverts only uncommitted files",

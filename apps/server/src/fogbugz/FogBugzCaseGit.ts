@@ -517,7 +517,9 @@ export const layer = Layer.effect(
         const prepared = yield* synchronize(threadId, runId).pipe(
           Effect.catchTags({
             FogBugzError: (error) =>
-              error.code === "unsupported" ? Effect.succeed(null) : Effect.fail(error),
+              error.code === "unsupported" || error.code === "case_git_unavailable"
+                ? Effect.succeed(null)
+                : Effect.fail(error),
           }),
         );
         if (!prepared) return null;
@@ -536,7 +538,9 @@ export const layer = Layer.effect(
         const synchronized = yield* synchronize(threadId, runId, true).pipe(
           Effect.catchTags({
             FogBugzError: (error) =>
-              error.code === "unsupported" ? Effect.succeed(null) : Effect.fail(error),
+              error.code === "unsupported" || error.code === "case_git_unavailable"
+                ? Effect.succeed(null)
+                : Effect.fail(error),
           }),
           Effect.ensuring(Effect.sync(() => locations.delete(runId))),
         );

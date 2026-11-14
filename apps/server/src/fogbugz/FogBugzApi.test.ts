@@ -224,6 +224,22 @@ describe("FogBugz API", () => {
     expect(String(fetch.mock.calls[0]?.[0])).toBe("https://fogbugz.example/subpath/api.asp");
     expect(fetch.mock.calls[0]?.[1]?.method).toBe("POST");
     expect(new URLSearchParams(String(fetch.mock.calls[0]?.[1]?.body)).get("ixBug")).toBe("42");
+    for (const [code, expected] of [
+      ["13", "case_git_unavailable"],
+      ["3", "authentication"],
+      ["27", "unsupported"],
+      ["90", "access"],
+    ]) {
+      fetch.mockImplementation(
+        async () =>
+          new Response(`<response><error code="${code}">Private message</error></response>`),
+      );
+      await expect(api.caseGitRepository("private-token", 42)).rejects.toMatchObject({
+        code: expected,
+      });
+      if (code === "13")
+        await expect(api.projects("private-token")).rejects.toMatchObject({ code: "access" });
+    }
     for (const body of [
       "{}",
       "not-json",

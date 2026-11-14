@@ -5,6 +5,9 @@ import type {
   FogBugzCaseGitState,
   FogBugzCaseGitInput,
 } from "@t3tools/contracts";
+import { FogBugzError } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import { GitBranch, GitCommitHorizontal, RotateCcw, RefreshCw } from "lucide-react";
 import {
   runAttachmentUploadCycle,
@@ -32,6 +35,8 @@ import { Input } from "../ui/input";
 import { attachmentEnvironment } from "~/state/attachments";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { readPreparedConnection } from "~/state/session";
+
+const isFogBugzError = Schema.is(FogBugzError);
 
 type Props = Pick<
   ComponentProps<typeof FilePreviewPanel>,
@@ -114,7 +119,7 @@ function CaseGitFiles(props: Props) {
   } | null>(null);
   const [name, setName] = useState("");
   const [checkout, setCheckout] = useState<typeof FogBugzCaseGitCheckout.Type | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; unavailable: boolean } | null>(null);
   const [relativePath, setRelativePath] = useState<string | null>(null);
   const [folderTrail, setFolderTrail] = useState<string | undefined>();
   const [pending, setPending] = useState(false);
@@ -260,7 +265,13 @@ function CaseGitFiles(props: Props) {
     if (result._tag === "Success") {
       setError(null);
       setCheckout(result.value);
-    } else setError(formatEnvironmentQueryError(result.cause));
+    } else {
+      const failure = Cause.squash(result.cause);
+      setError({
+        message: formatEnvironmentQueryError(result.cause),
+        unavailable: isFogBugzError(failure) && failure.code === "case_git_unavailable",
+      });
+    }
   }
   const loadOnArrival = useEffectEvent(load);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Opening the surface provisions its external Git checkout.
@@ -274,7 +285,7 @@ function CaseGitFiles(props: Props) {
   if (error)
     return (
       <div className="space-y-3 p-4 text-sm">
-        <p role="alert">{error}</p>
+        <p role={error.unavailable ? "status" : "alert"}>{error.message}</p>
         <Button onClick={() => void load()}>Retry</Button>
       </div>
     );

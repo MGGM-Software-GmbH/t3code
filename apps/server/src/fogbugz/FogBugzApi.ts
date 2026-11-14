@@ -48,6 +48,17 @@ const Assignment = Schema.Struct({
 });
 const decodeAssignment = Schema.decodeSync(Assignment);
 
+function responseError(code: string | undefined) {
+  return new FogBugzError({
+    code:
+      code === "27"
+        ? "unsupported"
+        : ["1", "2", "3"].includes(code ?? "")
+          ? "authentication"
+          : "access",
+  });
+}
+
 function parseXml(xml: string, allowError = false): XmlNode {
   const document: XmlNode = { name: "document", text: "", children: [], attributes: {} };
   const stack = [document];
@@ -73,15 +84,7 @@ function parseXml(xml: string, allowError = false): XmlNode {
   if (document.children.length !== 1 || root?.name !== "response")
     throw new FogBugzError({ code: "response" });
   const error = root.children.find((node) => node.name === "error");
-  if (error && !allowError)
-    throw new FogBugzError({
-      code:
-        error.attributes.code === "27"
-          ? "unsupported"
-          : ["1", "2", "3"].includes(error.attributes.code ?? "")
-            ? "authentication"
-            : "access",
-    });
+  if (error && !allowError) throw responseError(error.attributes.code);
   return root;
 }
 
@@ -208,7 +211,17 @@ export class FogBugzApi {
   }
 
   async caseGitRepository(token: string, caseId: number) {
-    const response = await this.request({ cmd: "caseGitRepository", token, ixBug: String(caseId) });
+    const response = await this.request(
+      { cmd: "caseGitRepository", token, ixBug: String(caseId) },
+      undefined,
+      true,
+    );
+    const error = response.children.find((node) => node.name === "error");
+    if (error) {
+      // FogBugz uses code 13 for both disabled project storage and missing case-file access.
+      if (error.attributes.code === "13") throw new FogBugzError({ code: "case_git_unavailable" });
+      throw responseError(error.attributes.code);
+    }
     try {
       return decodeCaseGitRepository(JSON.parse(value(response, "caseGit")));
     } catch {

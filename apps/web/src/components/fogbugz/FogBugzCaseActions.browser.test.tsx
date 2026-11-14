@@ -591,6 +591,7 @@ it.each([
     const thread = threadWithHistory(`case-git-panel-${width}`, 0);
     const projectId = ProjectId.make("project-render");
     const cwd = `/case-files/connection/7/42/${thread.id}/repo`;
+    let unavailable = true;
     let failing = true;
     const files = new Set(["PRP.md"]);
     let createdFolder = false;
@@ -617,15 +618,18 @@ it.each([
           url: "https://fogbugz.example/default.asp?42",
         }),
       [WS_METHODS.fogbugzEnsureCaseGit]: () =>
-        failing
-          ? Effect.fail(new FogBugzError({ code: "case_git" }))
-          : Effect.succeed({
-              caseId: 42,
-              repositoryId: "fixture",
-              cwd,
-              canWrite: true,
-              syncIssue: "Local and remote commits conflict. The working tree has been preserved.",
-            }),
+        unavailable
+          ? Effect.fail(new FogBugzError({ code: "case_git_unavailable" }))
+          : failing
+            ? Effect.fail(new FogBugzError({ code: "case_git" }))
+            : Effect.succeed({
+                caseId: 42,
+                repositoryId: "fixture",
+                cwd,
+                canWrite: true,
+                syncIssue:
+                  "Local and remote commits conflict. The working tree has been preserved.",
+              }),
       [WS_METHODS.projectsListEntries]: (input: { cwd: string }) =>
         Effect.sync(() => {
           return {
@@ -693,6 +697,15 @@ it.each([
       await expect
         .element(page.getByRole("dialog", { name: "Thread details", exact: true }))
         .not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole("status").filter({ hasText: "Case Git files are unavailable" }))
+      .toBeVisible();
+    await expect
+      .element(page.getByText("Unable to prepare FogBugz case files", { exact: true }))
+      .not.toBeInTheDocument();
+    await page.screenshot({ path: `.t3/fogbugz-case-git-unavailable-${width}.png` });
+    unavailable = false;
+    await userEvent.click(page.getByRole("button", { name: "Retry", exact: true }));
     await expect
       .element(
         page.getByRole("alert").filter({ hasText: "Could not prepare the case Git checkout" }),

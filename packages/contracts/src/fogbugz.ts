@@ -163,6 +163,8 @@ const messages = {
   case_files_busy: "Wait for the agent's turn to finish before changing case files.",
   case_files_limit: "The case file size, upload group, or repository limit would be exceeded.",
   case_files_io: "Could not change case files. Refresh the files and try again.",
+  case_git_unavailable:
+    "Case Git files are unavailable. The FogBugz project may have file storage disabled, or this account may lack access to it.",
   connection_required: "Configure FogBugz in Settings > MGGM first.",
   authentication: "FogBugz sign-in failed or expired. Sign in again in Settings > MGGM.",
   network: "Could not reach the FogBugz API.",

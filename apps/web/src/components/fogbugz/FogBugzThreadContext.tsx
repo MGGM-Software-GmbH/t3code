@@ -1,5 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { FogBugzError, type ScopedThreadRef } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import { ExternalLinkIcon, FolderGit2Icon, LinkIcon, UnlinkIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { fogbugzEnvironment } from "../../state/fogbugz";
@@ -16,6 +18,8 @@ import {
 } from "../chat/threadDetailsPanelStyles";
 import { useFogBugzCasePreview } from "./useFogBugzCasePreview";
 import { useRightPanelStore } from "../../rightPanelStore";
+
+const isFogBugzError = Schema.is(FogBugzError);
 
 export function FogBugzThreadContext({
   threadRef,
@@ -59,12 +63,15 @@ export function FogBugzThreadContext({
   }
   const prepareOnArrival = useEffectEvent(async () => {
     const result = await prepareCaseGit({ environmentId, input: { threadId } });
-    if (result._tag === "Failure")
+    if (result._tag === "Failure") {
+      const error = Cause.squash(result.cause);
+      if (isFogBugzError(error) && error.code === "case_git_unavailable") return;
       toastManager.add({
         type: "error",
         title: "Unable to prepare FogBugz case files",
         description: formatEnvironmentQueryError(result.cause),
       });
+    }
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Provision the linked thread's external case checkout on arrival.
   useEffect(() => {
