@@ -5,6 +5,7 @@ import {
   collectLimitNotices,
   limitsNotice,
   summarizeWeeklyLimits,
+  shouldShowWeeklyLimit,
   type LimitAccount,
 } from "@t3tools/shared/usageLimits";
 import { useNavigate } from "@tanstack/react-router";
@@ -191,12 +192,16 @@ function WeeklyLimitIndicator({
         </span>
       }
     >
-      <div className="flex flex-col gap-2 text-left">
+      <div className="flex max-h-[calc(100dvh-5rem)] flex-col gap-2 overflow-y-auto text-left">
         <div className="font-medium">{title}</div>
         <div>
-          {percent === null ? "No account-wide seven-day limit reported." : `${percent}% remaining`}
-          {summary.members.length > 1
-            ? ` · ${summary.members.length} accounts, equally weighted`
+          {summary.capacityUnavailable
+            ? "Combined percentage unavailable: plan capacities are unknown or not comparable."
+            : percent === null
+              ? "No account-wide seven-day limit reported."
+              : `${percent}% remaining`}
+          {summary.members.length > 1 && !summary.capacityUnavailable
+            ? ` · ${summary.members.length} accounts, weighted by plan allowance`
             : null}
         </div>
         <div>
@@ -227,7 +232,7 @@ function WeeklyLimitIndicator({
             : `Next regular reset: ${summary.nextResetAt ? time(summary.nextResetAt) : "not reported"} (local time)`}
         </div>
         {summary.members.length > 1 ? (
-          summary.members.map(({ account, window, remainingPercent, elapsedDays }) => (
+          summary.members.map(({ account, window, remainingPercent, elapsedDays, capacity }) => (
             <div
               key={account.key}
               role="group"
@@ -239,6 +244,10 @@ function WeeklyLimitIndicator({
                 <span className="whitespace-nowrap tabular-nums">
                   ({remainingPercent}% remaining)
                 </span>
+              </span>
+              <span className="text-muted-foreground">
+                {account.plan ? `${account.plan} · ` : ""}
+                {capacity === null ? "Plan capacity unknown" : `${capacity}× Plus allowance`}
               </span>
               <span className="text-muted-foreground">
                 {window.resetsAt ? `Reset ${time(window.resetsAt)}` : "Reset not reported"}
@@ -331,6 +340,7 @@ export function ComposerWeeklyLimit({
         )
       : [];
   const notice = provider?.usageLimits ? limitsNotice(provider.usageLimits) : null;
+  if (provider && !shouldShowWeeklyLimit(provider)) return null;
   return (
     <WeeklyLimitIndicator
       accounts={accounts}

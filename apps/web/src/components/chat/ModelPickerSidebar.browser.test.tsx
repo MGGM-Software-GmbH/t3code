@@ -108,6 +108,48 @@ it("does not invent a balance or resets for missing and unavailable reports", as
   expect(screen.container.textContent).not.toContain("+2");
 });
 
+it("hides unavailable registry-agent quotas while preserving reported limits", async () => {
+  const copilot = {
+    ...entry("githubCopilot"),
+    displayName: "GitHub Copilot",
+    driverKind: ProviderDriverKind.make("acpRegistry"),
+    snapshot: {
+      ...entry("githubCopilot").snapshot,
+      driver: ProviderDriverKind.make("acpRegistry"),
+    },
+  };
+  const reported = {
+    ...copilot,
+    instanceId: ProviderInstanceId.make("reported-copilot"),
+    displayName: "Reported Copilot",
+    snapshot: { ...copilot.snapshot, usageLimits: limits(25) },
+  };
+  await using screen = await render(
+    <ModelPickerSidebar
+      selectedInstanceId={copilot.instanceId}
+      onSelectInstance={() => undefined}
+      onFocusSearch={() => undefined}
+      instanceEntries={[copilot, reported]}
+    />,
+  );
+  await expect
+    .element(screen.getByRole("button", { name: "GitHub Copilot", exact: true }))
+    .toBeVisible();
+  expect(screen.container.textContent).not.toContain("?");
+  expect(screen.container.querySelector('[role="img"][aria-label*="Weekly limit"]')).toBeNull();
+  await expect
+    .element(
+      screen.getByRole("meter", { name: "Reported Copilot: 75% remaining · 2 banked resets" }),
+    )
+    .toBeVisible();
+  expect(
+    screen
+      .getByRole("button", { name: "GitHub Copilot", exact: true })
+      .element()
+      .getAttribute("aria-description"),
+  ).toBeNull();
+});
+
 it("renders zero remaining without showing a zero-reset badge", async () => {
   const account = entry("Empty", { ...limits(100), resetCredits: { availableCount: 0 } });
   await using screen = await render(

@@ -72,7 +72,7 @@ function provider(
     installed: true,
     status: "ready",
     version: null,
-    auth: { status: "authenticated", email },
+    auth: { status: "authenticated", email, label: "ChatGPT Pro 200 Subscription" },
     models: [],
     skills: [],
     slashCommands: [],
@@ -122,14 +122,36 @@ it("explains elapsed days and banked resets for the selected account and dedupli
 it("pools distinct accounts once across environments and keeps the composer scoped to its account", async () => {
   await using test = await setup();
   const { container, setProviders, render, labels } = test;
-  const team = provider(codex, 25, "team@example.test");
-  setProviders([team, provider(second, 75, "second@example.test")], [team]);
+  const team = {
+    ...provider(codex, 0, "team@example.test"),
+    auth: {
+      status: "authenticated" as const,
+      label: "ChatGPT Pro 500 Subscription",
+      email: "team@example.test",
+    },
+  };
+  setProviders(
+    [
+      team,
+      provider(second, 100, "second@example.test"),
+      provider(ProviderInstanceId.make("codex-three"), 100, "third@example.test"),
+      provider(ProviderInstanceId.make("codex-four"), 100, "fourth@example.test"),
+    ],
+    [team],
+  );
   await render();
   expect(labels()).toEqual([
-    "Weekly limit, all accounts: 50% remaining",
-    "Weekly limit, Team: 75% remaining",
+    "Weekly limit, all accounts: 45% remaining",
+    "Weekly limit, Team: 100% remaining",
   ]);
-  expect(container.textContent).toBe("50%75%");
+  expect(container.textContent).toBe("45%100%");
+  await act(async () => {
+    container.querySelector("button")!.focus();
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(document.body.textContent).toContain("4 accounts, weighted by plan allowance");
+  expect(document.body.textContent).toContain("50× Plus allowance");
+  expect(document.body.textContent).toContain("20× Plus allowance");
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -375,6 +397,27 @@ it("shows unknown rather than a full circle when the selected account has no wee
   ]);
   expect(container.textContent).toBe("??");
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("hides the composer quota for registry agents without a reported weekly allowance", async () => {
+  await using test = await setup();
+  const { container, setProviders, render, labels } = test;
+  const copilot = {
+    ...provider(second, 40, "copilot@example.test"),
+    driver: ProviderDriverKind.make("acpRegistry"),
+    displayName: "GitHub Copilot",
+    usageLimits: undefined,
+  };
+  setProviders([provider(codex, 25, "team@example.test"), copilot]);
+  await render(wsl, second);
+  expect(labels()).toEqual(["Weekly limit, all accounts: 75% remaining"]);
+  expect(container.querySelector("[data-composer-weekly-limit]")).toBeNull();
+  setProviders([
+    provider(codex, 25, "team@example.test"),
+    { ...copilot, usageLimits: provider(second, 40, "copilot@example.test").usageLimits },
+  ]);
+  await render(wsl, second);
+  expect(labels()[1]).toBe("Weekly limit, GitHub Copilot: 60% remaining");
 });
 
 it("reports an expired reset as awaiting an update instead of claiming a new balance", async () => {

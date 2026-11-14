@@ -185,7 +185,13 @@ describe("weekly toolbar limits", () => {
           {
             entry: { target: { label: name } },
             serverConfig: {
-              providers: [provider({ displayName: name, usageLimits: limits(usedPercent) })],
+              providers: [
+                provider({
+                  displayName: name,
+                  auth: { status: "authenticated", label: "ChatGPT Pro 200 Subscription" },
+                  usageLimits: limits(usedPercent),
+                }),
+              ],
             },
           },
         ],
@@ -205,6 +211,53 @@ describe("weekly toolbar limits", () => {
   it("averages distinct accounts equally without rounding each share first", () => {
     const summary = summarizeWeeklyLimits([account("one", 20.4), account("two", 81.4)]);
     expect(summary.remainingPercent).toBe(49);
+    expect(summary.members).toHaveLength(2);
+  });
+
+  it.each([
+    ["ChatGPT Plus Subscription", 1],
+    ["ChatGPT Pro 100 Subscription", 10],
+    ["ChatGPT Pro 200 Subscription", 20],
+    ["ChatGPT Pro 500 Subscription", 50],
+    ["ChatGPT Business Subscription", 1],
+    ["ChatGPT Business Standard Subscription", 1],
+    ["ChatGPT Business Premium Subscription", 10],
+    ["ChatGPT Team Subscription", 1],
+  ])("weights %s by its published Codex allowance", (plan, capacity) => {
+    const summary = summarizeWeeklyLimits([
+      { ...account("plan", 0), plan },
+      { ...account("plus", 100), plan: "ChatGPT Plus Subscription" },
+    ]);
+    expect(summary.remainingPercent).toBe(Math.round((100 * capacity) / (capacity + 1)));
+  });
+
+  it.each([
+    [0, 100, 45],
+    [100, 0, 55],
+  ])(
+    "pools one Pro 500 and three Pro 200 accounts by capacity",
+    (largeUsed, smallUsed, remaining) => {
+      const summary = summarizeWeeklyLimits([
+        { ...account("codex", largeUsed), plan: "ChatGPT Pro 500 Subscription" },
+        account("codex2", smallUsed),
+        account("codex3", smallUsed),
+        account("codex4", smallUsed),
+      ]);
+      expect(summary.remainingPercent).toBe(remaining);
+    },
+  );
+
+  it.each([
+    { plan: undefined },
+    { plan: "ChatGPT Enterprise Subscription" },
+    { plan: "toString" },
+    { driver: ProviderDriverKind.make("claudeAgent") },
+  ])("keeps incomparable capacities explicit without inventing equal shares: %j", (overrides) => {
+    const unknown = { ...account("unknown", 35), ...overrides };
+    expect(summarizeWeeklyLimits([unknown]).remainingPercent).toBe(65);
+    const summary = summarizeWeeklyLimits([account("known", 0), unknown]);
+    expect(summary.remainingPercent).toBeNull();
+    expect(summary.capacityUnavailable).toBe(true);
     expect(summary.members).toHaveLength(2);
   });
 

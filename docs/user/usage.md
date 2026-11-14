@@ -144,13 +144,19 @@ model-specific weekly allowances keep their reported values.
 
 The weekly indicators in the sidebar and next to the composer's access selector show the remaining
 seven-day allowance across accounts and for the selected account. The combined percentage weights
-each reporting account equally, regardless of plan size. Hover or focus an indicator for account
-details, the regular reset time in your local time zone, and when the balance was checked. Click to
+Codex accounts by their included plan allowance: Plus and Business Standard (formerly Team) count
+as 1, Pro 100 and Business Premium as 10, Pro 200 as 20, and Pro 500 as 50. These are allowance
+ratios, not subscription-price ratios. A combined percentage is unavailable when reporting accounts
+have unknown or incomparable plan capacities; their individual readings remain in the details.
+Hover or focus an indicator for account details, the regular reset time in your local time zone,
+and when the balance was checked. Click to
 open Usage. On touch screens, tap either indicator to read these details, then choose **Usage details**.
 A question mark means no account-wide weekly allowance was reported; other time windows
-and model-specific quotas are not substituted. These indicators reuse cached snapshots and provider
-updates without additional polling. A passed reset does not assume a fresh balance before the
-provider reports it.
+and model-specific quotas are not substituted. ACP Registry agents such as GitHub Copilot show
+no weekly indicator in the composer or model picker unless they report a weekly allowance.
+Their monthly subscriptions are not treated as weekly quotas. These indicators reuse cached
+snapshots and provider updates without additional polling. A passed reset does not assume a fresh
+balance before the provider reports it.
 
 The inner ring has seven day segments showing elapsed time in the weekly period. For several
 accounts it shows the average of reported periods, independently of the remaining allowance.

@@ -643,9 +643,33 @@ export function weeklyLimitWindow(limits: ServerProviderUsageLimits) {
   return main ?? (weekly.length === 1 ? weekly[0]! : null);
 }
 
+/** Registry agents such as Copilot do not advertise an account-wide quota probe. */
+export function shouldShowWeeklyLimit(
+  provider: Pick<ServerProvider, "driver" | "usageLimits">,
+): boolean {
+  return (
+    provider.driver !== "acpRegistry" ||
+    (provider.usageLimits !== undefined && weeklyLimitWindow(provider.usageLimits) !== null)
+  );
+}
+
+// Pro multipliers: https://x.com/thsottiaux/status/2119296267545419987.
+// Business Premium's initial 5× Standard allowance doubled on October 29, 2026:
+// https://help.openai.com/en/articles/11391654-chatgpt-business-release-notes.
+const CODEX_WEEKLY_PLAN_CAPACITY = new Map([
+  ["ChatGPT Plus Subscription", 1],
+  ["ChatGPT Pro 100 Subscription", 10],
+  ["ChatGPT Pro 200 Subscription", 20],
+  ["ChatGPT Pro 500 Subscription", 50],
+  ["ChatGPT Business Subscription", 1],
+  ["ChatGPT Business Standard Subscription", 1],
+  ["ChatGPT Business Premium Subscription", 10],
+  ["ChatGPT Team Subscription", 1],
+]);
+
 /**
- * Equal account shares, like the Limits view. Callers deduplicate accounts with
- * collectLimitAccounts first. Missing weekly allowances stay visible as missing,
+ * Weight Codex accounts by comparable plan allowances, never by subscription price.
+ * Callers deduplicate accounts with collectLimitAccounts first. Missing allowances stay visible,
  * and a passed reset never fabricates a fresh balance. Elapsed periods are
  * averaged separately from quota; banked credits are summed across accounts.
  */
@@ -659,6 +683,10 @@ export function summarizeWeeklyLimits(accounts: readonly LimitAccount[], now?: n
       {
         account,
         window,
+        capacity:
+          account.driver === "codex" && account.plan
+            ? (CODEX_WEEKLY_PLAN_CAPACITY.get(account.plan) ?? null)
+            : null,
         remainingPercent: remainingPercent(window),
         elapsedDays: elapsedDays === null ? null : elapsedDays * 7,
       },
@@ -679,8 +707,12 @@ export function summarizeWeeklyLimits(accounts: readonly LimitAccount[], now?: n
     const at = resetMillis(window);
     return at === null ? [] : [at];
   });
-  const used = members.reduce(
-    (sum, { window }) => sum + Math.max(0, Math.min(100, window.usedPercent)),
+  const capacityUnavailable =
+    members.length > 1 && members.some(({ capacity }) => capacity === null);
+  const totalCapacity = members.reduce((sum, { capacity }) => sum + (capacity ?? 0), 0);
+  const weightedUsed = members.reduce(
+    (sum, { window, capacity }) =>
+      sum + Math.max(0, Math.min(100, window.usedPercent)) * (capacity ?? 0),
     0,
   );
   const checkedTimes = members
@@ -689,7 +721,13 @@ export function summarizeWeeklyLimits(accounts: readonly LimitAccount[], now?: n
   return {
     members,
     missing: accounts.filter((account) => !members.some((member) => member.account === account)),
-    remainingPercent: members.length > 0 ? Math.round(100 - used / members.length) : null,
+    capacityUnavailable,
+    remainingPercent:
+      members.length === 1
+        ? members[0]!.remainingPercent
+        : !capacityUnavailable && totalCapacity > 0
+          ? Math.round(100 - weightedUsed / totalCapacity)
+          : null,
     elapsedDays:
       periods.length > 0 ? periods.reduce((sum, days) => sum + days, 0) / periods.length : null,
     reportedPeriods: periods.length,

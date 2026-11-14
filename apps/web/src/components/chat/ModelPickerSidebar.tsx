@@ -1,6 +1,10 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
-import { remainingPercent, weeklyLimitWindow } from "@t3tools/shared/usageLimits";
+import {
+  remainingPercent,
+  weeklyLimitWindow,
+  shouldShowWeeklyLimit,
+} from "@t3tools/shared/usageLimits";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
@@ -140,6 +144,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
             const limits = entry.snapshot.usageLimits;
+            const showLimit = shouldShowWeeklyLimit(entry.snapshot);
             const weekly = limits ? weeklyLimitWindow(limits) : null;
             const percent = weekly ? remainingPercent(weekly) : null;
             const credits = limits && !limits.unavailable ? limits.resetCredits : undefined;
@@ -176,7 +181,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 aria-pressed={isSelected}
                 type="button"
                 aria-label={isUnavailable || isContextDisabled ? tooltip : entry.displayName}
-                aria-description={`${limitLabel}${creditsLabel}`}
+                aria-description={showLimit ? `${limitLabel}${creditsLabel}` : undefined}
               >
                 <ProviderInstanceIcon
                   driverKind={entry.driverKind}
@@ -196,34 +201,36 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   }
                   {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
-                <span className="flex w-10 flex-col gap-0.5">
-                  <span
-                    className="flex items-center justify-center gap-0.5 text-3xs leading-none tabular-nums text-muted-foreground"
-                    aria-hidden="true"
-                  >
-                    <span>{percent === null ? "?" : `${percent}%`}</span>
-                    {credits && credits.availableCount > 0 ? (
-                      <span className={cn(expiringSoon && "text-reset-expiry-foreground")}>
-                        +{credits.availableCount}
-                      </span>
-                    ) : null}
+                {showLimit ? (
+                  <span className="flex w-10 flex-col gap-0.5">
+                    <span
+                      className="flex items-center justify-center gap-0.5 text-3xs leading-none tabular-nums text-muted-foreground"
+                      aria-hidden="true"
+                    >
+                      <span>{percent === null ? "?" : `${percent}%`}</span>
+                      {credits && credits.availableCount > 0 ? (
+                        <span className={cn(expiringSoon && "text-reset-expiry-foreground")}>
+                          +{credits.availableCount}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span
+                      role={percent === null ? "img" : "meter"}
+                      aria-label={`${entry.displayName}: ${limitLabel}${creditsLabel}`}
+                      aria-valuemin={percent === null ? undefined : 0}
+                      aria-valuemax={percent === null ? undefined : 100}
+                      aria-valuenow={percent ?? undefined}
+                      className="h-0.75 overflow-hidden rounded-full bg-foreground/10"
+                    >
+                      {percent !== null ? (
+                        <span
+                          className="block h-full rounded-full bg-muted-foreground"
+                          style={{ width: `${percent}%` }}
+                        />
+                      ) : null}
+                    </span>
                   </span>
-                  <span
-                    role={percent === null ? "img" : "meter"}
-                    aria-label={`${entry.displayName}: ${limitLabel}${creditsLabel}`}
-                    aria-valuemin={percent === null ? undefined : 0}
-                    aria-valuemax={percent === null ? undefined : 100}
-                    aria-valuenow={percent ?? undefined}
-                    className="h-0.75 overflow-hidden rounded-full bg-foreground/10"
-                  >
-                    {percent !== null ? (
-                      <span
-                        className="block h-full rounded-full bg-muted-foreground"
-                        style={{ width: `${percent}%` }}
-                      />
-                    ) : null}
-                  </span>
-                </span>
+                ) : null}
               </Toolbar.Button>
             );
 
@@ -247,10 +254,12 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                     align="center"
                   >
                     {tooltip}
-                    <div className="mt-1 text-muted-foreground">
-                      {limitLabel}
-                      {creditsLabel}
-                    </div>
+                    {showLimit ? (
+                      <div className="mt-1 text-muted-foreground">
+                        {limitLabel}
+                        {creditsLabel}
+                      </div>
+                    ) : null}
                     {credits && credits.availableCount > 0 ? (
                       <div
                         className={cn(
