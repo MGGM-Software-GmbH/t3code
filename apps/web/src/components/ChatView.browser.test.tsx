@@ -42,6 +42,7 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 
 it("main keeps the compact sidebar row while other branches get a metadata line", async () => {
   await page.viewport(1400, 900);
+  using _now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-03-18T09:00:00.000Z"));
   using _clock = vi.spyOn(minuteTick, "getSnapshot").mockReturnValue("2026-03-18T09:00");
   const threads = ["main", null, "feat/sidebar-branch", "master"].map((branch) => ({
     ...threadWithHistory(`sidebar-branch-${(branch ?? "none").replaceAll("/", "-")}`, 0),

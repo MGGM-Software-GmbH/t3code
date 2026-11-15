@@ -215,6 +215,7 @@ it("shows case metadata and acknowledges reactivated threads on wide and narrow 
   await expect.element(screen.getByText("ToDo", { exact: true })).toBeVisible();
   await expect.element(screen.getByLabelText("Bug", { exact: true })).toBeVisible();
   await userEvent.click(screen.getByTestId("sidebar-idle-projects-shelf-toggle"));
+  await userEvent.click(screen.getByTestId("sidebar-idle-project-toggle"));
   await expect.element(screen.getByText("Reactivated", { exact: true })).toBeVisible();
   await expect
     .element(screen.getByRole("button", { name: "Dismiss Reactivated notification" }))
