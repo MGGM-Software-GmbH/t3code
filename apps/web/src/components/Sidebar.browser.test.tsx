@@ -139,9 +139,82 @@ function threadShell(projectId: ProjectId, index: number): EnvironmentThreadShel
 }
 
 describe("sidebar render isolation", () => {
+  it("starts idle project groups collapsed and remembers explicit expansion across mounts", async () => {
+    using stack = new DisposableStack();
+    const previousSettings = getClientSettings();
+    stack.defer(() => __setClientSettingsForTests(previousSettings));
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, mggmThreadSidebarEnabled: true });
+    const storageKeys = [
+      "t3code:sidebar:idle-projects-expanded",
+      "t3code:sidebar:idle-project-expanded",
+    ];
+    for (const key of storageKeys) {
+      const previous = localStorage.getItem(key);
+      stack.defer(() =>
+        previous === null ? localStorage.removeItem(key) : localStorage.setItem(key, previous),
+      );
+      localStorage.removeItem(key);
+    }
+    localStorage.setItem(storageKeys[0]!, "true");
+    const idleProject = project("idle-collapse");
+    vi.mocked(useProjects).mockReturnValue([idleProject]);
+    vi.mocked(useQuietThreadShells).mockReturnValue([
+      {
+        ...threadShell(idleProject.id, 99),
+        latestUserMessageAt: "2026-01-01T00:00:00.000Z",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        latestRun: null,
+      },
+    ]);
+    vi.mocked(useThreadRouteTarget).mockReturnValue(null);
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      activeDraftThread: null,
+      activeThread: null,
+      defaultProjectRef: { environmentId: idleProject.environmentId, projectId: idleProject.id },
+      defaultProjectFallbackReady: true,
+      handleNewThread: vi.fn().mockResolvedValue(null),
+      routeDraftId: null,
+      routeThreadRef: null,
+    });
+    const sidebar = () => (
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>
+    );
+    {
+      await using screen = await render(sidebar());
+      const group = screen.getByTestId("sidebar-idle-project-toggle");
+      await expect.element(group).toHaveAttribute("aria-expanded", "false");
+      await expect
+        .element(screen.getByText("Thread 99", { exact: true }).first())
+        .not.toBeInTheDocument();
+      await userEvent.click(group);
+      await expect.element(group).toHaveAttribute("aria-expanded", "true");
+      await expect
+        .element(screen.getByText("Thread 99", { exact: true }).first())
+        .toBeInTheDocument();
+    }
+    {
+      await using screen = await render(sidebar());
+      await expect
+        .element(screen.getByTestId("sidebar-idle-project-toggle"))
+        .toHaveAttribute("aria-expanded", "true");
+      await userEvent.click(screen.getByTestId("sidebar-idle-project-toggle"));
+    }
+    {
+      await using screen = await render(sidebar());
+      await expect
+        .element(screen.getByTestId("sidebar-idle-project-toggle"))
+        .toHaveAttribute("aria-expanded", "false");
+    }
+  });
   // regression: #33100 Cmd+J re-rendered every sidebar row, which took hundreds of ms with many threads
   it("does not re-render thread rows when a quick Mod shortcut opens and focuses the terminal", async () => {
     using stack = new DisposableStack();
+    const previousSettings = getClientSettings();
+    stack.defer(() => __setClientSettingsForTests(previousSettings));
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, mggmThreadSidebarEnabled: false });
     const activeProject = project("active");
     const threads = Array.from({ length: 5 }, (_, index) => threadShell(activeProject.id, index));
     const routeThreadRef: ScopedThreadRef = {

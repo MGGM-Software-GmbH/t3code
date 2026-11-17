@@ -39,6 +39,7 @@ import { settingsScopeEnvironmentLabel } from "./settingsScopeAxis";
 import { useAccessEnvironment } from "./useAccessEnvironment";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { ManagedByOrganization } from "../ManagedPolicy";
+import { PdSecretsSettings } from "./PdSecretsSettings";
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { searchableSetting } from "./settingsSearch";
 import { ConnectDeviceApprovalSettings } from "./ConnectDeviceApprovalSettings";
@@ -1670,7 +1671,13 @@ function ConnectionsSettingsContent({
     </>
   );
 
-  if (showsAccess) return <SettingsPageContainer>{primarySettings}</SettingsPageContainer>;
+  if (showsAccess)
+    return (
+      <SettingsPageContainer>
+        <PdSecretsSettings />
+        {primarySettings}
+      </SettingsPageContainer>
+    );
 
   return (
     <SettingsPageContainer>

@@ -34,6 +34,9 @@ import {
   CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL,
 } from "./Adapters/ClaudeAdapterV2.ts";
 import { withTurnStartReservation, withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
+import { withCaseGitRoot } from "../fogbugz/caseGitInstructions.ts";
+import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -168,6 +171,7 @@ export const layer: Layer.Layer<
   ProviderTurnStartServiceV2,
   never,
   | EventSink.EventSinkV2
+  | FogBugzCaseGit.FogBugzCaseGit
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
@@ -182,11 +186,13 @@ export const layer: Layer.Layer<
   | RunExecutionService.RunExecutionServiceV2
   | RuntimePolicy.RuntimePolicyV2
   | TurnItemPositionStore.TurnItemPositionStoreV2
+  | WorkspaceFileSystem.WorkspaceFileSystem
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
+    const caseGit = yield* FogBugzCaseGit.FogBugzCaseGit;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -199,6 +205,7 @@ export const layer: Layer.Layer<
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const restoreMissingWorktree = yield* makeRestoreMissingWorktree;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
+    const workspaceFiles = yield* WorkspaceFileSystem.WorkspaceFileSystem;
 
     // Build draining callbacks outside startup scope so they cannot retain full thread history.
     const makeRunControls = (input: {
@@ -709,6 +716,11 @@ export const layer: Layer.Layer<
       }
       const resolvedRuntimePolicy = resolvedPolicy.success;
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
+      // Queued turns can start after the browser closes or the workspace changes.
+      const reviewContextRecords = yield* workspaceFiles.refreshReviewComments({
+        cwd: resolvedRuntimePolicy.cwd,
+        records: message.context?.records ?? [],
+      });
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
       );
@@ -846,7 +858,7 @@ export const layer: Layer.Layer<
       let resumeFellBack = false;
       const userText = projectComposerContextForProvider({
         text: providerMessage.text,
-        records: providerMessage.context?.records ?? [],
+        records: reviewContextRecords,
       });
       // Native goal commands go verbatim; handoff history waits a turn.
       const goalDriver =
@@ -1740,17 +1752,27 @@ export const layer: Layer.Layer<
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           const start = compact ? session.compactThread! : session.startTurn;
+          const caseContext =
+            compact || goalCommand
+              ? null
+              : yield* caseGit.prepareTurn(projection.thread.id, run.id);
+          if (!(yield* isCurrentAttemptInStatus("running"))) return;
           // Like history, the side chat context waits for a turn that sends a prompt.
           const sideChatContext =
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [delivery.context, sideChatContext, restartNote]
+          const context = [caseContext?.text ?? "", delivery.context, sideChatContext, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
           const text = goalCommand ? userText : withInlineContext(context, userText);
-          const startInput = noteContinuation ? promptedInput : turnInput;
+          const startInput = {
+            ...(noteContinuation ? promptedInput : turnInput),
+            runtimePolicy: caseContext?.canWrite
+              ? withCaseGitRoot(turnInput.runtimePolicy, caseContext.cwd)
+              : turnInput.runtimePolicy,
+          };
           const { resume: _resume, ...contextInput } = startInput;
           const { message: resumeMessage, resume: _resumeIntent, ...resumeInput } = startInput;
           const operation =
@@ -1819,14 +1841,7 @@ export const layer: Layer.Layer<
               }),
         ),
       );
-      const deliverySession =
-        effectiveHandoffs.length === 0 &&
-        retryHandoff.length === 0 &&
-        sideChatHandoff === undefined &&
-        restartNote === "" &&
-        !noteContinuation
-          ? session
-          : makeDeliverySession(session, startWithHandoffs);
+      const deliverySession = makeDeliverySession(session, startWithHandoffs);
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,

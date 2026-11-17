@@ -1,4 +1,9 @@
-import { type SlowRpcAckRequest, subscribeSlowRpcAckRequests } from "../rpc/requestLatencyState";
+import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings";
+import {
+  type SlowRpcAckRequest,
+  subscribeSlowRpcAckRequests,
+  setSlowRpcAckThresholdSeconds,
+} from "../rpc/requestLatencyState";
 import { toastManager } from "./ui/toast";
 
 function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>): string {
@@ -32,6 +37,11 @@ function SlowRequestDetails({ requests }: { requests: ReadonlyArray<SlowRpcAckRe
 export function startSlowRpcRequestToasts(): () => void {
   let toastId: ReturnType<typeof toastManager.add> | null = null;
 
+  const applyThreshold = () =>
+    setSlowRpcAckThresholdSeconds(getClientSettings().slowRequestWarningThresholdSeconds);
+  applyThreshold();
+  const unsubscribeSettings = subscribeClientSettings(applyThreshold);
+
   const unsubscribe = subscribeSlowRpcAckRequests((slowRequests) => {
     if (slowRequests.length === 0) {
       if (toastId !== null) {
@@ -62,6 +72,7 @@ export function startSlowRpcRequestToasts(): () => void {
 
   return () => {
     unsubscribe();
+    unsubscribeSettings();
     if (toastId !== null) toastManager.close(toastId);
   };
 }

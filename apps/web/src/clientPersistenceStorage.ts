@@ -1,4 +1,8 @@
-import { ClientSettingsSchema, type ClientSettings } from "@t3tools/contracts";
+import {
+  ClientSettingsSchema,
+  StoredClientSettingsSchema,
+  type ClientSettings,
+} from "@t3tools/contracts";
 
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
@@ -13,7 +17,7 @@ export function readBrowserClientSettings(): ClientSettings | null {
     return null;
   }
 
-  return getLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, ClientSettingsSchema);
+  return getLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, StoredClientSettingsSchema);
 }
 
 export function writeBrowserClientSettings(settings: ClientSettings): void {

@@ -43,6 +43,8 @@ import {
   type PreviewEvent,
   type PreviewNavStatus,
   type PreviewSessionSnapshot,
+  type PreviewOpenInput,
+  type PreviewError,
   type PreviewViewportSetting,
   ThreadId,
   SERVER_BROWSER_AUTOMATION_CLIENT_ID,
@@ -108,9 +110,6 @@ const RENDER_SCALE = 2;
 // Chromium allows three unacked frames, so 100 ms pacing caps viewers near 30 fps.
 const SCREENCAST_ACK_PACE_MS = 100;
 const SCREENCAST_SETTLE_MS = 200;
-const SCREENCAST_MOTION_FRAMES = 4;
-const SCREENCAST_MOTION_WINDOW_MS = 300;
-const SCREENCAST_MOTION_QUALITY = 50;
 const HOST_RECONNECT_DELAY = "1 second";
 const DESKTOP_ATTACH_TIMEOUT = "10 seconds";
 // A viewer still is best-effort; a capture Chromium never answers must not hold the capture lock.
@@ -293,6 +292,11 @@ export class ServerBrowser extends Context.Service<
 
     readonly clearProfile: (profileId: string) => Effect.Effect<void, PreviewClearProfileError>;
 
+    readonly openAuthenticated: (
+      input: PreviewOpenInput,
+      session: { readonly baseUrl: string; readonly cookie: string },
+    ) => Effect.Effect<PreviewSessionSnapshot, PreviewError>;
+
     readonly profileReporter: Effect.Effect<ProfileReporter, never, Scope.Scope>;
   }
 >()("t3/preview/ServerBrowser") {}
@@ -305,7 +309,6 @@ interface ViewerState {
   readonly push: (output: ServerBrowserViewerOutput) => void;
   readonly pause: () => Promise<void>;
   readonly resume: () => Promise<void>;
-  scrolledAt: number;
 
   requestedSize: { width: number; height: number; order: number } | null;
 }
@@ -586,6 +589,10 @@ const make = Effect.gen(function* () {
   const launchersDir = NodePath.join(config.stateDir, "server-browser", "launchers");
 
   const tabs = new Map<string, ServerTab>();
+  const authenticatedTabs = new Map<
+    string,
+    { readonly baseUrl: string; readonly cookie: string }
+  >();
   const pendingTabs = new Map<
     string,
     { readonly agentId: string | null; promise?: Promise<ServerTab> }
@@ -1129,6 +1136,24 @@ const make = Effect.gen(function* () {
     if (!desktop) await prepareContext(context);
     const page = adopted?.page ?? desktop?.page ?? (await context.newPage());
     if (!desktop) opened.push(() => page.close());
+    const session = authenticatedTabs.get(tabKey(snapshot.threadId, snapshot.tabId));
+    authenticatedTabs.delete(tabKey(snapshot.threadId, snapshot.tabId));
+    if (session) {
+      await context
+        .addCookies([
+          {
+            name: "fbToken",
+            value: session.cookie,
+            url: session.baseUrl,
+            httpOnly: true,
+            secure: new URL(session.baseUrl).protocol === "https:",
+            sameSite: "Lax",
+          },
+        ])
+        .catch(() => {
+          throw new Error("Could not install the browser session.");
+        });
+    }
     const cdp = await context.newCDPSession(page);
     await installPdfDocumentNavigation(cdp);
     // The desktop's page is already a normal browser. A popup's first request
@@ -1363,7 +1388,7 @@ const make = Effect.gen(function* () {
     // Existing desktop and popup PDFs can start loading before interception attaches.
     if (
       snapshot.navStatus._tag === "Loading" &&
-      ((!adopted && !desktop) || isPdfAssetUrl(snapshot.navStatus.url))
+      ((!adopted && !desktop) || session !== undefined || isPdfAssetUrl(snapshot.navStatus.url))
     ) {
       tab.loading = true;
       const initialUrl = URL.parse(snapshot.navStatus.url);
@@ -1371,7 +1396,7 @@ const make = Effect.gen(function* () {
       tab.pendingInitialRequestUrl = initialUrl?.href ?? null;
       const options = { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS } as const;
       tab.initialNavigation = (
-        (desktop || adopted) && page.url() === snapshot.navStatus.url
+        !session && (desktop || adopted) && page.url() === snapshot.navStatus.url
           ? page.reload(options)
           : page.goto(snapshot.navStatus.url, options)
       ).then(constVoid, (cause: unknown) => {
@@ -1738,6 +1763,7 @@ const make = Effect.gen(function* () {
         throw cause;
       })
       .finally(() => {
+        authenticatedTabs.delete(key);
         pendingTabs.delete(key);
         closedPendingTabs.delete(key);
       });
@@ -2937,6 +2963,7 @@ const make = Effect.gen(function* () {
         return;
       }
       const key = tabKey(event.threadId, event.tabId);
+      if (event.type === "closed") authenticatedTabs.delete(key);
       const tab = tabs.get(key);
       if (event.type === "closed" && !tab && pendingTabs.has(key)) closedPendingTabs.add(key);
       if (!tab) return;
@@ -3026,7 +3053,6 @@ const make = Effect.gen(function* () {
         return;
       }
       case "wheel":
-        viewer.scrolledAt = Date.now();
         await session.send("Input.dispatchMouseEvent", {
           type: "mouseWheel",
           x: num(message.x),
@@ -3184,21 +3210,17 @@ const make = Effect.gen(function* () {
     // Chromium may drop the final frame during a burst; send a still when it settles.
     let framesInFlight = 0;
     let mayHaveDropped = false;
-    let motion = false;
-    const recentFrames: Array<number> = [];
     let screencastParams = Promise.resolve();
-    let screencastScale = 1;
-    const startScreencast = (scale: number) => {
-      screencastScale = scale;
+    const startScreencast = () => {
       screencastParams = screencastParams.then(async () => {
         if (tab.capturing > 0) return;
         await session.send("Page.stopScreencast").catch(constVoid);
         await session
           .send("Page.startScreencast", {
             format: "jpeg",
-            quality: screencastScale < 1 ? Math.min(quality, SCREENCAST_MOTION_QUALITY) : quality,
-            maxWidth: Math.max(1, Math.round(input.maxWidth * screencastScale)),
-            maxHeight: Math.max(1, Math.round(input.maxHeight * screencastScale)),
+            quality,
+            maxWidth: Math.max(1, Math.round(input.maxWidth)),
+            maxHeight: Math.max(1, Math.round(input.maxHeight)),
           })
           .catch(constVoid);
       });
@@ -3238,8 +3260,7 @@ const make = Effect.gen(function* () {
         );
         return screencastParams;
       },
-      resume: () => startScreencast(screencastScale),
-      scrolledAt: 0,
+      resume: startScreencast,
       requestedSize: null,
     };
     yield* Effect.acquireRelease(
@@ -3290,30 +3311,11 @@ const make = Effect.gen(function* () {
       if (framesInFlight > 0) mayHaveDropped = true;
       framesInFlight += 1;
       const arrivedAt = Date.now();
-      recentFrames.push(arrivedAt);
-      while (recentFrames[0]! < arrivedAt - SCREENCAST_MOTION_WINDOW_MS) recentFrames.shift();
-      if (
-        !motion &&
-        recentFrames.length >= SCREENCAST_MOTION_FRAMES &&
-        arrivedAt - viewer.scrolledAt < SCREENCAST_MOTION_WINDOW_MS
-      ) {
-        motion = true;
-        void startScreencast(0.5);
-      } else if (motion && arrivedAt - viewer.scrolledAt > SCREENCAST_SETTLE_MS) {
-        motion = false;
-        recentFrames.length = 0;
-        void startScreencast(1);
-      }
       if (settleTimer !== null) clearTimeout(settleTimer);
       settleTimer = setTimeout(() => {
         settleTimer = null;
-        if (!motion && !mayHaveDropped) return;
+        if (!mayHaveDropped) return;
         mayHaveDropped = false;
-        if (motion) {
-          motion = false;
-          recentFrames.length = 0;
-          void startScreencast(1);
-        }
         void pushStill();
       }, SCREENCAST_SETTLE_MS);
       viewer.push({
@@ -3330,7 +3332,7 @@ const make = Effect.gen(function* () {
       });
     });
     void broadcastViewport(tab).catch(constVoid);
-    yield* Effect.promise(() => startScreencast(1));
+    yield* Effect.promise(startScreencast);
     // An idle page does not repaint for a new screencast, so the viewer
     // starts from a still unless a live frame beat it.
     if (!screencastStarted) yield* Effect.forkScoped(Effect.promise(pushStill));
@@ -3495,6 +3497,16 @@ const make = Effect.gen(function* () {
     });
 
   return ServerBrowser.of({
+    openAuthenticated: Effect.fn("ServerBrowser.openAuthenticated")(function (input, session) {
+      // Cookie installation requires the server-controlled browser, including its desktop CDP surface.
+      return manager.open({
+        ...input,
+        runtime: "server",
+        beforePublish: (snapshot) => {
+          authenticatedTabs.set(tabKey(snapshot.threadId, snapshot.tabId), session);
+        },
+      });
+    }),
     attachViewer,
     clearProfile,
     profileReporter,

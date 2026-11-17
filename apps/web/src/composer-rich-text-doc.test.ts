@@ -78,6 +78,11 @@ const schema = getSchemaByResolvedExtensions(
       source: { default: "" },
       citeKey: { default: "" },
     }),
+    stubAtom("composer-fogbugz-reference", {
+      source: { default: "" },
+      caseId: { default: 0 },
+      url: { default: "" },
+    }),
     stubAtom("composer-context-reference", {
       kind: { default: "" },
       contextId: { default: "" },
@@ -203,6 +208,11 @@ const plainSchema = getSchemaByResolvedExtensions(
       citation: { default: null },
       source: { default: "" },
       citeKey: { default: "" },
+    }),
+    stubAtom("composer-fogbugz-reference", {
+      source: { default: "" },
+      caseId: { default: 0 },
+      url: { default: "" },
     }),
     stubAtom("composer-context-reference", {
       kind: { default: "" },
@@ -650,6 +660,8 @@ describe("composer rich text document model", () => {
     "# Trailing hashes stay literal #",
     "#1234",
     "#1234 is a pull request, not a heading",
+    "[FogBugz #42](https://fogbugz.example/default.asp?42)",
+    '[FogBugz #42](https://fogbugz.example/default.asp?42 "Read this case through the FogBugz MCP.")',
     "# Heading with **bold** and @README.md",
     "#",
     "# ",

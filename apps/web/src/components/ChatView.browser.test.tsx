@@ -7,6 +7,7 @@ import {
   ThreadId,
   WS_METHODS,
 } from "@t3tools/contracts";
+import { minuteTick } from "@t3tools/client-runtime/clock";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import {
   compileResolvedKeybindingsConfig,
@@ -16,6 +17,8 @@ import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { expect, it, vi } from "vite-plus/test";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
+
+import "~/index.css";
 
 import { AppRoot } from "~/AppRoot";
 // The route loads ChatView lazily, and its first transform (React Compiler over ~4k lines)
@@ -219,6 +222,39 @@ it("a question that opens while a stashed file is checked keeps a machine stash"
   );
   expect(usePromptStashStore.getState().entries).toHaveLength(1);
   usePromptStashStore.getState().takeEntry("stash-late-question");
+});
+
+it("main keeps the compact sidebar row while other branches get a metadata line", async () => {
+  await page.viewport(1400, 900);
+  using _now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-03-18T09:00:00.000Z"));
+  using _clock = vi.spyOn(minuteTick, "getSnapshot").mockReturnValue("2026-03-18T09:00");
+  const threads = ["main", null, "feat/sidebar-branch", "master"].map((branch) => ({
+    ...threadWithHistory(`sidebar-branch-${(branch ?? "none").replaceAll("/", "-")}`, 0),
+    branch,
+  }));
+  using _environment = installFakeEnvironment(threads);
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    mggmThreadSidebarEnabled: true,
+  });
+  const router = getRouter(createMemoryHistory({ initialEntries: ["/draft/sidebar-branches"] }));
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, { router: false });
+  const heights: number[] = [];
+  for (const thread of threads) {
+    const row = page.getByRole("button", { name: new RegExp(thread.title) });
+    await expect.element(row).toBeVisible();
+    if (thread.branch === "main") {
+      await expect.element(row.getByText("main", { exact: true })).not.toBeInTheDocument();
+    } else if (thread.branch !== null) {
+      expect(row.element().textContent).toContain(thread.branch);
+    }
+    heights.push(row.element().getBoundingClientRect().height);
+  }
+  expect(heights[0]).toBe(heights[1]);
+  expect(heights[2]).toBeGreaterThan(heights[0]!);
+  expect(heights[3]).toBeGreaterThan(heights[0]!);
 });
 
 it("a new draft does not load its reserved thread before the server lists it", async () => {

@@ -57,6 +57,23 @@ it.effect("rejects a stale form save after deletion while preserving explicit-id
       const created = yield* service.upsert(input);
       const edit = yield* decodeUpsertInput({ ...input, requireExisting: true, title: "Edited" });
       expect((yield* service.upsert(edit)).task.title).toBe("Edited");
+      const monthly = {
+        type: "fixed_time",
+        timeOfDay: "09:00",
+        weekdays: [3],
+        weekOfMonth: 1,
+      } as const;
+      expect((yield* service.upsert({ ...edit, schedule: monthly })).task.schedule).toEqual(
+        monthly,
+      );
+      const { weekOfMonth: _weekOfMonth, ...legacySchedule } = monthly;
+      expect((yield* service.upsert({ ...edit, schedule: legacySchedule })).task.schedule).toEqual(
+        monthly,
+      );
+      const clearedSchedule = { ...monthly, weekOfMonth: null };
+      expect((yield* service.upsert({ ...edit, schedule: clearedSchedule })).task.schedule).toEqual(
+        clearedSchedule,
+      );
       yield* service.delete({ id: created.task.id });
 
       const failure = yield* service.upsert(edit).pipe(Effect.flip);

@@ -4,6 +4,24 @@
   </a>
 </p>
 
+## MGGM fork: install and update (Linux CLI)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MGGM-Software-GmbH/t3code/main/scripts/install.sh | sh
+```
+
+Installs the [latest published stable release from this fork](https://github.com/MGGM-Software-GmbH/t3code/releases/latest)
+and verifies its SHA-256 checksum. Rerun the same command to update, or set
+`T3CODE_VERSION` to pin a version. For devcontainers, run it from
+`postCreateCommand` so Docker's build cache does not skip the release check.
+See [fork installation](./docs/user/install.md#mggm-fork-linux-cli) for installation
+paths and version pinning.
+
+New builds of this fork start with one Codex provider, GPT-6.1 Sol with High reasoning
+and Standard service, the MGGM dark theme, and the Working shelf. Existing
+personal settings are preserved. See [MGGM team setup](./docs/user/install.md#mggm-team-defaults)
+for the defaults and persistent devcontainer data.
+
 <h1 align="center">T3 Code</h1>
 
 <p align="center">The open-source control plane for coding agents.</p>

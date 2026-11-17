@@ -270,6 +270,8 @@ export function reviewCommentContextRecord(
     diff: clampContextText(comment.diff, COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS),
     ...(comment.fenceLanguage !== undefined ? { fenceLanguage: comment.fenceLanguage } : {}),
     ...(comment.pullRequest !== undefined ? { pullRequest: comment.pullRequest } : {}),
+    ...(comment.sourceAnchor !== undefined ? { sourceAnchor: comment.sourceAnchor } : {}),
+    ...(comment.sourceStatus !== undefined ? { sourceStatus: comment.sourceStatus } : {}),
   };
 }
 
@@ -497,6 +499,8 @@ export function reviewCommentFromRecord(record: ReviewCommentContextRecord): Rev
     diff: record.diff,
     ...(record.fenceLanguage !== undefined ? { fenceLanguage: record.fenceLanguage } : {}),
     ...(record.pullRequest !== undefined ? { pullRequest: record.pullRequest } : {}),
+    ...(record.sourceAnchor !== undefined ? { sourceAnchor: record.sourceAnchor } : {}),
+    ...(record.sourceStatus !== undefined ? { sourceStatus: record.sourceStatus } : {}),
   };
 }
 

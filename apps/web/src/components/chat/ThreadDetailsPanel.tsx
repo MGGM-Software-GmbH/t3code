@@ -26,6 +26,7 @@ import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadServersPanel } from "./ThreadServersPanel";
+import { FogBugzThreadContext } from "../fogbugz/FogBugzThreadContext";
 import {
   ThreadDetailsContext,
   ThreadDetailsUsage,
@@ -262,6 +263,14 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     ) : null}
                   </div>
                 </ThreadDetailsSection>
+              ) : null}
+
+              {props.isServerThread && !props.draftId ? (
+                <FogBugzThreadContext
+                  key={props.threadId}
+                  threadRef={activeThreadRef}
+                  display="details"
+                />
               ) : null}
 
               {density === "full" && !props.draftId && visible.servers ? (

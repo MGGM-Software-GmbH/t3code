@@ -22,6 +22,7 @@ import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { copyAdminRequest } from "./ThreadErrorBanner";
 
 type RecoveryProps = {
+  capacity?: boolean;
   runId: RunId;
   errorCode: string | null;
   resetAt: string | null;
@@ -69,8 +70,14 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
       variant: "warning",
       group: "environment",
       icon: <GaugeIcon />,
-      title: "Usage limit reached",
-      description: resetDescription,
+      title: props.capacity ? "Model at capacity" : "Usage limit reached",
+      description: props.capacity
+        ? props.recovery?.runId === runId && props.recovery.autoResume === false
+          ? "Automatic retry cancelled. Use Play to resume."
+          : resetAt
+            ? `Retry with the same model ${formatUpcomingTimestamp(resetAt, timestampFormat)}`
+            : "Use Play to retry with the same model"
+        : resetDescription,
       actions: recoveryActions,
     };
   }
@@ -99,7 +106,14 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
   };
 }
 
-function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: RecoveryProps) {
+function RecoveryActions({
+  runId,
+  resetAt,
+  recovery,
+  snoozedUntil,
+  onChange,
+  capacity,
+}: RecoveryProps) {
   const [pending, setPending] = useState(false);
 
   const scheduled =
@@ -141,15 +155,23 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
       <InlineButton touchTarget="padded" disabled={pending} onClick={() => void toggle("resume")}>
-        {pending ? "Saving..." : scheduled ? "Cancel auto-resume" : "Resume at reset"}
+        {pending
+          ? "Saving..."
+          : scheduled
+            ? "Cancel auto-resume"
+            : capacity
+              ? "Schedule retry"
+              : "Resume at reset"}
       </InlineButton>
-      <InlineButton
-        touchTarget="padded"
-        disabled={pending || (!snoozed && resetPassed)}
-        onClick={() => void toggle("snooze")}
-      >
-        {pending ? "Saving..." : snoozed ? "Wake now" : "Snooze until reset"}
-      </InlineButton>
+      {!capacity ? (
+        <InlineButton
+          touchTarget="padded"
+          disabled={pending || (!snoozed && resetPassed)}
+          onClick={() => void toggle("snooze")}
+        >
+          {pending ? "Saving..." : snoozed ? "Wake now" : "Snooze until reset"}
+        </InlineButton>
+      ) : null}
     </span>
   );
 }

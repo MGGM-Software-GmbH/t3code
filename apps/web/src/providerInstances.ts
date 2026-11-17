@@ -1,5 +1,6 @@
 import { pipe } from "effect/Function";
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   resolveProjectProviderInstanceEnabled,
@@ -37,6 +38,11 @@ export interface ProviderInstanceEntry {
   readonly enabled: boolean;
   readonly installed: boolean;
   readonly status: ServerProviderState;
+  /**
+   * True for a shipped preset or the default instance for its driver kind,
+   * whose instance id equals `defaultInstanceIdForDriver(driverKind)`.
+   * The settings panel and picker sort defaults before customs.
+   */
   readonly isDefault: boolean;
   readonly isAvailable: boolean;
   readonly snapshot: ServerProvider;
@@ -48,6 +54,17 @@ export function hasInstanceBadge(entries: ReadonlyArray<ProviderInstanceEntry>):
   return entries.some((entry) => shouldShowInstanceBadge(entry, entries));
 }
 
+/** Shipped presets share the default instances' ordering and reset behavior. */
+export function isDefaultProviderInstance(
+  instanceId: ProviderInstanceId,
+  driverKind: ProviderDriverKind,
+): boolean {
+  return (
+    instanceId === defaultInstanceIdForDriver(driverKind) ||
+    DEFAULT_PROVIDER_INSTANCE_CONFIGS[instanceId]?.driver === driverKind
+  );
+}
+
 /** Disabled instances may retain ready status until reconciliation. */
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
   return entry.enabled && entry.isAvailable && entry.status === "ready";
@@ -57,14 +74,17 @@ export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): b
   return entry.enabled;
 }
 
+/**
+ * Preserve server ordering, including shipped presets and explicit instances.
+ * Callers that want the default first use sortProviderInstanceEntries.
+ */
 export function deriveProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ProviderInstanceEntry> {
   return providers.map((snapshot) => {
     const instanceId = snapshot.instanceId;
     const driverKind = snapshot.driver;
-    const defaultId = defaultInstanceIdForDriver(driverKind);
-    const isDefault = instanceId === defaultId;
+    const isDefault = isDefaultProviderInstance(instanceId, driverKind);
     return {
       instanceId,
       driverKind,

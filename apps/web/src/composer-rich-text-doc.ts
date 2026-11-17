@@ -837,6 +837,12 @@ function atomJsonForSegment(
       attrs: { citation: segment.citation, source: segment.source, citeKey: randomNodeKey() },
     };
   }
+  if (segment.type === "fogbugz-reference") {
+    return {
+      type: "composer-fogbugz-reference",
+      attrs: { source: segment.source, caseId: segment.caseId, url: segment.url },
+    };
+  }
   return {
     type: "composer-context-reference",
     attrs: {
@@ -1198,6 +1204,7 @@ function readAtomSource(node: ProseMirrorNode): string {
     case "composer-mention":
     case "composer-model":
     case "composer-citation":
+    case "composer-fogbugz-reference":
     case "composer-context-reference":
       return typeof attrs.source === "string" ? attrs.source : "";
     case "composer-skill": {

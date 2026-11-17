@@ -32,7 +32,10 @@ import {
 } from "@t3tools/contracts";
 import { toServerClock } from "@t3tools/client-runtime/clock";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
-import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  canSnooze,
+  resolveThreadWakeNotification,
+} from "@t3tools/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useMemo, useState, type ComponentProps } from "react";
@@ -777,7 +780,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const status = resolveThreadListV2RowStatus(thread);
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
   const workingLabel = STATUS_LABEL_BY_STATUS[status];
-  const showsWoke = status === "ready" && props.wokeAt !== null;
+  const wakeNotification = resolveThreadWakeNotification(thread, props.wokeAt);
+  const showsWoke = status === "ready" && wakeNotification !== null;
+  const wakeLabel = wakeNotification?.label ?? "Woke";
+  const wakeAt = wakeNotification?.at ?? null;
   const statusLabel =
     (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
       ? { ...workingLabel, label: "Goal" }
@@ -802,19 +808,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const markThreadUnread = useAtomCommand(threadEnvironment.markUnread, { reportFailure: false });
   const handleAcknowledgeWoke = useCallback(() => {
-    if (props.wokeAt === null) return;
+    if (wakeAt === null) return;
     void visitThread({
       environmentId: thread.environmentId,
-      input: { threadId: thread.id, visitedAt: props.wokeAt },
+      input: { threadId: thread.id, visitedAt: wakeAt },
     });
-  }, [props.wokeAt, thread.environmentId, thread.id, visitThread]);
+  }, [wakeAt, thread.environmentId, thread.id, visitThread]);
   // VoiceOver cannot focus buttons inside the accessible row.
   const rowAccessibilityActions = useMemo(
     () => [
       ...(prBadgeLabel ? [{ name: "openPullRequests", label: prBadgeLabel }] : []),
-      ...(showsWoke ? [{ name: "dismissWoke", label: "Dismiss Woke notification" }] : []),
+      ...(showsWoke ? [{ name: "dismissWoke", label: `Dismiss ${wakeLabel} notification` }] : []),
     ],
-    [prBadgeLabel, showsWoke],
+    [prBadgeLabel, showsWoke, wakeLabel],
   );
 
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
@@ -1236,13 +1242,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             <Pressable
               className="-m-2.5 flex-row items-center gap-1 p-2.5"
               accessibilityRole="button"
-              accessibilityLabel="Dismiss Woke notification"
+              accessibilityLabel={`Dismiss ${wakeLabel} notification`}
               onPress={handleAcknowledgeWoke}
               onLongPress={() => undefined}
               style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
             >
               <SymbolView
-                name="bell.badge"
+                name={wakeLabel === "Reactivated" ? "arrow.clockwise" : "bell.badge"}
                 size={13}
                 tintColorClassName={
                   selected ? selectedThreadRowColors.iconTintClassName : "accent-warning-foreground"
@@ -1258,7 +1264,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                     : "text-warning-foreground",
                 )}
               >
-                Woke
+                {wakeLabel}
               </Text>
             </Pressable>
           ) : statusLabel ? (

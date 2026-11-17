@@ -3,11 +3,12 @@ import { type ClipboardEvent, useEffect, useRef, useState } from "react";
 
 import { DiffWorkerPoolProvider } from "~/components/DiffWorkerPoolProvider";
 import { useClientSettings } from "~/hooks/useSettings";
+import { useFileHighlighter } from "~/hooks/useFileHighlighter";
 import { useRenderedAppearance } from "~/hooks/useTheme";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 
-import { FILE_LINK_REVEAL_UNSAFE_CSS } from "./fileSurfaceChrome";
+import { FILE_LINK_REVEAL_UNSAFE_CSS, FileSurfaceLoading } from "./fileSurfaceChrome";
 import { SourceSelection } from "./sourceSelection";
 
 export default function ReadOnlySourcePreview(props: {
@@ -19,6 +20,7 @@ export default function ReadOnlySourcePreview(props: {
   readonly wordWrap?: boolean;
 }) {
   const resolvedTheme = useRenderedAppearance();
+  const syntax = useFileHighlighter(props.name);
   const defaultWordWrap = useClientSettings((settings) => settings.wordWrap);
   const wordWrap = props.wordWrap ?? defaultWordWrap;
   const { text, onPostRender } = props;
@@ -56,6 +58,7 @@ export default function ReadOnlySourcePreview(props: {
     if (phase !== "unmount" && node.shadowRoot) selection.render(node.shadowRoot, text);
     return onPostRender?.(node, instance, phase);
   };
+  if (!syntax.ready) return <FileSurfaceLoading />;
   return (
     <DiffWorkerPoolProvider>
       <div
@@ -78,9 +81,11 @@ export default function ReadOnlySourcePreview(props: {
             file={{
               name: props.name,
               contents: props.text,
+              ...(syntax.language ? { lang: syntax.language } : {}),
               ...(props.cacheKey ? { cacheKey: props.cacheKey } : {}),
             }}
             options={{
+              ...(syntax.highlighter ? { highlighter: syntax.highlighter } : {}),
               disableFileHeader: true,
               overflow: wordWrap ? "wrap" : "scroll",
               theme: resolveDiffThemeName(resolvedTheme),

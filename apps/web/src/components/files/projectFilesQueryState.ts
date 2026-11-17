@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import { useFilesystemReadAccess } from "~/state/filesystem";
 import { projectEnvironment } from "~/state/projects";
 import { useProjectPathSearch } from "~/state/queries";
@@ -78,6 +79,29 @@ export function getProjectFileQueryAtom(
       ...(relativePath === T3_PROJECT_FILE_NAME ? { allowMissing: true } : {}),
     },
   });
+}
+
+/** Read authoritative contents before sending file comments; never send truncated or unsaved context. */
+export async function readProjectFileForReview(
+  environmentId: EnvironmentId,
+  cwd: string,
+  relativePath: string,
+): Promise<{ previousContents: string | null; contents: string }> {
+  if (getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)) {
+    throw new Error(`Wait for ${relativePath} to finish saving before sending its comments.`);
+  }
+  const query = getProjectFileQueryAtom(environmentId, cwd, relativePath);
+  const previous = Option.getOrNull(AsyncResult.value(appAtomRegistry.get(query)));
+  appAtomRegistry.refresh(query);
+  const result = await executeAtomQuery(appAtomRegistry, query, {
+    reportDefect: false,
+    reportFailure: false,
+  });
+  if (result._tag !== "Success")
+    throw new Error(`Could not refresh ${relativePath}. Review comments were not sent.`);
+  if (result.value.truncated)
+    throw new Error(`Cannot refresh comments on truncated file ${relativePath}.`);
+  return { previousContents: previous?.contents ?? null, contents: result.value.contents };
 }
 
 export function setProjectFileQueryData(

@@ -4,15 +4,20 @@ import {
   DEFAULT_UNIFIED_SETTINGS,
   EnvironmentId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   ScheduledTaskId,
   ThreadId,
   type ScheduledTask,
+  type ScheduledTaskUpsertInput,
+  type ServerProvider,
+  type UnifiedSettings,
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
+import { createModelCapabilities } from "@t3tools/shared/model";
 import { act, render } from "../../../test/render";
 import { ScheduledTasksSettings } from "./ScheduledTasksSettings";
 import { ConfirmDialogHost } from "../ConfirmDialogHost";
@@ -59,6 +64,10 @@ const state = vi.hoisted(() => ({
   tasksLoaded: true,
   secondary: false,
   remove: vi.fn(),
+  tasks: [] as ScheduledTask[],
+  providers: null as unknown as Atom.Writable<ReadonlyArray<ServerProvider>>,
+  settings: null as unknown as UnifiedSettings,
+  upsert: vi.fn(),
 }));
 const secondaryId = EnvironmentId.make("secondary");
 const permissions = new Map<string, Atom.Writable<boolean>>();
@@ -68,6 +77,17 @@ function setup() {
   state.tasksLoaded = true;
   state.remove.mockReset().mockResolvedValue({ _tag: "Success", value: { id: task.id } });
   state.secondary = false;
+  state.tasks = [task];
+  state.providers = Atom.make<ReadonlyArray<ServerProvider>>([]);
+  state.settings = DEFAULT_UNIFIED_SETTINGS;
+  state.upsert
+    .mockReset()
+    .mockImplementation((_registry, { input }: { input: ScheduledTaskUpsertInput }) => {
+      state.tasks = [
+        { ...task, threadId: input.threadId ?? null, modelSelection: input.modelSelection },
+      ];
+      return Promise.resolve({ _tag: "Success", value: { id: task.id } });
+    });
   permissions.clear();
   permissions.set(environmentId, Atom.make(true));
   permissions.set(secondaryId, Atom.make(true));
@@ -126,8 +146,10 @@ vi.mock(import("../../state/server"), async (original) => {
         ...actual.serverEnvironment.deleteScheduledTask,
         run: state.remove,
       },
+      providersValueAtom: (() => state.providers) as never,
       upsertScheduledTask: {
         ...actual.serverEnvironment.upsertScheduledTask,
+        run: state.upsert,
         permissionAtom: (id: string | null) => permissions.get(id ?? "")!,
       },
     },
@@ -147,7 +169,7 @@ vi.mock(import("../../state/query"), async (original) => ({
     data:
       request === null || request === threadFamilyRead
         ? request
-        : { tasks: state.tasksLoaded ? [task] : [] },
+        : { tasks: state.tasksLoaded ? state.tasks : [] },
     error: null,
     isPending: false,
     refresh: vi.fn(),
@@ -158,14 +180,95 @@ vi.mock(import("../../state/environments"), async (original) => ({
   useEnvironment: ((id: EnvironmentId) =>
     id === secondaryId ? secondaryEnvironment() : environment()) as never,
 }));
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
+  readEnvironmentScope: (() => true) as never,
+}));
 vi.mock(import("../../state/entities"), async (original) => ({
   ...(await original()),
   useProjects: (() => [{ id: projectId, environmentId, title: "Project" }]) as never,
 }));
 vi.mock(import("../../hooks/useSettings"), async (original) => ({
   ...(await original()),
-  useEnvironmentSettings: (() => DEFAULT_UNIFIED_SETTINGS) as never,
+  useEnvironmentSettings: (() => state.settings) as never,
+  useEnvironmentModelPreferences: (() => ({ favorites: [] })) as never,
 }));
+
+function setupModelOptionsTask() {
+  setup();
+  const selection = {
+    ...task.modelSelection,
+    options: [
+      { id: "reasoningEffort", value: "high" },
+      { id: "serviceTier", value: "ultrafast" },
+    ],
+  };
+  state.tasks = [{ ...task, threadId: null, modelSelection: selection }];
+  state.settings = { ...DEFAULT_UNIFIED_SETTINGS, defaultModelSelection: selection };
+  state.providers = Atom.make<ReadonlyArray<ServerProvider>>([
+    {
+      instanceId: selection.instanceId,
+      driver: ProviderDriverKind.make("codex"),
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-11-16T00:00:00.000Z",
+      models: [
+        {
+          slug: selection.model,
+          name: "GPT-5.4",
+          isCustom: false,
+          capabilities: createModelCapabilities({
+            optionDescriptors: [
+              {
+                id: "reasoningEffort",
+                label: "Reasoning effort",
+                type: "select",
+                options: [
+                  { id: "low", label: "Low", isDefault: true },
+                  { id: "high", label: "High" },
+                ],
+                currentValue: "low",
+              },
+              {
+                id: "serviceTier",
+                label: "Speed",
+                type: "select",
+                options: [
+                  { id: "default", label: "Standard", isDefault: true },
+                  { id: "priority", label: "Fast" },
+                  { id: "ultrafast", label: "Ultrafast" },
+                ],
+                currentValue: "default",
+              },
+            ],
+          }),
+        },
+        { slug: "plain", name: "Plain model", isCustom: false, capabilities: null },
+        {
+          slug: "toggle",
+          name: "Fast toggle model",
+          isCustom: false,
+          capabilities: createModelCapabilities({
+            optionDescriptors: [
+              { id: "fastMode", label: "Fast", type: "boolean", currentValue: true },
+            ],
+          }),
+        },
+      ],
+      skills: [],
+      slashCommands: [],
+    },
+  ]);
+  return selection;
+}
+
+async function fillTitleAndPrompt() {
+  await userEvent.fill(page.getByRole("textbox", { name: "Name" }), "Model options task");
+  await userEvent.fill(page.getByRole("textbox", { name: "Prompt", exact: true }), "Review issues");
+}
 
 describe("ScheduledTasksSettings", () => {
   it("only deletes a scheduled task after confirmation, including after cancelling", async () => {
@@ -192,6 +295,99 @@ describe("ScheduledTasksSettings", () => {
       expect(state.remove).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
         environmentId,
         input: { id: task.id },
+      }),
+    );
+  });
+
+  it.each([false, true])(
+    "keeps reasoning and speed when reselecting the same account and model (existing task: %s)",
+    async (editing) => {
+      const selection = setupModelOptionsTask();
+      await using screen = await render(
+        <ScheduledTasksSettings {...(editing ? { taskId: task.id } : {})} />,
+      );
+      if (!editing) await screen.getByRole("button", { name: "New task" }).click();
+      await fillTitleAndPrompt();
+      await page.getByRole("button", { name: "GPT-5.4", exact: true }).click();
+      await page.getByRole("option", { name: /GPT-5.4/ }).click();
+      await expect.element(page.getByRole("button", { name: /^High(?: |$)/ })).toBeVisible();
+      await page.getByRole("button", { name: editing ? "Save task" : "Create task" }).click();
+      await vi.waitFor(() =>
+        expect(state.upsert).toHaveBeenLastCalledWith(expect.anything(), {
+          environmentId,
+          input: expect.objectContaining({ modelSelection: selection }),
+        }),
+      );
+    },
+  );
+
+  it.each([
+    ["Standard", "default"],
+    ["Fast", "priority"],
+    ["Ultrafast", "ultrafast"],
+  ])("saves and reopens changed reasoning with %s speed", async (label, tier) => {
+    const selection = setupModelOptionsTask();
+    await using screen = await render(<ScheduledTasksSettings taskId={task.id} />);
+    await page.getByRole("button", { name: /^High(?: |$)/ }).click();
+    await page.getByRole("menuitemradio", { name: /^Low/ }).click();
+    await page.getByRole("button", { name: /^Low(?: |$)/ }).click();
+    await page.getByRole("menuitemradio", { name: new RegExp(`^${label}`) }).click();
+    await page.getByRole("button", { name: "Save task" }).click();
+    await vi.waitFor(() =>
+      expect(state.upsert).toHaveBeenLastCalledWith(expect.anything(), {
+        environmentId,
+        input: expect.objectContaining({
+          modelSelection: {
+            ...selection,
+            options: [
+              { id: "reasoningEffort", value: "low" },
+              { id: "serviceTier", value: tier },
+            ],
+          },
+        }),
+      }),
+    );
+    await screen.rerender(<ScheduledTasksSettings />);
+    await screen.rerender(<ScheduledTasksSettings taskId={task.id} />);
+    await page.getByRole("button", { name: /^Low(?: |$)/ }).click();
+    await expect
+      .element(page.getByRole("menuitemradio", { name: new RegExp(`^${label}`) }))
+      .toHaveAttribute("aria-checked", "true");
+  });
+
+  it("clears incompatible options when switching models", async () => {
+    const selection = setupModelOptionsTask();
+    await using _screen = await render(<ScheduledTasksSettings taskId={task.id} />);
+    await page.getByRole("button", { name: "GPT-5.4", exact: true }).click();
+    await page.getByRole("option", { name: /Plain model/ }).click();
+    expect(page.getByRole("button", { name: /^High(?: |$)/ }).query()).toBeNull();
+    await page.getByRole("button", { name: "Save task" }).click();
+    await vi.waitFor(() =>
+      expect(state.upsert).toHaveBeenLastCalledWith(expect.anything(), {
+        environmentId,
+        input: expect.objectContaining({
+          modelSelection: { instanceId: selection.instanceId, model: "plain" },
+        }),
+      }),
+    );
+  });
+
+  it("saves the displayed Standard when a provider defaults its Fast toggle to on", async () => {
+    const selection = setupModelOptionsTask();
+    await using _screen = await render(<ScheduledTasksSettings taskId={task.id} />);
+    await page.getByRole("button", { name: "GPT-5.4", exact: true }).click();
+    await page.getByRole("option", { name: /Fast toggle model/ }).click();
+    await page.getByRole("button", { name: "Save task" }).click();
+    await vi.waitFor(() =>
+      expect(state.upsert).toHaveBeenLastCalledWith(expect.anything(), {
+        environmentId,
+        input: expect.objectContaining({
+          modelSelection: {
+            instanceId: selection.instanceId,
+            model: "toggle",
+            options: [{ id: "fastMode", value: false }],
+          },
+        }),
       }),
     );
   });

@@ -2177,6 +2177,7 @@ export function makeClaudeQueryOptions(input: {
   readonly resumeSessionAt?: string;
   readonly cwd: string | null;
   readonly attachmentsDir?: string;
+  readonly workspaceDirectories?: ReadonlyArray<string>;
   readonly settings?: ClaudeSettings;
   readonly promptSuggestions?: boolean;
   readonly sdkSettings?: string | ClaudeSdkSettings;
@@ -2361,6 +2362,7 @@ export function makeClaudeQueryOptions(input: {
   const additionalDirectories = [
     ...(input.cwd === null ? [] : [input.cwd]),
     ...(input.attachmentsDir === undefined ? [] : [input.attachmentsDir]),
+    ...(input.workspaceDirectories ?? []),
     ...claudeLaunchArgDirectories(input.settings?.launchArgs),
   ];
   const withDirectories =
@@ -3273,6 +3275,22 @@ function sandboxPolicyKindForClaudeRuntimePolicy(
     isClaudeRuntimeSandboxPolicyKind(runtimePolicy.sandboxPolicy)
     ? runtimePolicy.sandboxPolicy.type
     : undefined;
+}
+
+function claudeWorkspaceDirectories(
+  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+): string[] {
+  const policy = runtimePolicy.sandboxPolicy;
+  if (
+    typeof policy !== "object" ||
+    policy === null ||
+    !("type" in policy) ||
+    policy.type !== "workspaceWrite" ||
+    !("writableRoots" in policy) ||
+    !Array.isArray(policy.writableRoots)
+  )
+    return [];
+  return policy.writableRoots.filter((root): root is string => typeof root === "string");
 }
 
 function readOnlyPolicyAllowsGlobalReads(
@@ -12631,7 +12649,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
           });
-          const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
+          const workspaceDirectories = claudeWorkspaceDirectories(turnInput.runtimePolicy);
+          const queryPolicyKey =
+            claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides) +
+            workspaceDirectories.map((directory) => `${directory.length}:${directory}`).join("");
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
           // Continuations drain existing output without prompting; retain the live process regardless of selection.
@@ -12765,6 +12786,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
             cwd: turnInput.runtimePolicy.cwd,
             attachmentsDir,
+            workspaceDirectories,
             settings: adapterOptions.settings,
             // Delegated threads have no one typing, so they never ask for suggestions.
             promptSuggestions:
