@@ -40,11 +40,12 @@ it("shows quotes, file mentions, context references and skills as chips", async 
     label: "Terminal 1",
   });
   const environment = formatInlineContextReference(environmentContextReference(buildHost));
+  const caseReference = '[FogBugz #42](https://fogbugz.example/default.asp?42 "Read the case")';
   const prompt = `${quote("Cache the parsed config.")} vs ${quote("Retry on 503.", "Also on 429?")} in [package.json](package.json) and [file.txt](C:\\dir\\file.txt) per ${terminal} on ${environment} with $review-pr please`;
 
   await using screen = await render(
     <CollapsedComposerPromptPreview
-      prompt={prompt}
+      prompt={`${prompt} ${caseReference}`}
       skills={[
         { name: "review-pr", displayName: "Review PR", path: "/skills/review-pr", enabled: true },
       ]}
@@ -68,6 +69,7 @@ it("shows quotes, file mentions, context references and skills as chips", async 
     "Terminal 1",
     "Build host",
     "Review PR",
+    "FogBugz #42",
   ]);
   expect(
     chips
@@ -76,7 +78,7 @@ it("shows quotes, file mentions, context references and skills as chips", async 
   ).toEqual(["Terminal 1"]);
   expect(chips.every((chip) => chip.querySelector("svg") !== null)).toBe(true);
   expect(container.textContent).toBe(
-    "Cache the parsed config. vs Also on 429? in package.json and file.txt per Terminal 1 on Build host with Review PR please",
+    "Cache the parsed config. vs Also on 429? in package.json and file.txt per Terminal 1 on Build host with Review PR please FogBugz #42",
   );
   // The row is one tap target that expands the composer, so chips stay inert.
   expect(container.querySelector("button, a, [tabindex]")).toBeNull();

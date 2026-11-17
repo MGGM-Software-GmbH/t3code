@@ -7,13 +7,13 @@ import {
   ThreadId,
   WS_METHODS,
 } from "@t3tools/contracts";
-import { minuteTick } from "@t3tools/client-runtime/clock";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import {
   compileResolvedKeybindingsConfig,
   mergeWithDefaultKeybindings,
 } from "@t3tools/shared/keybindings";
 import type * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import { expect, it, vi } from "vite-plus/test";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
@@ -42,6 +42,7 @@ import {
   assistantItem,
   dispatchedCommands,
   emitThreadEvent,
+  emitThreadShell,
   hasPendingAssetUrl,
   installFakeEnvironment,
   rejectPendingCommand,
@@ -113,6 +114,7 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 }));
 
 it("a machine chip stashed in one thread restores with its machine in another", async () => {
+  await page.viewport(1400, 900);
   const other = threadWithHistory("thread-stash-restore", 1);
   const asking = threadWithQuestion("thread-stash-question", "Which file should change?");
   using _environment = installFakeEnvironment([other, asking]);
@@ -226,11 +228,11 @@ it("a question that opens while a stashed file is checked keeps a machine stash"
 
 it("main keeps the compact sidebar row while other branches get a metadata line", async () => {
   await page.viewport(1400, 900);
-  using _now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-03-18T09:00:00.000Z"));
-  using _clock = vi.spyOn(minuteTick, "getSnapshot").mockReturnValue("2026-03-18T09:00");
+  const activityAt = DateTime.makeUnsafe("2099-03-18T09:00:00.000Z");
   const threads = ["main", null, "feat/sidebar-branch", "master"].map((branch) => ({
     ...threadWithHistory(`sidebar-branch-${(branch ?? "none").replaceAll("/", "-")}`, 0),
     branch,
+    latestUserMessageAt: activityAt,
   }));
   using _environment = installFakeEnvironment(threads);
   __setClientSettingsForTests({
@@ -238,12 +240,17 @@ it("main keeps the compact sidebar row while other branches get a metadata line"
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
     mggmThreadSidebarEnabled: true,
   });
-  const router = getRouter(createMemoryHistory({ initialEntries: ["/draft/sidebar-branches"] }));
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${threads[0]!.id}`] }),
+  );
   await router.load();
   await using _app = await render(<AppRoot router={router} />, { router: false });
+  for (const thread of threads) await emitThreadShell(thread);
   const heights: number[] = [];
   for (const thread of threads) {
-    const row = page.getByRole("button", { name: new RegExp(thread.title) });
+    const row = page
+      .getByRole("navigation", { name: "Threads", exact: true })
+      .getByRole("button", { name: new RegExp(thread.title) });
     await expect.element(row).toBeVisible();
     if (thread.branch === "main") {
       await expect.element(row.getByText("main", { exact: true })).not.toBeInTheDocument();

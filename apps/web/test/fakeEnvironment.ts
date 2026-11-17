@@ -233,6 +233,7 @@ export interface FakeThread {
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
   readonly runtimeRequests?: OrchestrationV2ThreadProjection["runtimeRequests"];
   readonly branch?: string | null;
+  readonly latestUserMessageAt?: DateTime.Utc;
   readonly lifecycle?: Partial<
     Pick<
       OrchestrationV2ThreadShell,
@@ -338,7 +339,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     status: latest ? "completed" : "idle",
     pendingRuntimeRequest: null,
     latestVisibleMessage: null,
-    latestUserMessageAt: AT,
+    latestUserMessageAt: thread.latestUserMessageAt ?? AT,
     hasActionableProposedPlan: false,
     itemCount: thread.items.length,
     visibleItemCount: thread.items.length,

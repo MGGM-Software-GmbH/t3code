@@ -146,7 +146,7 @@ function sourcePreview(relativePath: string, contents: string, truncated = false
     byteLength: truncated ? 1_200_000 : contents.length,
     truncated,
   };
-  return filePreview("tasks.md");
+  return filePreview(relativePath);
 }
 
 function filePreview(relativePath: string, workspaceMutationId: string | null = null) {
@@ -439,8 +439,8 @@ describe("rendered Markdown select all", () => {
   });
 });
 
-describe("DWS-Dateibearbeitung", () => {
-  it.each(["example.dws", "example.shtml"])("färbt und speichert %s", async (relativePath) => {
+describe("DWS file editing", () => {
+  it.each(["example.dws", "example.shtml"])("highlights and saves %s", async (relativePath) => {
     using _settings = setup();
     const contents = "<% var QueryName := 'sql_test'; %>\nconst value = \"<%= QueryName %>\";\n";
     await using screen = await render(sourcePreview(relativePath, contents));

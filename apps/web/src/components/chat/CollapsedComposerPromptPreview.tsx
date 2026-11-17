@@ -5,6 +5,7 @@ import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { fileBasename } from "@t3tools/shared/path";
 import {
   CircleDashedIcon,
+  HashIcon,
   ImageIcon,
   MessageCircleIcon,
   MessagesSquareIcon,
@@ -74,6 +75,13 @@ export function CollapsedComposerPromptPreview(props: {
       // The editor's model chip is a popover trigger, which cannot nest in the row's button.
       case "model":
         return segment.source;
+      case "fogbugz-reference":
+        return (
+          <ContextChip key={key} kind="neutral">
+            <HashIcon aria-hidden="true" />
+            <ContextChipLabel>{`FogBugz #${segment.caseId}`}</ContextChipLabel>
+          </ContextChip>
+        );
       case "citation":
         return (
           <ContextChip key={key} kind="citation">
