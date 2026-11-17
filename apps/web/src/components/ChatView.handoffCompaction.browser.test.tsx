@@ -86,7 +86,7 @@ it("sends a Codex follow-up on a cold Claude thread without compacting first", a
     providers: [CLAUDE_PROVIDER, CODEX_PROVIDER],
     settings: {
       providerInstances: {
-        claudeAgent: { driver: CLAUDE_DRIVER, enabled: true, config: {} },
+        [CLAUDE]: { driver: CLAUDE_DRIVER, enabled: true, config: {} },
       },
     },
   });
