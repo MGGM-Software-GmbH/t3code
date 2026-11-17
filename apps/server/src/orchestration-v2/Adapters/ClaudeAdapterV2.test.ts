@@ -9875,8 +9875,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
   it.effect("merges cumulative stream usage into the message_start counts", () =>
     Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const homePath = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-usage-" });
       const harness = yield* makeWakeHarnessWithOptions({
-        settings: { ...DEFAULT_CLAUDE_SETTINGS, autoCompactWindow: "150000" },
+        settings: { ...DEFAULT_CLAUDE_SETTINGS, homePath, autoCompactWindow: "150000" },
       });
       yield* harness.runtime.startTurn(
         makeClaudeTestTurnInput({

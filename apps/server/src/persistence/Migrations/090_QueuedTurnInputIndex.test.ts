@@ -21,22 +21,22 @@ layer("090_QueuedTurnInputIndex", (it) => {
           '2026-11-14T00:00:00.000Z', '{not json'
         )
       `;
-      yield* insertUserMessage("before-86");
+      yield* insertUserMessage("before-90");
 
       yield* runMigrations();
-      yield* insertUserMessage("after-86");
+      yield* insertUserMessage("after-90");
 
       const rows = yield* sql<{ readonly turn_item_id: string }>`
         SELECT turn_item_id FROM orchestration_v2_projection_turn_items ORDER BY turn_item_id
       `;
       assert.deepEqual(
         rows.map((row) => row.turn_item_id),
-        ["after-86", "before-86"],
+        ["after-90", "before-90"],
       );
     }),
   );
 
-  it.effect("re-guards the index on a database that ran the unguarded migration 86", () =>
+  it.effect("re-guards the index on a database that ran the unguarded migration 90", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 95 });
