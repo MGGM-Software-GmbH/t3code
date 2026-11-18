@@ -6,6 +6,8 @@ import {
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherEditorSpawnError,
+  ExternalLauncherEditorExitError,
+  ExternalLauncherEditorTimeoutError,
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
   ExternalLauncherUnsupportedTargetError,
@@ -931,6 +933,52 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
   const spawnCommand = yield* resolveSpawnCommand(launch.command, launch.args, { env });
   if (spawnCommand.shell && launch.args.some((arg) => WINDOWS_SHIM_UNSAFE_ARG_PATTERN.test(arg))) {
     return yield* new ExternalLauncherUnsupportedTargetError({ editor: launch.editor });
+  }
+  const remoteCli = yield* Config.Boolean("T3CODE_VSCODE_REMOTE_CLI").pipe(
+    Config.withDefault(false),
+    Effect.orDie,
+  );
+  if (remoteCli && (launch.editor === "vscode" || launch.editor === "vscode-insiders")) {
+    // Die Remote-CLI bestätigt die Dateiübergabe; ihr Ende ist kein Ende des Editorfensters.
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const { ELECTRON_RUN_AS_NODE: _runAsNode, ...umgebung } = yield* HostProcess.Environment;
+    const rueckgabecode = yield* spawner
+      .spawn(
+        ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+          detached: false,
+          shell: spawnCommand.shell,
+          env: umgebung,
+          extendEnv: false,
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "ignore",
+        }),
+      )
+      .pipe(
+        Effect.flatMap((prozess) => prozess.exitCode),
+        Effect.mapError(
+          (cause) =>
+            new ExternalLauncherEditorSpawnError({
+              editor: launch.editor,
+              target: launch.target,
+              command: spawnCommand.command,
+              args: spawnCommand.args,
+              cause,
+            }),
+        ),
+        Effect.timeoutOrElse({
+          duration: "15 seconds",
+          orElse: () => new ExternalLauncherEditorTimeoutError({ editor: launch.editor }),
+        }),
+        Effect.scoped,
+      );
+    if (rueckgabecode !== 0) {
+      return yield* new ExternalLauncherEditorExitError({
+        editor: launch.editor,
+        exitCode: rueckgabecode,
+      });
+    }
+    return;
   }
   yield* launchAndUnref(
     {

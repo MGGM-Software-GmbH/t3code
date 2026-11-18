@@ -1,5 +1,9 @@
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import {
   AuthOrchestrationOperateScope,
   buildRemoteOpenUrl,
   EditorId,
@@ -74,6 +78,7 @@ import {
 } from "./threadDetailsPanelStyles";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useComposerMenuState } from "./useComposerMenuState";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 
 type OpenInOption = {
   label: string;
@@ -274,7 +279,19 @@ export const OpenInPicker = memo(function OpenInPicker({
       },
     });
     setPreferredEditor(editor);
-    return (await result)._tag === "Success";
+    const ergebnis = await result;
+    if (ergebnis._tag === "Failure" && !isAtomCommandInterrupted(ergebnis)) {
+      const fehler = squashAtomCommandFailure(ergebnis);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Editor konnte nicht geöffnet werden",
+          description:
+            fehler instanceof Error ? fehler.message : "Der Editoraufruf ist fehlgeschlagen.",
+        }),
+      );
+    }
+    return ergebnis._tag === "Success";
   };
 
   const openFavoriteEditorShortcutLabel = shortcutLabelForCommand(

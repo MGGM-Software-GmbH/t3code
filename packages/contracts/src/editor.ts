@@ -336,6 +336,24 @@ export class ExternalLauncherEditorSpawnError extends Schema.TaggedError<Externa
   }
 }
 
+export class ExternalLauncherEditorExitError extends Schema.TaggedError<ExternalLauncherEditorExitError>()(
+  "ExternalLauncherEditorExitError",
+  { editor: EditorId, exitCode: Schema.Int },
+) {
+  override get message(): string {
+    return `VS Code konnte nicht geöffnet werden (Fehlercode ${this.exitCode}). Bitte die Verbindung zu einem geöffneten VS-Code-Fenster prüfen.`;
+  }
+}
+
+export class ExternalLauncherEditorTimeoutError extends Schema.TaggedError<ExternalLauncherEditorTimeoutError>()(
+  "ExternalLauncherEditorTimeoutError",
+  { editor: EditorId },
+) {
+  override get message(): string {
+    return "VS Code hat den Aufruf nicht bestätigt. Bitte die Verbindung zum geöffneten VS-Code-Fenster prüfen.";
+  }
+}
+
 export const ExternalLauncherError = Schema.Union([
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
@@ -343,5 +361,7 @@ export const ExternalLauncherError = Schema.Union([
   ExternalLauncherUnsupportedTargetError,
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherEditorSpawnError,
+  ExternalLauncherEditorExitError,
+  ExternalLauncherEditorTimeoutError,
 ]);
 export type ExternalLauncherError = typeof ExternalLauncherError.Type;

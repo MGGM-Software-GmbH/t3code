@@ -7,6 +7,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -409,6 +410,84 @@ it.effect.skipIf(windowsHost)(
       assert.equal(Exit.isFailure(headless.opened), true);
       assert.equal(headless.open, undefined);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect.each([0, 69, 1])(
+  "wertet den VS-Code-Remote-CLI-Aufruf mit Rückgabecode %i aus",
+  (rueckgabecode) =>
+    Effect.gen(function* () {
+      const dateisystem = yield* FileSystem.FileSystem;
+      const pfad = yield* Path.Path;
+      const programme = yield* dateisystem.makeTempDirectoryScoped({ prefix: "t3-editor-cli-" });
+      yield* dateisystem.writeFileString(pfad.join(programme, "code"), "#!/bin/sh\n");
+      yield* dateisystem.chmod(pfad.join(programme, "code"), 0o755);
+      const ergebnis = yield* Effect.gen(function* () {
+        const starter = yield* ExternalLauncher.ExternalLauncher;
+        return yield* starter.launchEditor({
+          editor: "vscode",
+          cwd: "/workspace/datei mit Abstand.ts",
+        });
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            platform: "linux",
+            env: { PATH: programme, T3CODE_VSCODE_REMOTE_CLI: "true" },
+            spawnResult: () => ({ exitCode: rueckgabecode }),
+          }),
+        ),
+        Effect.exit,
+      );
+      if (rueckgabecode === 0) {
+        assert.isTrue(Exit.isSuccess(ergebnis));
+      } else {
+        assert.isTrue(Exit.isFailure(ergebnis));
+        if (Exit.isFailure(ergebnis)) {
+          const fehler = Cause.squash(ergebnis.cause);
+          assert.propertyVal(fehler, "_tag", "ExternalLauncherEditorExitError");
+          assert.propertyVal(fehler, "exitCode", rueckgabecode);
+          assert.match(String(fehler), /VS.Code/);
+        }
+      }
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("meldet eine ausbleibende Bestätigung der VS-Code-Remote-CLI", () =>
+  Effect.gen(function* () {
+    const dateisystem = yield* FileSystem.FileSystem;
+    const pfad = yield* Path.Path;
+    const programme = yield* dateisystem.makeTempDirectoryScoped({ prefix: "t3-editor-timeout-" });
+    yield* dateisystem.writeFileString(pfad.join(programme, "code"), "#!/bin/sh\n");
+    yield* dateisystem.chmod(pfad.join(programme, "code"), 0o755);
+    const gestartet = yield* Deferred.make<void>();
+    const aufruf = yield* Effect.gen(function* () {
+      const starter = yield* ExternalLauncher.ExternalLauncher;
+      return yield* starter.launchEditor({ editor: "vscode", cwd: "/workspace" });
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          platform: "linux",
+          env: { PATH: programme, T3CODE_VSCODE_REMOTE_CLI: "true" },
+          onSpawn: (befehl) => {
+            if (befehl.command.endsWith("code")) Deferred.doneUnsafe(gestartet, Effect.void);
+          },
+          spawnResult: (befehl) => (befehl.command.endsWith("code") ? { stall: true } : undefined),
+        }),
+      ),
+      Effect.exit,
+      Effect.forkChild,
+    );
+    yield* Deferred.await(gestartet);
+    yield* TestClock.adjust("15 seconds");
+    const ergebnis = yield* Fiber.join(aufruf);
+    assert.isTrue(Exit.isFailure(ergebnis));
+    if (Exit.isFailure(ergebnis)) {
+      assert.propertyVal(
+        Cause.squash(ergebnis.cause),
+        "_tag",
+        "ExternalLauncherEditorTimeoutError",
+      );
+    }
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect("launches an installed editor with platform-safe arguments", () =>

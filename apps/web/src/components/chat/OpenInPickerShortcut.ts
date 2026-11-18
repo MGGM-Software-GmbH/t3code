@@ -4,6 +4,10 @@ import {
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { useEffect } from "react";
 
 import { usePreferredEditor } from "../../editorPreferences";
@@ -14,6 +18,7 @@ import { openRemoteEditorUrl, useRemoteCapableEditors, useRemoteOpenState } from
 import { registerCommands } from "../../shortcuts/dispatcher";
 import { shellEnvironment } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /** Marks an OpenInPicker's primary button as the target of `editor.openFavorite`. */
 export const OPEN_FAVORITE_EDITOR_ATTRIBUTE = "data-open-favorite-editor";
@@ -95,6 +100,17 @@ export function useOpenFavoriteEditorShortcut({
         },
       }).then((result) => {
         if (result._tag === "Success") announce(`Opened in ${label}`);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const fehler = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Editor konnte nicht geöffnet werden",
+              description:
+                fehler instanceof Error ? fehler.message : "Der Editoraufruf ist fehlgeschlagen.",
+            }),
+          );
+        }
       });
     };
     window.addEventListener("keydown", handler);
