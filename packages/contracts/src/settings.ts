@@ -1410,6 +1410,7 @@ export const CloudSpeechCredentials = Schema.Struct({
 });
 
 export const ServerSettings = Schema.Struct({
+  mggmAutoSvnUpdate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   mggmCodexAutoRedeemExpiringResets: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
@@ -1898,6 +1899,7 @@ const ModelSelectionPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  mggmAutoSvnUpdate: Schema.optionalKey(Schema.Boolean),
   mggmCodexAutoRedeemExpiringResets: Schema.optionalKey(Schema.Boolean),
   mggmCodexAutoRedeemAtWeeklyLimit: Schema.optionalKey(Schema.Boolean),
   pdSecretsPostLoginScript: Schema.optionalKey(TrimmedString),

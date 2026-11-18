@@ -92,6 +92,17 @@ describe("MGGM Codex banked reset automation", () => {
   );
 });
 
+describe("scheduled SVN updates", () => {
+  it("defaults existing environments to enabled and persists an explicit opt-out", () => {
+    expect(decodeServerSettings({}).mggmAutoSvnUpdate).toBe(true);
+    const patch = decodeServerSettingsPatch({ mggmAutoSvnUpdate: false });
+    expect(
+      decodeServerSettings(encodeServerSettings(decodeServerSettings(patch))).mggmAutoSvnUpdate,
+    ).toBe(false);
+    expect(() => decodeServerSettingsPatch({ mggmAutoSvnUpdate: "false" })).toThrow();
+  });
+});
+
 describe("Codex weekly window starter", () => {
   it("defaults to enabled for existing configurations and preserves an explicit opt-out", () => {
     const decode = Schema.decodeUnknownSync(CodexSettings);

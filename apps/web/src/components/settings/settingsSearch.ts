@@ -449,6 +449,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sidebar idle 24h projects groups pinned compact activity separators"],
   },
   {
+    id: "mggm-auto-svn-update",
+    title: "Auto-SVN-Update ~/.claude/",
+    to: "/settings/mggm",
+    scope: "environment",
+    searchTerms: ["svn subversion update working copy checkout claude 06:00 13:00"],
+  },
+  {
     id: "mggm-codex-expiring-resets",
     title: "Redeem expiring banked resets",
     to: "/settings/mggm",
