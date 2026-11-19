@@ -22,6 +22,7 @@ const state = vi.hoisted(() => ({
   updateToast: vi.fn(),
   projects: [] as unknown[],
   pullRequests: [] as unknown[],
+  detailUrl: "https://github.com/owner/repo/pull/1",
   projectMergeMethods: {} as Record<string, "merge" | "squash" | "rebase">,
 }));
 
@@ -42,7 +43,7 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
 const queryData = () => ({
   projectId: ProjectId.make("project"),
   workspaceRoot: "/workspace",
-  url: "https://github.com/owner/repo/pull/1",
+  url: state.detailUrl,
   number: 1,
   title: "Test PR",
   state: "open",
@@ -97,8 +98,8 @@ vi.mock(import("~/hooks/useHandleNewThread"), async (original) => ({
 }));
 vi.mock(import("~/state/sourceControlActions"), async (original) => ({
   ...(await original()),
-  usePreparePullRequestThreadAction: (() => ({
-    run: state.prepareThread,
+  usePreparePullRequestThreadAction: ((scope: { cwd: string | null }) => ({
+    run: (input: unknown) => state.prepareThread(scope.cwd, input),
     isAllowed: true,
     error: state.checkoutError,
   })) as never,
@@ -117,6 +118,7 @@ vi.mock(import("../ui/toast"), async (original) => {
 
 import { act, render as renderUi } from "../../../test/render";
 import { useComposerDraftStore } from "~/composerDraftStore";
+import { createNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useUiStateStore } from "~/uiStateStore";
 import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
 import { ThreadDetailsThreadPrRows } from "./ThreadDetailsPrRows";
@@ -172,6 +174,7 @@ it("merges with the last selected merge method", async () => {
         number={1}
         status={null}
         project={null}
+        threadProject={null}
         label="Test PR"
         openAriaLabel="Open PR"
         onOpen={vi.fn()}
@@ -201,6 +204,7 @@ it("requires a new merge click after passing checks become pending and pass agai
       number={1}
       status={null}
       project={null}
+      threadProject={null}
       label="Test PR"
       openAriaLabel="Open PR"
       onOpen={vi.fn()}
@@ -248,6 +252,7 @@ async function setup() {
   state.mergeMethods = ["merge"];
   state.projects = [];
   state.pullRequests = [];
+  state.detailUrl = "https://github.com/owner/repo/pull/1";
   state.projectMergeMethods = {};
   useComposerDraftStore.getState().clearComposerContent(threadRef);
   useUiStateStore.getState().setPullRequestMergeMethod("merge");
@@ -265,6 +270,7 @@ it("adds the failing checks to a given composer instead of opening a new thread"
         number={1}
         status={null}
         project={null}
+        threadProject={null}
         label="Test PR"
         openAriaLabel="Open PR"
         onOpen={vi.fn()}
@@ -285,6 +291,64 @@ const repositoryClone = {
   id: ProjectId.make("clone"),
   workspaceRoot: "/work/clone",
 };
+
+it.each([
+  { repository: "upstream/external", checkout: false },
+  { repository: "owner/repo", checkout: true },
+])("keeps Fix for $repository in the thread's project", async ({ repository, checkout }) => {
+  await using screen = await setup();
+  state.newThread.mockImplementation(createNewThreadHandler(screen.router!));
+  state.projects = [repositoryProject, repositoryClone];
+  state.status = "failure";
+  const url = `https://github.com/${repository}/pull/1`;
+  state.detailUrl = url;
+  state.pullRequests = [
+    {
+      host: "github.com",
+      repository,
+      number: 1,
+      url,
+      source: "agent",
+      linkedAt: "2026-11-19T08:00:00.000Z",
+      snapshot: null,
+      stack: null,
+    },
+  ];
+  state.prepareThread.mockResolvedValue({
+    _tag: "Success",
+    value: {
+      branch: "feature",
+      worktreePath: "/work/pr",
+      isOnPullRequestHead: true,
+      pullRequest: { url },
+    },
+  });
+  await screen.rerender(
+    <ThreadDetailsThreadPrRows threadRef={threadRef} project={repositoryClone as never} />,
+  );
+  await clickButton(screen.container, "Fix");
+  const session = await state.newThread.mock.results[0]!.value;
+  expect(useComposerDraftStore.getState().getDraftSession(session.draftId)).toMatchObject({
+    environmentId: threadRef.environmentId,
+    projectId: repositoryClone.id,
+  });
+  expect(state.prepareThread).toHaveBeenCalledTimes(checkout ? 1 : 0);
+  if (checkout) {
+    expect(state.prepareThread).toHaveBeenCalledWith(repositoryClone.workspaceRoot, {
+      reference: url,
+      mode: "worktree",
+      threadId: session.threadId,
+    });
+  }
+  await vi.waitFor(() =>
+    expect(useComposerDraftStore.getState().getComposerDraft(session.draftId)?.prompt).toContain(
+      url,
+    ),
+  );
+  const prompt = useComposerDraftStore.getState().getComposerDraft(session.draftId)?.prompt;
+  expect(prompt?.includes("prepared checkout")).toBe(checkout);
+  useComposerDraftStore.getState().clearDraftThread(session.draftId);
+});
 
 it.each([
   {

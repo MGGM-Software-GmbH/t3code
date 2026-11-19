@@ -301,7 +301,7 @@ export function usePullRequestHandoffs({
     return session;
   };
 
-  const startAsk = async (kind: string, task: PullRequestThreadTask) => {
+  const startDraft = async (kind: string, task: PullRequestThreadTask) => {
     if (!detail || handoff !== null) return;
     setHandoff(kind);
     const projectRef = scopeProjectRef(environmentId, detail.projectId);
@@ -317,10 +317,10 @@ export function usePullRequestHandoffs({
     }
     toastManager.add({
       type: "success",
-      title: "Asked in a thread",
+      title: "Added to a new thread",
       description:
         task.prompt.length > 0
-          ? "The question is in the composer. Read it over, then send."
+          ? "The task is in the composer. Read it over, then send."
           : `The ${terminology.singular} is in the composer. Type your question, then send.`,
     });
   };
@@ -443,5 +443,5 @@ export function usePullRequestHandoffs({
     );
   };
 
-  return { handoff, startAsk, startHandoff };
+  return { handoff, startDraft, startHandoff };
 }

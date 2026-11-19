@@ -1,4 +1,5 @@
 import { resolvePullRequestDetailChecks } from "@t3tools/client-runtime/pull-request-checks";
+import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
 import {
   capitalizeTerm,
   sourceControlClients,
@@ -93,6 +94,7 @@ export function ThreadDetailsPrRow({
   reference: linkedReference,
   status,
   project,
+  threadProject,
   label,
   openAriaLabel,
   onOpen,
@@ -106,6 +108,7 @@ export function ThreadDetailsPrRow({
   reference?: Pick<PullRequestRef, "host" | "repository" | "number"> | null;
   status: PrStatusIndicator | null;
   project: EnvironmentProject | null;
+  threadProject: EnvironmentProject | null;
   label: string;
   openAriaLabel: string;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -175,7 +178,24 @@ export function ThreadDetailsPrRow({
       onActed?.();
     },
   });
-  const { handoff, startHandoff } = usePullRequestHandoffs({ environmentId, detail });
+  // A project lending host access to the detail query may have an unrelated checkout.
+  const { handoff, startDraft, startHandoff } = usePullRequestHandoffs({
+    environmentId,
+    detail:
+      detail && threadProject
+        ? {
+            projectId: threadProject.id,
+            workspaceRoot: threadProject.workspaceRoot,
+            url: detail.url,
+          }
+        : null,
+  });
+  const link = detail && sourceControlClients.parseChangeRequestUrl(detail.url)?.link;
+  const prepareCheckout =
+    composerTarget === undefined &&
+    link &&
+    threadProject &&
+    findProjectForChangeRequest([threadProject], link) !== undefined;
   const lastSelectedMergeMethod = useUiStateStore((state) => state.pullRequestMergeMethod);
   const resolveProjectDefaultMergeMethod = usePullRequestDefaultMergeMethodResolver(
     environmentId,
@@ -199,7 +219,8 @@ export function ThreadDetailsPrRow({
 
   const handOff = (kind: "conflicts" | "findings", task: PullRequestThreadTask) => {
     if (composerTarget === undefined) {
-      void startHandoff(kind, task);
+      if (prepareCheckout) void startHandoff(kind, task);
+      else void startDraft(kind, task);
       return;
     }
     writeHandoffToComposer(composerTarget, task);
@@ -218,7 +239,7 @@ export function ThreadDetailsPrRow({
         url: detail.url,
         headBranch: detail.headBranch,
         baseBranch: detail.baseBranch,
-        inThisThread: composerTarget !== undefined,
+        inThisThread: !prepareCheckout,
       }),
     });
   };
@@ -239,7 +260,7 @@ export function ThreadDetailsPrRow({
         comments: [],
         checks: detail.checks,
         commentsTruncated: false,
-        inThisThread: composerTarget !== undefined,
+        inThisThread: !prepareCheckout,
       }),
     );
   };
@@ -355,7 +376,7 @@ export function ThreadDetailsPrRow({
           suffix: newThreadSuffix,
           tooltip:
             composerTarget === undefined
-              ? "Check the branch out and resolve the conflicts in a new thread"
+              ? "Resolve the conflicts in a new thread"
               : "Resolve the conflicts in this thread",
           onClick: startResolveConflicts,
         }
@@ -497,7 +518,13 @@ export function ThreadDetailsPrRow({
                       size="sm"
                       part="meta"
                       tone={trailingAction.destructive ? "destructive" : "primary"}
-                      disabled={actionPending || handoff !== null}
+                      disabled={
+                        actionPending ||
+                        handoff !== null ||
+                        ((rowAction === "fix" || rowAction === "resolve") &&
+                          composerTarget === undefined &&
+                          threadProject === null)
+                      }
                       onClick={trailingAction.onClick}
                     />
                   }
