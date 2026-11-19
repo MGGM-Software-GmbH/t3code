@@ -424,7 +424,7 @@ describe("FogBugz integration persistence and access", () => {
     },
   );
   it.effect(
-    "resolves readable group members and sorts by notification or modification date",
+    "merges the newest notifications and edits across the FogBugz result limit for readable group members",
     () => {
       const test = fixture();
       return Effect.gen(function* () {
@@ -453,15 +453,44 @@ describe("FogBugz integration persistence and access", () => {
             return new Response(
               "<response><projects><project><ixProject>12</ixProject><sProject>Project 12</sProject></project><project><ixProject>13</ixProject><sProject>New project</sProject></project></projects><projectGroups><membership><ixProject>13</ixProject><ixProjectGroup>3</ixProjectGroup><sProjectGroup>MGGM</sProjectGroup></membership></projectGroups></response>",
             );
-          if (params.get("cmd") === "search")
+          if (params.get("cmd") === "search") {
+            const abfrage = params.get("q");
+            const benachrichtigt = [
+              caseXml(43, 13, 7, "2026-10-21T00:00:00Z", "2026-10-22T00:00:00Z"),
+              caseXml(42, 13, 7, "2026-10-21T00:00:00Z", "2026-10-20T00:00:00Z"),
+              caseXml(41, 13, 7, "2026-10-20T00:00:00Z", "2026-10-28T00:00:00Z"),
+            ];
+            if (abfrage === "43" || abfrage?.endsWith(' notified:* orderby:"-notified,lastedited"'))
+              return new Response(`<response><cases>${benachrichtigt.join("")}</cases></response>`);
+            const ohneBenachrichtigung = [
+              caseXml(40, 13, 7, "", "2026-10-28T00:00:00Z"),
+              caseXml(44, 12),
+              ...Array.from({ length: 199 }, (_, index) => caseXml(300 - index, 13)),
+            ];
             return new Response(
-              `<response><cases>${caseXml(40, 13, 7, "", "2026-10-28T00:00:00Z")}${caseXml(41, 13, 7, "2026-10-20T00:00:00Z", "2026-10-28T00:00:00Z")}${caseXml(42, 13, 7, "2026-10-21T00:00:00Z", "2026-10-20T00:00:00Z")}${caseXml(43, 13, 7, "2026-10-21T00:00:00Z", "2026-10-22T00:00:00Z")}${caseXml(44, 12)}</cases></response>`,
+              `<response><cases>${ohneBenachrichtigung.join("")}</cases></response>`,
             );
+          }
           return originalFetch(url, init);
         });
         const result = yield* service.cases({ query: "", state: "open", assignedToMe: true });
+        const suchen = test.fetch.mock.calls
+          .map(([, init]) => new URLSearchParams(String(init?.body)))
+          .filter((params) => params.get("cmd") === "search")
+          .map((params) => params.get("q"));
+        expect(suchen).toEqual([
+          '(project:=13) status:open assignedto:me notified:* orderby:"-notified,lastedited"',
+          '(project:=13) status:open assignedto:me -notified:* orderby:"lastedited"',
+        ]);
         expect(result.projects).toEqual([{ projectId, fogbugzProjectId: 13, fogbugzAreaId: null }]);
-        expect(result.cases.map((item) => item.id)).toEqual([40, 43, 42, 41]);
+        expect(result.cases.map((item) => item.id)).toEqual([
+          40,
+          43,
+          42,
+          41,
+          ...Array.from({ length: 196 }, (_, index) => 300 - index),
+        ]);
+        expect(result.truncated).toBe(true);
         yield* service.linkThread({ threadId, caseId: 43 });
         yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
         expect((yield* service.thread(threadId))?.caseId).toBe(43);

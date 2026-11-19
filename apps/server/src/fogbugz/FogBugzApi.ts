@@ -292,45 +292,50 @@ export class FogBugzApi {
       });
   }
 
-  async cases(token: string, query: string) {
+  async cases(token: string, ...abfragen: [string, ...string[]]) {
     const categories = child(await this.request({ cmd: "listCategories", token }), "categories");
-    const cases = child(
-      await this.request({
-        cmd: "search",
-        token,
-        q: query,
-        max: "201",
-        includeReadNotifications: "1",
-        cols: "ixBug,sTitle,ixProject,ixArea,sProject,sStatus,fOpen,ixPersonAssignedTo,sPersonAssignedTo,ixPriority,sPriority,ixCategory,sCategory,dtCaseNotified,dtLastUpdated",
-      }),
-      "cases",
-    );
-    return cases.children
-      .filter((node) => node.name === "case")
-      .map((item) =>
-        decodeCase({
-          id: id(value(item, "ixBug")),
-          title: value(item, "sTitle"),
-          projectId: id(value(item, "ixProject")),
-          areaId: id(value(item, "ixArea")),
-          projectName: value(item, "sProject"),
-          status: value(item, "sStatus"),
-          open: boolean(value(item, "fOpen")),
-          assignedTo: Number(value(item, "ixPersonAssignedTo")),
-          assignedToName: value(item, "sPersonAssignedTo"),
-          priority: value(item, "sPriority"),
-          priorityId: id(value(item, "ixPriority")),
-          categoryId: id(value(item, "ixCategory")),
-          categoryName: value(item, "sCategory"),
-          categoryIconType: Number(
-            value(childCategory(categories, value(item, "ixCategory")), "nIconType"),
-          ),
-          notifiedAt: timestamp(
-            item.children.find((node) => node.name === "dtCaseNotified")?.text ?? "",
-          ),
-          updatedAt: timestamp(value(item, "dtLastUpdated")),
+    const antworten = await Promise.all(
+      abfragen.map((abfrage) =>
+        this.request({
+          cmd: "search",
+          token,
+          q: abfrage,
+          max: "201",
+          includeReadNotifications: "1",
+          cols: "ixBug,sTitle,ixProject,ixArea,sProject,sStatus,fOpen,ixPersonAssignedTo,sPersonAssignedTo,ixPriority,sPriority,ixCategory,sCategory,dtCaseNotified,dtLastUpdated",
         }),
-      );
+      ),
+    );
+    const faelle = new Map<number, XmlNode>();
+    for (const antwort of antworten) {
+      for (const eintrag of child(antwort, "cases").children) {
+        if (eintrag.name === "case") faelle.set(id(value(eintrag, "ixBug")), eintrag);
+      }
+    }
+    return Array.from(faelle, ([fallnummer, item]) =>
+      decodeCase({
+        id: fallnummer,
+        title: value(item, "sTitle"),
+        projectId: id(value(item, "ixProject")),
+        areaId: id(value(item, "ixArea")),
+        projectName: value(item, "sProject"),
+        status: value(item, "sStatus"),
+        open: boolean(value(item, "fOpen")),
+        assignedTo: Number(value(item, "ixPersonAssignedTo")),
+        assignedToName: value(item, "sPersonAssignedTo"),
+        priority: value(item, "sPriority"),
+        priorityId: id(value(item, "ixPriority")),
+        categoryId: id(value(item, "ixCategory")),
+        categoryName: value(item, "sCategory"),
+        categoryIconType: Number(
+          value(childCategory(categories, value(item, "ixCategory")), "nIconType"),
+        ),
+        notifiedAt: timestamp(
+          item.children.find((node) => node.name === "dtCaseNotified")?.text ?? "",
+        ),
+        updatedAt: timestamp(value(item, "dtLastUpdated")),
+      }),
+    );
   }
 
   async caseEvents(token: string, caseId: number) {

@@ -648,18 +648,24 @@ export const layer = Layer.effect(
         }
         const current = yield* authenticated();
         const scope = `(${projectScope(links)})`;
-        const query = /^\d+$/.test(input.query.trim())
-          ? input.query.trim()
-          : [
-              scope,
-              input.state === "all" ? "" : `status:${input.state}`,
-              input.assignedToMe ? "assignedto:me" : "",
-              input.query ? `(${input.query})` : "",
-              'orderby:"-notified,-lastedited"',
-            ]
-              .filter(Boolean)
-              .join(" ");
-        const cases = yield* call((api, token) => api.cases(token, query));
+        const query = [
+          scope,
+          input.state === "all" ? "" : `status:${input.state}`,
+          input.assignedToMe ? "assignedto:me" : "",
+          input.query ? `(${input.query})` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        // FogBugz begrenzt jede Suche vor der gemeinsamen Sortierung nach dem angezeigten Datum.
+        const cases = yield* call((api, token) =>
+          /^\d+$/.test(input.query.trim())
+            ? api.cases(token, input.query.trim())
+            : api.cases(
+                token,
+                `${query} notified:* orderby:"-notified,lastedited"`,
+                `${query} -notified:* orderby:"lastedited"`,
+              ),
+        );
         const visible = cases.filter(
           (item) =>
             links.some((link) => matchesCase(link, item)) &&
