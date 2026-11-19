@@ -47,6 +47,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as SpawnWorker from "./process/SpawnWorker.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as PdSecrets from "./environment/PdSecrets.ts";
+import * as ClaudeSvnUpdate from "./environment/ClaudeSvnUpdate.ts";
 import * as FogBugz from "./fogbugz/FogBugzService.ts";
 import * as FogBugzCaseGit from "./fogbugz/FogBugzCaseGit.ts";
 import * as FogBugzAutomation from "./fogbugz/FogBugzAutomation.ts";
@@ -725,6 +726,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ).pipe(Layer.provide(DelegatedTaskQuestionReactor.layer), Layer.provide(ProjectionStoreV2.layer)),
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
+  ClaudeSvnUpdate.layer.pipe(
+    Layer.provide(layerServerSettings),
+    Layer.provide(ProcessRunner.layer),
+  ),
   ProviderInstallation.layer,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),

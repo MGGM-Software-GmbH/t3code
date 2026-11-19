@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import "~/index.css";
 
 const state = vi.hoisted(() => ({
+  svnCheckout: true,
   settings: null as UnifiedSettings | null,
   update: vi.fn(),
   confirm: vi.fn(),
@@ -33,7 +34,17 @@ vi.mock(import("./useScopedSettings"), async (original) => ({
 }));
 vi.mock(import("./SettingsScopeContext"), async (original) => ({
   ...(await original()),
-  useSettingsScope: (() => ({ target: null })) as never,
+  useSettingsScope: (() => ({
+    target: null,
+    targets: [],
+    connectedEnvironments: [
+      {
+        serverConfig: {
+          environment: { capabilities: { mggmClaudeSvnCheckout: state.svnCheckout } },
+        },
+      },
+    ],
+  })) as never,
 }));
 vi.mock(import("../../hooks/useSettings"), async (original) => ({
   ...(await original()),
@@ -69,12 +80,30 @@ async function renderRestore() {
   };
 }
 function setup() {
+  state.svnCheckout = true;
   vi.clearAllMocks();
   state.settings = { ...DEFAULT_UNIFIED_SETTINGS };
   state.confirm.mockResolvedValue(true);
 }
 
 describe("restoring V2 settings", () => {
+  it("allows SVN updates only when the selected environment reports a checkout", async () => {
+    setup();
+    state.svnCheckout = false;
+    await using screen = await render(<MggmSettingsPanel />);
+    const toggle = screen.getByRole("switch", { name: "Auto-SVN-Update ~/.claude/" });
+    await expect.element(toggle).toBeDisabled();
+    await expect.element(toggle).not.toBeChecked();
+    await expect
+      .element(screen.getByText(/Requires a T3 environment with a ~\/.claude\/.svn/))
+      .toBeVisible();
+    state.svnCheckout = true;
+    await screen.rerender(<MggmSettingsPanel />);
+    await expect.element(toggle).toBeEnabled();
+    await expect.element(toggle).toBeChecked();
+    await toggle.click();
+    expect(state.update).toHaveBeenLastCalledWith({ mggmAutoSvnUpdate: false });
+  });
   it("defaults expiry redemption to on, saves opt-out and restores the default", async () => {
     setup();
     await using screen = await render(<MggmSettingsPanel />);
