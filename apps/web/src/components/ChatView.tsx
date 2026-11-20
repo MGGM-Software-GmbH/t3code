@@ -1156,12 +1156,11 @@ export default function ChatView(props: ChatViewProps) {
         })
       : null,
   );
-  const hasLinkedFogBugzCase = fogbugzThread.data !== null;
   const fogbugzCasesAvailable =
-    hasLinkedFogBugzCase &&
+    isServerThread &&
     fogbugzStatus.data?.projects.some((link) => link.projectId === activeProject?.id) === true;
   const fogbugzCaseGitAvailable =
-    hasLinkedFogBugzCase &&
+    fogbugzThread.data !== null &&
     canWriteSourceControl &&
     fogbugzStatus.data?.connection?.capabilities?.caseGit !== false;
   const activeProjectSettings = resolveProjectSettings(

@@ -895,8 +895,8 @@ it.each([
   },
 );
 
-it.each(["saved", "draft"])("gates sidepanel cases in a %s thread", async (kind) => {
-  const thread = threadWithHistory("fogbugz-actions", 1);
+it.each(["linked", "unlinked", "draft"])("gates the case list (%s)", async (kind) => {
+  const thread = threadWithHistory(`fogbugz-actions-${kind}`, 1);
   const projectId = ProjectId.make("project-render");
   const draftId = DraftId.make("fogbugz-new-draft");
   const activeThreadId = kind === "draft" ? ThreadId.make("fogbugz-new") : thread.id;
@@ -948,11 +948,13 @@ it.each(["saved", "draft"])("gates sidepanel cases in a %s thread", async (kind)
           personName: "Test User",
           authenticated: true,
         },
-        projects: [{ projectId, fogbugzProjectId: 12, fogbugzProjectGroupId: null }],
+        projects: [
+          { projectId, fogbugzProjectId: 12, fogbugzProjectGroupId: null, fogbugzAreaId: 1 },
+        ],
       }),
     [WS_METHODS.fogbugzThread]: () =>
       Effect.succeed(
-        kind === "draft"
+        kind !== "linked"
           ? null
           : {
               threadId: thread.id,
@@ -1030,6 +1032,15 @@ it.each(["saved", "draft"])("gates sidepanel cases in a %s thread", async (kind)
       .toHaveAttribute("aria-disabled", "true");
     expect(messages).toEqual([]);
     expect(launches).toEqual([]);
+    return;
+  }
+  if (kind === "unlinked") {
+    await userEvent.click(page.getByRole("button", { name: "Add panel surface" }));
+    await expect.element(page.getByRole("menuitem", { name: /FogBugz-Case-Git/ })).toBeDisabled();
+    const casesMenuItem = page.getByRole("menuitem", { name: /Fogbugz-Cases/ });
+    await expect.element(casesMenuItem).toBeEnabled();
+    await userEvent.click(casesMenuItem);
+    await expect.element(page.getByRole("button", { name: "Case actions for #42" })).toBeVisible();
     return;
   }
   await userEvent.click(page.getByRole("button", { name: /Fogbugz-Cases/ }));

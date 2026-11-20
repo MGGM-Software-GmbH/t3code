@@ -7,7 +7,7 @@ import { test, WEB } from "./t3.ts";
 test(
   "A project can select one FogBugz area while a project group includes every area",
   WEB,
-  async ({ t3, app, screen }) => {
+  async ({ t3, app, screen, browser }) => {
     await using api = NodeHttp.createServer(async (request, response) => {
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
@@ -58,7 +58,8 @@ test(
       await screen.getByRole("menuitemradio", "fogbugz-area", { exact: true }).tap();
     };
 
-    await t3.project("fogbugz-area");
+    const project = await t3.project("fogbugz-area");
+    await t3.thread({ project, title: "Browse area cases", messages: ["Start"] });
     let connected = false;
     try {
       await t3.open();
@@ -84,6 +85,18 @@ test(
       await expect(screen.getByText("Support request", { exact: true })).toBeVisible();
       await expect(screen.getByText("General inquiry", { exact: true })).toBeHidden();
       await app.screenshot("area-cases");
+      await app.open("/");
+      await screen.getByRole("button", /^Browse area cases,/).tap();
+      await screen.getByRole("button", "Toggle right panel").tap();
+      await browser.setViewport({ width: 390, height: 844 });
+      const caseList = screen.getByRole("button", /Fogbugz-Cases/);
+      await expect(caseList).toBeEnabled();
+      await app.screenshot("thread-area-menu");
+      await caseList.tap();
+      await expect(screen.getByText("Support request", { exact: true })).toBeVisible();
+      await expect(screen.getByText("General inquiry", { exact: true })).toBeHidden();
+      await app.screenshot("thread-area-cases");
+      await browser.setViewport({ width: 1280, height: 800 });
       await openProjectSettings();
       await area.tap();
       await screen.getByRole("option", "All areas", { exact: true }).tap();

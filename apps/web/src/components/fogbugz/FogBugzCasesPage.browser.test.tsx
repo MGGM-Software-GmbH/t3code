@@ -96,7 +96,7 @@ function setup() {
   };
 }
 
-it("disables the FogBugz surface and its shortcut until the thread is linked", async () => {
+it("disables the FogBugz surface and its shortcut when case browsing is unavailable", async () => {
   setup();
   const open = vi.fn();
   const ignore = () => {};

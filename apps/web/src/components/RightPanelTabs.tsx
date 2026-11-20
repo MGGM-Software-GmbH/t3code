@@ -427,7 +427,7 @@ export function RightPanelEmptyState(props: {
             shortcut: "C",
             available: props.fogbugzCasesAvailable === true,
             disabledReason:
-              "Browsing cases requires a linked thread and a FogBugz project mapping.",
+              "Browsing cases requires a saved thread in a project with a FogBugz mapping.",
             onClick: props.onAddFogBugzCases,
           },
         ]
@@ -1214,7 +1214,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             shortcut: "C",
             available: props.fogbugzCasesAvailable === true,
             disabledReason:
-              "Browsing cases requires a linked thread and a FogBugz project mapping.",
+              "Browsing cases requires a saved thread in a project with a FogBugz mapping.",
             onClick: props.onAddFogBugzCases,
           },
         ]

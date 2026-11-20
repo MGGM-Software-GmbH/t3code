@@ -14,7 +14,7 @@ Open **Fogbugz Cases** from the sidebar menu or command palette to see open case
 
 In an existing thread, choose **Link FogBugz case** in thread details and enter the number of any case your connected account can read. This works across projects and areas, including when the T3 project has no FogBugz mapping. Use **Unlink FogBugz case** in the same panel to remove the association.
 
-Within a linked thread whose T3 project has a mapping, open the **Fogbugz-Cases** surface from the side panel. Its case list stays scoped to that mapping, including all accessible FogBugz projects in a linked group.
+In any saved thread in a mapped T3 project, open **Fogbugz-Cases** from the side panel to browse the project's cases. The list uses the selected FogBugz area or project group even when the thread has no linked case.
 
 For a thread linked to a case, **FogBugz-Case-Git** in the FogBugz section of thread details or the side panel's surface menu opens that case's files using the existing file viewer. By default, T3 prepares a separate local clone for each thread under `<T3 home>/case-files/<connection>/<person>/<case>/<thread>/repo`. In **Settings > Projects > FogBugz**, set **Case-Git checkout folder** to share one checkout per case across the project's threads. Use an absolute path or a path relative to the project root; case 12345 uses `<folder>/FB12345`. The folder may be inside the project repository. For SVN projects, adding this folder to `svn:ignore` is recommended. T3 does not change SVN properties. Clearing or changing the setting keeps existing checkouts on disk. FogBugz creates a missing repository when your account has write access and the project's case file storage is enabled. Unlinking preserves the local files and the FogBugz repository.
 
