@@ -51,7 +51,9 @@ function fixture() {
     const command = params.get("cmd");
     const content =
       command === "browserSession"
-        ? '<error code="10">POST token required</error>'
+        ? params.has("token")
+          ? "<session><ixPerson>7</ixPerson></session>"
+          : '<error code="10">POST token required</error>'
         : command === "caseGitRepository" && params.get("ixBug") === "0"
           ? '<error code="13">No access to case files</error>'
           : command === "caseGitRepository"
@@ -69,7 +71,12 @@ function fixture() {
                         ? "<cases><case><ixBug>42</ixBug><events><event><ixBugEvent>501</ixBugEvent><sPerson>Test Person</sPerson><dt>2026-10-29T10:00:00Z</dt><s>Required behavior</s></event></events></case></cases>"
                         : `<cases>${params.get("q") === "42" ? caseXml(42, 12) : caseXml(42, 12) + caseXml(43, 99) + caseXml(44, 12, 8)}</cases>`
                       : "";
-    return new Response(`<response>${content}</response>`);
+    return new Response(`<response>${content}</response>`, {
+      headers:
+        command === "browserSession" && params.has("token")
+          ? { "set-cookie": "fbToken=test-session; HttpOnly" }
+          : {},
+    });
   });
   const dependencies = Layer.merge(Sqlite.layerMemory, secretLayer).pipe(
     Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
@@ -155,9 +162,9 @@ describe("FogBugz integration persistence and access", () => {
         expect((yield* service.caseContext({ projectId, caseId: 45 }).pipe(Effect.flip)).code).toBe(
           "case_area",
         );
-        expect((yield* service.linkThread({ threadId, caseId: 45 }).pipe(Effect.flip)).code).toBe(
-          "case_area",
-        );
+        yield* service.linkThread({ threadId, caseId: 45 });
+        expect((yield* service.threadCases()).map((item) => item.case.id)).toEqual([45]);
+        yield* service.linkThread({ threadId, caseId: 42 });
         expect(
           (yield* service
             .prepareThread({ projectId, threadId: ThreadId.make("outside-area"), caseId: 45 })
@@ -172,11 +179,9 @@ describe("FogBugz integration persistence and access", () => {
         expect(snapshot.cases.map((item) => item.id)).toEqual([42]);
         expect(queries.at(-1)).toContain("(project:=12 area:=1)");
         area = 2;
-        expect(yield* service.threadCases()).toEqual([]);
+        expect((yield* service.threadCases()).map((item) => item.case.id)).toEqual([42]);
         expect((yield* service.automationSnapshot(projectId)).cases).toEqual([]);
-        expect((yield* service.caseGitRepository(threadId).pipe(Effect.flip)).code).toBe(
-          "case_area",
-        );
+        expect((yield* service.caseGitRepository(threadId)).caseId).toBe(42);
         yield* sql`INSERT INTO fogbugz_automation (project_id, payload) VALUES (${projectId}, '{}')`;
         yield* service.linkProject({ projectId, fogbugzProjectId: 12, fogbugzAreaId: 2 });
         expect((yield* service.thread(threadId))?.caseId).toBe(42);
@@ -190,7 +195,7 @@ describe("FogBugz integration persistence and access", () => {
         expect((yield* service.automationSnapshot(projectId)).mapping).toBe("12");
         expect((yield* service.cases(input)).cases.map((item) => item.id)).toEqual([45, 42]);
         yield* service.linkProject({ projectId, fogbugzProjectId: null, fogbugzProjectGroupId: 3 });
-        expect(yield* service.thread(threadId)).toBeNull();
+        expect((yield* service.thread(threadId))?.caseId).toBe(42);
         expect((yield* service.status()).projects[0]?.fogbugzAreaId).toBeNull();
         expect((yield* service.cases(input)).cases.map((item) => item.id)).toEqual([45, 42]);
       }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
@@ -330,7 +335,7 @@ describe("FogBugz integration persistence and access", () => {
       ]);
     }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
   });
-  it.effect("batches linked case metadata and excludes a moved or inaccessible case", () => {
+  it.effect("batches accessible linked cases even after a project move", () => {
     const test = fixture();
     return Effect.gen(function* () {
       using fetch = vi.spyOn(globalThis, "fetch").mockImplementation(test.fetch);
@@ -351,13 +356,20 @@ describe("FogBugz integration persistence and access", () => {
       expect(yield* service.caseThreadIds(43)).toEqual([]);
       expect(test.requests).toHaveLength(requestCount);
       expect(test.requests.at(-1)?.get("q")).toBe("(case:42)");
+      let visible = true;
       fetch.mockImplementation(async (_url, init) => {
         const parameters = new URLSearchParams(String(init?.body));
         return parameters.get("cmd") === "search"
-          ? new Response(`<response><cases>${caseXml(42, 99)}</cases></response>`)
+          ? new Response(`<response><cases>${visible ? caseXml(42, 99) : ""}</cases></response>`)
           : test.fetch(_url, init);
       });
+      expect(yield* service.threadCases()).toMatchObject([
+        { threadId, case: { id: 42, projectId: 99 } },
+      ]);
+      visible = false;
       expect(yield* service.threadCases()).toEqual([]);
+      expect((yield* Effect.flip(service.caseGitRepository(threadId))).code).toBe("access");
+      expect((yield* Effect.flip(service.browserSession(threadId))).code).toBe("access");
       fetch.mockResolvedValueOnce(
         new Response('<response><error code="3">Expired</error></response>'),
       );
@@ -496,7 +508,7 @@ describe("FogBugz integration persistence and access", () => {
         expect((yield* service.thread(threadId))?.caseId).toBe(43);
         yield* service.linkProject({ projectId, fogbugzProjectId: null });
         expect((yield* service.status()).projects).toEqual([]);
-        expect(yield* service.thread(threadId)).toBeNull();
+        expect((yield* service.thread(threadId))?.caseId).toBe(43);
       }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
     },
   );
@@ -621,34 +633,37 @@ describe("FogBugz integration persistence and access", () => {
     },
   );
 
-  it.effect(
-    "rejects inaccessible projects and foreign cases without changing the existing association",
-    () => {
-      const test = fixture();
-      return Effect.gen(function* () {
-        using _fetch = vi.spyOn(globalThis, "fetch").mockImplementation(test.fetch);
-        yield* seed;
-        const service = yield* FogBugzService;
-        yield* service.connect(credentials);
-        expect(
-          (yield* Effect.flip(service.linkProject({ projectId, fogbugzProjectId: 99 }))).code,
-        ).toBe("access");
-        yield* service.linkProject({ projectId, fogbugzProjectId: 12 });
-        yield* service.linkThread({ threadId, caseId: 42 });
-        expect((yield* Effect.flip(service.linkThread({ threadId, caseId: 43 }))).code).toBe(
-          "project",
-        );
-        expect((yield* service.thread(threadId))?.caseId).toBe(42);
-      }).pipe(
-        Effect.provide(
-          test.service.pipe(
-            Layer.provideMerge(test.dependencies),
-            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
-          ),
-        ),
+  it.effect("links accessible cases by number independently of the project mapping", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      using _fetch = vi.spyOn(globalThis, "fetch").mockImplementation(test.fetch);
+      yield* seed;
+      const service = yield* FogBugzService;
+      yield* service.connect(credentials);
+      expect(
+        (yield* Effect.flip(service.linkProject({ projectId, fogbugzProjectId: 99 }))).code,
+      ).toBe("access");
+      yield* service.linkThread({ threadId, caseId: 42 });
+      expect((yield* service.caseContext({ threadId, caseId: 42 })).case.id).toBe(42);
+      expect((yield* service.browserSession(threadId)).url).toContain("ixBug=42");
+      expect((yield* service.status()).projects).toEqual([]);
+      yield* service.linkProject({ projectId, fogbugzProjectId: 12 });
+      expect((yield* service.thread(threadId))?.caseId).toBe(42);
+      yield* service.linkThread({ threadId, caseId: 43 });
+      expect((yield* service.thread(threadId))?.caseId).toBe(43);
+      expect((yield* Effect.flip(service.linkThread({ threadId, caseId: 999 }))).code).toBe(
+        "access",
       );
-    },
-  );
+      expect((yield* service.thread(threadId))?.caseId).toBe(43);
+    }).pipe(
+      Effect.provide(
+        test.service.pipe(
+          Layer.provideMerge(test.dependencies),
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    );
+  });
 
   it.effect(
     "stops further API calls after authentication is rejected and allows an explicit reconnect",

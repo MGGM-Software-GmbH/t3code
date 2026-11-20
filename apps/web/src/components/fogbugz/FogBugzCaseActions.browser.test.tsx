@@ -240,7 +240,7 @@ it("shows case metadata and acknowledges reactivated threads on wide and narrow 
   );
 });
 
-it("links, opens and unlinks a case from thread details on wide and narrow screens", async () => {
+it("links, opens and unlinks a case without a project mapping on wide and narrow screens", async () => {
   const thread = threadWithHistory("case-details-actions", 1);
   let linked: typeof FogBugzThreadLink.Type | null = null;
   const opened: Array<PreviewOpenInput["url"]> = [];
@@ -256,13 +256,7 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
           personName: "Test User",
           authenticated: true,
         },
-        projects: [
-          {
-            projectId: ProjectId.make("project-render"),
-            fogbugzProjectId: 12,
-            fogbugzProjectGroupId: null,
-          },
-        ],
+        projects: [],
       }),
     [WS_METHODS.fogbugzThread]: (input: { threadId: ThreadId }) =>
       Effect.succeed(input.threadId === thread.id ? linked : null),
@@ -339,7 +333,8 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
   expect(opened).toEqual([]);
   useRightPanelStore.getState().toggleVisibility(threadRef);
   await userEvent.click(page.getByRole("button", { name: "Add panel surface" }));
-  await expect.element(page.getByRole("menuitem", { name: /Fogbugz-Cases/ })).toBeEnabled();
+  await expect.element(page.getByRole("menuitem", { name: /Fogbugz-Cases/ })).toBeDisabled();
+  await expect.element(page.getByRole("menuitem", { name: /FogBugz-Case-Git/ })).toBeEnabled();
   await userEvent.keyboard("{Escape}");
   await userEvent.click(page.getByRole("button", { name: "Toggle thread details panel" }));
   await expect

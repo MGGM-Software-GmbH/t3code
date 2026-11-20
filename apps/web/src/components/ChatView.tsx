@@ -1156,9 +1156,14 @@ export default function ChatView(props: ChatViewProps) {
         })
       : null,
   );
+  const hasLinkedFogBugzCase = fogbugzThread.data !== null;
   const fogbugzCasesAvailable =
-    fogbugzThread.data !== null &&
+    hasLinkedFogBugzCase &&
     fogbugzStatus.data?.projects.some((link) => link.projectId === activeProject?.id) === true;
+  const fogbugzCaseGitAvailable =
+    hasLinkedFogBugzCase &&
+    canWriteSourceControl &&
+    fogbugzStatus.data?.connection?.capabilities?.caseGit !== false;
   const activeProjectSettings = resolveProjectSettings(
     settings,
     activeProject?.id ?? null,
@@ -4105,18 +4110,10 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequests={addPullRequestsSurfaceStable}
           onAddFogBugzCases={addFogBugzCasesSurfaceStable}
           onAddFogBugzCaseGit={() => {
-            if (
-              activeThreadRef &&
-              fogbugzCasesAvailable &&
-              fogbugzStatus.data?.connection?.capabilities?.caseGit !== false
-            )
+            if (activeThreadRef && fogbugzCaseGitAvailable)
               useRightPanelStore.getState().open(activeThreadRef, "fogbugz-case-git");
           }}
-          fogbugzCaseGitAvailable={
-            fogbugzCasesAvailable &&
-            canWriteSourceControl &&
-            fogbugzStatus.data?.connection?.capabilities?.caseGit !== false
-          }
+          fogbugzCaseGitAvailable={fogbugzCaseGitAvailable}
           onAddDevice={addDeviceSurfaceStable}
           onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
           browserAvailable={canOperatePreview && browserAvailable}
