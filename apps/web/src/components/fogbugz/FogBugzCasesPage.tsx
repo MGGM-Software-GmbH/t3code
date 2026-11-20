@@ -357,7 +357,7 @@ export function FogBugzCases({
               ),
             );
             const caseDate = item.notifiedAt ?? item.updatedAt;
-            const dateLabel = item.notifiedAt ? "Your latest notification" : "Last modified";
+            const dateLabel = item.notifiedAt ? "Notified" : "Last modified";
             const DateIcon = item.notifiedAt ? BellIcon : HistoryIcon;
             const actionItems = (target?: ProjectId) =>
               fogbugzCaseActions.map(([action, label]) => (
@@ -418,12 +418,8 @@ export function FogBugzCases({
                     </span>
                     {caseDate && (
                       <span className="inline-flex max-w-full items-center gap-1">
-                        <Tooltip>
-                          <TooltipTrigger render={<span tabIndex={0} aria-label={dateLabel} />}>
-                            <DateIcon aria-hidden className="size-3.5 shrink-0" />
-                          </TooltipTrigger>
-                          <TooltipPopup>{dateLabel}</TooltipPopup>
-                        </Tooltip>
+                        <DateIcon aria-hidden className="size-3.5 shrink-0" />
+                        <span>{dateLabel}</span>
                         <time dateTime={caseDate}>
                           {formatGermanTimestamp(caseDate, { includeWeekday: false })}
                         </time>
