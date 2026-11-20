@@ -656,7 +656,7 @@ export const layer = Layer.effect(
         ]
           .filter(Boolean)
           .join(" ");
-        // FogBugz begrenzt jede Suche vor der gemeinsamen Sortierung nach dem angezeigten Datum.
+        // FogBugz limits each search before the combined sort by the displayed date.
         const cases = yield* call((api, token) =>
           /^\d+$/.test(input.query.trim())
             ? api.cases(token, input.query.trim())
