@@ -1,3 +1,4 @@
+import { useGT, T, Var } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   FogBugzCaseGitCheckout,
@@ -7,6 +8,9 @@ import type {
 } from "@t3tools/contracts";
 import { FogBugzError } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+
 import * as Schema from "effect/Schema";
 import { GitBranch, GitCommitHorizontal, RotateCcw, RefreshCw } from "lucide-react";
 import {
@@ -35,6 +39,14 @@ import { Input } from "../ui/input";
 import { attachmentEnvironment } from "~/state/attachments";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { readPreparedConnection } from "~/state/session";
+
+class FallDateiUploadFehler extends Schema.TaggedError<FallDateiUploadFehler>()(
+  "FallDateiUploadFehler",
+  {
+    message: Schema.String,
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
+) {}
 
 const isFogBugzError = Schema.is(FogBugzError);
 
@@ -71,32 +83,35 @@ export function FogBugzCaseGitPanel(props: Props) {
   if (!permission)
     return (
       <p className="p-4 text-sm text-muted-foreground">
-        Source control permission is required to prepare case files.
+        <T>Source control permission is required to prepare case files.</T>
       </p>
     );
   if (link.error)
     return (
       <div className="space-y-3 p-4 text-sm">
         <p role="alert">{link.error}</p>
-        <Button onClick={link.refresh}>Retry</Button>
+        <Button onClick={link.refresh}>
+          <T>Retry</T>
+        </Button>
       </div>
     );
   if (!link.isSuccess)
     return (
       <p role="status" className="p-4 text-sm text-muted-foreground">
-        Loading case…
+        <T>Loading case…</T>
       </p>
     );
   if (!link.data)
     return (
       <p className="p-4 text-sm text-muted-foreground">
-        Link this thread to a FogBugz case to open its Git files.
+        <T>Link this thread to a FogBugz case to open its Git files.</T>
       </p>
     );
   return <CaseGitFiles key={`${environmentId}:${threadId}:${link.data.caseId}`} {...props} />;
 }
 
 function CaseGitFiles(props: Props) {
+  const uebersetzen = useGT();
   const { environmentId, threadId } = props.threadRef;
   const prepare = useAtomCommand(fogbugzEnvironment.ensureCaseGit, { reportFailure: false });
   const mutate = useAtomCommand(fogbugzEnvironment.mutateCaseFiles, { reportFailure: false });
@@ -143,7 +158,9 @@ function CaseGitFiles(props: Props) {
         return true;
       },
       (failure) => {
-        setMutationError(failure instanceof Error ? failure.message : "Could not update case Git.");
+        setMutationError(
+          failure instanceof Error ? failure.message : uebersetzen("Could not update case Git."),
+        );
         return false;
       },
       () => setMutating(false),
@@ -175,7 +192,7 @@ function CaseGitFiles(props: Props) {
       },
       (failure) => {
         setMutationError(
-          failure instanceof Error ? failure.message : "Could not change case files.",
+          failure instanceof Error ? failure.message : uebersetzen("Could not change case files."),
         );
       },
       () => setMutating(false),
@@ -183,7 +200,9 @@ function CaseGitFiles(props: Props) {
   }
   async function upload(files: File[], folder: string, containsDirectories = false) {
     if (containsDirectories) {
-      setMutationError("Drop individual files. Create folders in the case file tree first.");
+      setMutationError(
+        uebersetzen("Drop individual files. Create folders in the case file tree first."),
+      );
       return;
     }
     if (mutating || !files.length) return;
@@ -199,40 +218,49 @@ function CaseGitFiles(props: Props) {
             attachments.push({ path, attachmentId: null });
             continue;
           }
-          const result = await runAttachmentUploadCycle({
-            registry: appAtomRegistry,
-            createUploadUrl: attachmentEnvironment.createUploadUrl,
-            remove: attachmentEnvironment.remove,
-            environmentId,
-            onMinted: (attachmentId) => {
-              pendingIds.push(attachmentId);
-              return "continue";
-            },
-            upload: {
-              type: "file",
-              name: file.name,
-              mimeType: file.type || "application/octet-stream",
-              sizeBytes: file.size,
-            },
-            resolveUploadUrl: (url) => {
-              const connection = readPreparedConnection(environmentId);
-              return connection ? resolveAssetUrl(connection.httpBaseUrl, url) : null;
-            },
-            transport: (url) => {
-              const controller = new AbortController();
-              return {
-                abort: () => controller.abort(),
-                done: fetch(url, {
-                  method: "POST",
-                  body: file,
-                  headers: { "Content-Type": file.type || "application/octet-stream" },
-                  signal: controller.signal,
-                }).then((response) => {
-                  if (!response.ok) throw new Error(`Upload rejected (${response.status})`);
-                }),
-              };
-            },
-          });
+          const result = await Effect.runPromise(
+            runAttachmentUploadCycle({
+              registry: appAtomRegistry,
+              createUploadUrl: attachmentEnvironment.createUploadUrl,
+              remove: attachmentEnvironment.remove,
+              environmentId,
+              upload: {
+                type: "file",
+                name: file.name,
+                mimeType: file.type || "application/octet-stream",
+                sizeBytes: file.size,
+              },
+              resolveUploadUrl: (url) => {
+                const connection = readPreparedConnection(environmentId);
+                return connection ? resolveAssetUrl(connection.httpBaseUrl, url) : null;
+              },
+              transport: Effect.fn("FogBugzCaseGitPanel.upload")(function* (url: string) {
+                const bytes = yield* Effect.tryPromise({
+                  try: () => file.arrayBuffer(),
+                  catch: (error) =>
+                    new FallDateiUploadFehler({
+                      message: uebersetzen("Could not read the case file"),
+                      cause: error,
+                    }),
+                });
+                const response = yield* HttpClient.execute(
+                  HttpClientRequest.post(url).pipe(
+                    HttpClientRequest.bodyUint8Array(new Uint8Array(bytes)),
+                    HttpClientRequest.setHeader(
+                      "Content-Type",
+                      file.type || "application/octet-stream",
+                    ),
+                  ),
+                );
+                if (response.status < 200 || response.status >= 300) {
+                  return yield* new FallDateiUploadFehler({
+                    message: uebersetzen("Upload rejected ({status})", { status: response.status }),
+                  });
+                }
+              }, Effect.provide(FetchHttpClient.layer)),
+            }),
+          );
+          if (result.attachmentId !== null) pendingIds.push(result.attachmentId);
           if (result.status !== "uploaded") throw new Error("Could not upload case files.");
           attachments.push({
             path,
@@ -243,7 +271,7 @@ function CaseGitFiles(props: Props) {
       },
       (failure) => {
         setMutationError(
-          failure instanceof Error ? failure.message : "Could not upload case files.",
+          failure instanceof Error ? failure.message : uebersetzen("Could not upload case files."),
         );
       },
       () => {
@@ -286,13 +314,15 @@ function CaseGitFiles(props: Props) {
     return (
       <div className="space-y-3 p-4 text-sm">
         <p role={error.unavailable ? "status" : "alert"}>{error.message}</p>
-        <Button onClick={() => void load()}>Retry</Button>
+        <Button onClick={() => void load()}>
+          <T>Retry</T>
+        </Button>
       </div>
     );
   if (!checkout)
     return (
       <p role="status" className="p-4 text-sm text-muted-foreground">
-        Preparing case Git checkout…
+        <T>Preparing case Git checkout…</T>
       </p>
     );
   return (
@@ -324,7 +354,7 @@ function CaseGitFiles(props: Props) {
       )}
       {mutating && (
         <p role="status" className="border-b px-4 py-2 text-sm">
-          Updating case files…
+          <T>Updating case files…</T>
         </p>
       )}
       {checkout.syncIssue && (
@@ -349,7 +379,7 @@ function CaseGitFiles(props: Props) {
                           <Button
                             size="icon-xs"
                             variant="ghost"
-                            aria-label="Case Git actions"
+                            aria-label={uebersetzen("Case Git actions")}
                             disabled={!gitPermission || mutating || pending}
                           />
                         }
@@ -360,8 +390,8 @@ function CaseGitFiles(props: Props) {
                   </TooltipTrigger>
                   <TooltipPopup>
                     {pending
-                      ? "Save or discard the open file before using Git actions"
-                      : "Case Git actions"}
+                      ? uebersetzen("Save or discard the open file before using Git actions")
+                      : uebersetzen("Case Git actions")}
                   </TooltipPopup>
                 </Tooltip>
                 <MenuPopup>
@@ -369,19 +399,25 @@ function CaseGitFiles(props: Props) {
                     disabled={!checkout.canWrite}
                     onClick={() => void openGitDialog("commit")}
                   >
-                    <GitCommitHorizontal />
-                    Commit…
+                    <T>
+                      <GitCommitHorizontal />
+                      Commit…
+                    </T>
                   </MenuItem>
                   <MenuItem
                     disabled={!checkout.canWrite}
                     onClick={() => void openGitDialog("revert")}
                   >
-                    <RotateCcw />
-                    Revert…
+                    <T>
+                      <RotateCcw />
+                      Revert…
+                    </T>
                   </MenuItem>
                   <MenuItem onClick={() => void runGit({ type: "status" })}>
-                    <RefreshCw />
-                    Update
+                    <T>
+                      <RefreshCw />
+                      Update
+                    </T>
                   </MenuItem>
                 </MenuPopup>
               </Menu>
@@ -429,7 +465,9 @@ function CaseGitFiles(props: Props) {
         <DialogPopup>
           <DialogHeader>
             <DialogTitle>
-              {gitDialog === "commit" ? "Commit case files" : "Revert case files"}
+              {gitDialog === "commit"
+                ? uebersetzen("Commit case files")
+                : uebersetzen("Revert case files")}
             </DialogTitle>
           </DialogHeader>
           <DialogPanel>
@@ -440,8 +478,10 @@ function CaseGitFiles(props: Props) {
             )}
             <p className="text-sm">
               {gitDialog === "commit"
-                ? "Commit all local file changes and publish case commits to FogBugz."
-                : "Discard all uncommitted changes in this case checkout, including new files. Existing commits and ignored files are kept."}
+                ? uebersetzen("Commit all local file changes and publish case commits to FogBugz.")
+                : uebersetzen(
+                    "Discard all uncommitted changes in this case checkout, including new files. Existing commits and ignored files are kept.",
+                  )}
             </p>
             <p className="mt-2 break-all text-xs text-muted-foreground">{checkout.cwd}</p>
             <ul className="my-3 max-h-48 overflow-auto text-sm">
@@ -452,12 +492,14 @@ function CaseGitFiles(props: Props) {
               ))}
             </ul>
             {gitState?.paths.length === 0 && (
-              <p className="my-3 text-sm text-muted-foreground">No uncommitted changes.</p>
+              <p className="my-3 text-sm text-muted-foreground">
+                <T>No uncommitted changes.</T>
+              </p>
             )}
             {gitDialog === "commit" && (
               <>
                 <label htmlFor="case-commit-message" className="text-sm">
-                  Commit message
+                  <T>Commit message</T>
                 </label>
                 <Input
                   id="case-commit-message"
@@ -470,7 +512,7 @@ function CaseGitFiles(props: Props) {
           </DialogPanel>
           <DialogFooter>
             <Button variant="outline" disabled={mutating} onClick={() => setGitDialog(null)}>
-              Cancel
+              <T>Cancel</T>
             </Button>
             <Button
               variant={gitDialog === "revert" ? "destructive" : "default"}
@@ -492,7 +534,9 @@ function CaseGitFiles(props: Props) {
                   );
               }}
             >
-              {gitDialog === "commit" ? "Commit and publish" : "Discard changes"}
+              {gitDialog === "commit"
+                ? uebersetzen("Commit and publish")
+                : uebersetzen("Discard changes")}
             </Button>
           </DialogFooter>
         </DialogPopup>
@@ -507,10 +551,10 @@ function CaseGitFiles(props: Props) {
           <DialogHeader>
             <DialogTitle>
               {dialog?.type === "delete"
-                ? "Delete case files"
+                ? uebersetzen("Delete case files")
                 : dialog?.type === "create-directory"
-                  ? "New folder"
-                  : "New file"}
+                  ? uebersetzen("New folder")
+                  : uebersetzen("New file")}
             </DialogTitle>
           </DialogHeader>
           <DialogPanel>
@@ -521,13 +565,20 @@ function CaseGitFiles(props: Props) {
             )}
             {dialog?.type === "delete" ? (
               <p className="text-sm">
-                Delete “<span className="break-all">{dialog.path}</span>” and any files inside it
-                from this checkout?
+                <T>
+                  Delete “
+                  <span className="break-all">
+                    <Var>{dialog.path}</Var>
+                  </span>
+                  ” and any files inside it from this checkout?
+                </T>
               </p>
             ) : (
               <>
                 <label htmlFor="case-file-name" className="text-sm">
-                  Name in {dialog?.path || "case root"}
+                  <T>
+                    Name in <Var>{dialog?.path || uebersetzen("case root")}</Var>
+                  </T>
                 </label>
                 <Input
                   id="case-file-name"
@@ -547,7 +598,7 @@ function CaseGitFiles(props: Props) {
           </DialogPanel>
           <DialogFooter>
             <Button variant="outline" disabled={mutating} onClick={() => setDialog(null)}>
-              Cancel
+              <T>Cancel</T>
             </Button>
             <Button
               variant={dialog?.type === "delete" ? "destructive" : "default"}
@@ -565,7 +616,7 @@ function CaseGitFiles(props: Props) {
                   });
               }}
             >
-              {dialog?.type === "delete" ? "Delete" : "Create"}
+              {dialog?.type === "delete" ? "Delete" : uebersetzen("Create")}
             </Button>
           </DialogFooter>
         </DialogPopup>

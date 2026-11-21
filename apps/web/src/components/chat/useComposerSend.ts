@@ -16,7 +16,7 @@ async function refreshReviewCommentsForSend(
   try {
     return await refreshFileReviewComments(comments, readFile);
   } catch (error) {
-    onError(error instanceof Error ? error.message : "Could not refresh review comments.");
+    onError(error instanceof Error ? error.message : m(msg("Could not refresh review comments.")));
     return null;
   } finally {
     pending.current = false;

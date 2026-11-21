@@ -520,6 +520,7 @@ it("keeps Ready pending when refreshed detail becomes mergeable before the actio
       number={1}
       status={null}
       project={repositoryProject}
+      threadProject={null}
       label="Test PR"
       onOpen={vi.fn()}
     />

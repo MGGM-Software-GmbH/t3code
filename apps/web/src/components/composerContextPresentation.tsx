@@ -362,6 +362,7 @@ function previewAnnotationTooltip(
 }
 
 function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentContext }) {
+  const uebersetzen = useGT();
   const messages = useMessages();
   const actions = use(ComposerContextActionsContext);
   return (
@@ -375,8 +376,10 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
         {comment.sourceStatus === "removed" || comment.sourceStatus === "unresolved" ? (
           <p className="text-xs text-muted-foreground">
             {comment.sourceStatus === "removed"
-              ? "Source removed. This comment retains the last known snapshot."
-              : "Source changed. This comment cannot be assigned to the current lines."}
+              ? uebersetzen("Source removed. This comment retains the last known snapshot.")
+              : uebersetzen(
+                  "Source changed. This comment cannot be assigned to the current lines.",
+                )}
           </p>
         ) : null}
       </div>

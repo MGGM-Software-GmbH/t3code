@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { isProviderSkillUserInvocable } from "@t3tools/client-runtime/providerSkills";
 import type { ServerProviderSkill } from "@t3tools/contracts";
 import { assistantCitationLabel } from "@t3tools/shared/assistantCitations";
@@ -55,6 +56,14 @@ function resolvedContextRecord(
   return entry;
 }
 
+function* segmentiereMitPosition(prompt: string) {
+  let offset = 0;
+  for (const segment of splitPromptIntoComposerSegments(prompt)) {
+    yield { key: offset, segment };
+    offset += segment.type === "text" ? segment.text.length : segment.source.length;
+  }
+}
+
 /**
  * The draft as the editor's chips, drawn inert: the collapsed row is a single button that
  * expands the composer, so these chips carry no popovers, links or focus stops.
@@ -65,10 +74,8 @@ export function CollapsedComposerPromptPreview(props: {
   contextRecords: ComposerDraftContextRecords;
   theme: Theme;
 }) {
-  let offset = 0;
-  return splitPromptIntoComposerSegments(props.prompt).map((segment) => {
-    const key = offset;
-    offset += segment.type === "text" ? segment.text.length : segment.source.length;
+  const uebersetzen = useGT();
+  return [...segmentiereMitPosition(props.prompt)].map(({ key, segment }) => {
     switch (segment.type) {
       case "text":
         return segment.text;
@@ -79,7 +86,9 @@ export function CollapsedComposerPromptPreview(props: {
         return (
           <ContextChip key={key} kind="neutral">
             <HashIcon aria-hidden="true" />
-            <ContextChipLabel>{`FogBugz #${segment.caseId}`}</ContextChipLabel>
+            <ContextChipLabel>
+              {uebersetzen("FogBugz #{wert1}", { wert1: segment.caseId })}
+            </ContextChipLabel>
           </ContextChip>
         );
       case "citation":

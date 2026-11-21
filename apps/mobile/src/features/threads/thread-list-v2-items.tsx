@@ -801,6 +801,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly searchQuery?: string;
   readonly simultaneousSwipeGesture?: ComponentProps<typeof ThreadSwipeable>["simultaneousWith"];
 }) {
+  const uebersetzen = useGT();
   const { width: windowWidth, fontScale } = useWindowDimensions();
   const titleTypography = useScaledTextRole("body");
   const metadataTypography = useScaledTextRole("label");
@@ -929,9 +930,16 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const rowAccessibilityActions = useMemo(
     () => [
       ...(prBadgeLabel ? [{ name: "openPullRequests", label: prBadgeLabel }] : []),
-      ...(showsWoke ? [{ name: "dismissWoke", label: `Dismiss ${wakeLabel} notification` }] : []),
+      ...(showsWoke
+        ? [
+            {
+              name: "dismissWoke",
+              label: uebersetzen("Dismiss {wert1} notification", { wert1: wakeLabel }),
+            },
+          ]
+        : []),
     ],
-    [prBadgeLabel, showsWoke, wakeLabel],
+    [prBadgeLabel, showsWoke, wakeLabel, uebersetzen],
   );
 
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
@@ -1422,7 +1430,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             <Pressable
               className="-m-2.5 flex-row items-center gap-1 p-2.5"
               accessibilityRole="button"
-              accessibilityLabel={`Dismiss ${wakeLabel} notification`}
+              accessibilityLabel={uebersetzen("Dismiss {wert1} notification", { wert1: wakeLabel })}
               onPress={handleAcknowledgeWoke}
               onLongPress={() => undefined}
               style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}

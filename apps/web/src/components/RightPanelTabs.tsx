@@ -355,6 +355,7 @@ export function RightPanelEmptyState(props: {
   sideChatAvailable: boolean;
   sideChatDisabledReason: string | null;
 }) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const messages = useMessages();
   const [highlight, setHighlight] = useState(-1);
@@ -420,12 +421,13 @@ export function RightPanelEmptyState(props: {
     ...(props.onAddFogBugzCaseGit
       ? [
           {
-            label: "FogBugz-Case-Git",
+            label: uebersetzen("FogBugz-Case-Git"),
             icon: FolderGit2,
             shortcut: "G",
             available: props.fogbugzCaseGitAvailable === true,
-            disabledReason:
+            disabledReason: uebersetzen(
               "Link this thread to a FogBugz case and allow source control access to open its Git files.",
+            ),
             onClick: props.onAddFogBugzCaseGit,
           },
         ]
@@ -433,12 +435,13 @@ export function RightPanelEmptyState(props: {
     ...(props.onAddFogBugzCases
       ? [
           {
-            label: "Fogbugz-Cases",
+            label: uebersetzen("Fogbugz-Cases"),
             icon: Hash,
             shortcut: "C",
             available: props.fogbugzCasesAvailable === true,
-            disabledReason:
+            disabledReason: uebersetzen(
               "Browsing cases requires a saved thread in a project with a FogBugz mapping.",
+            ),
             onClick: props.onAddFogBugzCases,
           },
         ]
@@ -647,9 +650,9 @@ function surfaceTitle(
       // A git host numbers its issues; a tracker with keys of its own, such as Linear, names them.
       return /^\d+$/.test(surface.key) ? `#${surface.key}` : surface.key;
     case "fogbugz-cases":
-      return "Fogbugz-Cases";
+      return resolve(msg("Fogbugz-Cases"));
     case "fogbugz-case-git":
-      return "FogBugz-Case-Git";
+      return resolve(msg("FogBugz-Case-Git"));
     case "device":
       return surface.title ?? surface.target?.name ?? resolve(msg("Device"));
     case "side-chat":
@@ -1143,6 +1146,7 @@ function RightPanelTab(
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const messages = useMessages();
   const focusedSurface = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
@@ -1272,12 +1276,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     ...(props.onAddFogBugzCaseGit
       ? [
           {
-            label: "FogBugz-Case-Git",
+            label: uebersetzen("FogBugz-Case-Git"),
             icon: FolderGit2,
             shortcut: "G",
             available: props.fogbugzCaseGitAvailable === true,
-            disabledReason:
+            disabledReason: uebersetzen(
               "Link this thread to a FogBugz case and allow source control access to open its Git files.",
+            ),
             onClick: props.onAddFogBugzCaseGit,
           },
         ]
@@ -1285,12 +1290,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     ...(props.onAddFogBugzCases
       ? [
           {
-            label: "Fogbugz-Cases",
+            label: uebersetzen("Fogbugz-Cases"),
             icon: Hash,
             shortcut: "C",
             available: props.fogbugzCasesAvailable === true,
-            disabledReason:
+            disabledReason: uebersetzen(
               "Browsing cases requires a saved thread in a project with a FogBugz mapping.",
+            ),
             onClick: props.onAddFogBugzCases,
           },
         ]

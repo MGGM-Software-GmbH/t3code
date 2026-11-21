@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ArrowRightIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, SettingsIcon, ChartNoAxesColumnIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { T, useGT } from "gt-react";
 import { memo } from "react";
@@ -35,6 +35,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { readIssueListPreferences } from "../issue/issueListPreferences";
+import { readUsagePagePreferences } from "../usage/usagePagePreferences";
 import { IssueGlyph } from "../issue/issuePresentation";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
@@ -229,6 +230,7 @@ function SidebarUtilityItem({
 }
 
 const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+  const uebersetzen = useGT();
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const gt = useGT();
@@ -257,6 +259,10 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const handleSettingsClick = () => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
+  };
+  const handleUsageClick = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/usage", search: readUsagePagePreferences() });
   };
 
   const handleBackClick = () => {
@@ -298,7 +304,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           ) : null}
           <SidebarUtilityItem
             icon={<span aria-hidden>#</span>}
-            label="Fogbugz Cases"
+            label={uebersetzen("Fogbugz Cases")}
             onClick={() => {
               closeMobileSidebar();
               void navigate({ to: "/cases" });

@@ -1010,6 +1010,7 @@ function readRouteThreadKey(router: AnyRouter): string | null {
 }
 
 export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReveal }) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const messages = useMessages();
   const {
@@ -3752,7 +3753,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   (project) => project.projectKey === projectKey,
                                 ) ?? null
                               }
-                              label={group?.displayName ?? "Unknown project"}
+                              label={group?.displayName ?? uebersetzen("Unknown project")}
                               count={group?.threads.length ?? 0}
                               latestActivityAt={group?.latestActivityAt ?? null}
                               expanded={group?.expanded ?? false}
@@ -3767,7 +3768,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="idle-recent-header"
                                 marker="idle-recent-header"
-                                label="Idle 24h"
+                                label={uebersetzen("Idle 24h")}
                                 count={idle.recent.length}
                                 toggle={{
                                   expanded: idleRecentExpanded,
@@ -3781,7 +3782,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="idle-projects-header"
                                 marker="idle-projects-header"
-                                label="Idle Projects"
+                                label={uebersetzen("Idle Projects")}
                                 count={idle.projectGroups.reduce(
                                   (count, group) => count + group.threads.length,
                                   0,
@@ -3872,9 +3873,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="settled-shelf-header"
                                 marker="settled-header"
-                                className={cn(
-                                  snoozedThreads.length === 0 && "mt-auto",
-                                )}
+                                className={cn(snoozedThreads.length === 0 && "mt-auto")}
                                 label={gt("Settled", { $context: "sidebar section" })}
                                 count={settledCount}
                                 dragging={from !== null}

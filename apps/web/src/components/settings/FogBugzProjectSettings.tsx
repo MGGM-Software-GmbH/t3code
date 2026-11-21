@@ -1,3 +1,4 @@
+import { useGT, T, Var } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
@@ -18,6 +19,7 @@ export function FogBugzProjectSettings({
   projectId: ProjectId;
   label?: string;
 }) {
+  const uebersetzen = useGT();
   const status = useEnvironmentQuery(fogbugzEnvironment.status({ environmentId, input: {} }));
   const connected = status.data?.connection?.authenticated;
   const projects = useEnvironmentQuery(
@@ -50,7 +52,7 @@ export function FogBugzProjectSettings({
   return (
     <>
       <SettingsRow
-        title="FogBugz project or group"
+        title={uebersetzen("FogBugz project or group")}
         description={label}
         status={
           failure ? (
@@ -90,22 +92,34 @@ export function FogBugzProjectSettings({
               }}
             >
               <SelectTrigger
-                aria-label={label ? `FogBugz project for ${label}` : "FogBugz project"}
+                aria-label={
+                  label
+                    ? uebersetzen("FogBugz project for {wert1}", { wert1: label })
+                    : uebersetzen("FogBugz project")
+                }
               >
                 <SelectValue>
                   {projects.isPending
-                    ? "Loading projects…"
+                    ? uebersetzen("Loading projects…")
                     : selected?.fogbugzProjectGroupId
-                      ? `Group: ${groups.find((group) => group.id === selected.fogbugzProjectGroupId)?.name ?? selected.fogbugzProjectGroupId}`
+                      ? uebersetzen("Group: {wert1}", {
+                          wert1:
+                            groups.find((group) => group.id === selected.fogbugzProjectGroupId)
+                              ?.name ?? selected.fogbugzProjectGroupId,
+                        })
                       : (projects.data?.find((item) => item.id === selected?.fogbugzProjectId)
-                          ?.name ?? "Not linked")}
+                          ?.name ?? uebersetzen("Not linked"))}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup>
-                <SelectItem value="none">Not linked</SelectItem>
+                <SelectItem value="none">
+                  <T>Not linked</T>
+                </SelectItem>
                 {groups.map((group) => (
                   <SelectItem key={`group:${group.id}`} value={`group:${group.id}`}>
-                    Group: {group.name}
+                    <T>
+                      Group: <Var>{group.name}</Var>
+                    </T>
                   </SelectItem>
                 ))}
                 {projects.data?.map((item) => (
@@ -120,21 +134,21 @@ export function FogBugzProjectSettings({
               variant="outline"
               render={<Link to="/settings/mggm" search={{ machine: environmentId }} />}
             >
-              Set up connection
+              <T>Set up connection</T>
             </Button>
           )
         }
       />
       {connected && directProjectId != null && (
         <SettingsRow
-          title="FogBugz area"
+          title={uebersetzen("FogBugz area")}
           description={label}
           status={
             areas.error ? (
               <span role="alert" className="text-destructive">
                 {areas.error}{" "}
                 <Button variant="link" size="sm" onClick={() => areas.refresh()}>
-                  Retry
+                  <T>Retry</T>
                 </Button>
               </span>
             ) : undefined
@@ -163,18 +177,26 @@ export function FogBugzProjectSettings({
                 if (result._tag === "Success") status.refresh();
               }}
             >
-              <SelectTrigger aria-label={label ? `FogBugz area for ${label}` : "FogBugz area"}>
+              <SelectTrigger
+                aria-label={
+                  label
+                    ? uebersetzen("FogBugz area for {wert1}", { wert1: label })
+                    : uebersetzen("FogBugz area")
+                }
+              >
                 <SelectValue>
                   {areas.isPending
-                    ? "Loading areas…"
+                    ? uebersetzen("Loading areas…")
                     : selected?.fogbugzAreaId == null
-                      ? "All areas"
+                      ? uebersetzen("All areas")
                       : (areas.data?.find((area) => area.id === selected.fogbugzAreaId)?.name ??
-                        `Area ${selected.fogbugzAreaId}`)}
+                        uebersetzen("Area {wert1}", { wert1: selected.fogbugzAreaId }))}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup>
-                <SelectItem value="all">All areas</SelectItem>
+                <SelectItem value="all">
+                  <T>All areas</T>
+                </SelectItem>
                 {areas.data?.map((area) => (
                   <SelectItem key={area.id} value={String(area.id)}>
                     {area.name}

@@ -1,3 +1,4 @@
+import { T, Var } from "gt-react";
 import { useNativeFileDrag } from "../useNativeFileDrag";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { useAtomValue } from "@effect/atom-react";
@@ -597,7 +598,11 @@ function ComposerFogBugzReferenceNodeView({ node }: NodeViewProps) {
         kind="citation"
         render={<a href={node.attrs.url as string} target="_blank" rel="noopener noreferrer" />}
       >
-        <ContextChipLabel>FogBugz #{node.attrs.caseId as number}</ContextChipLabel>
+        <ContextChipLabel>
+          <T>
+            FogBugz #<Var>{node.attrs.caseId as number}</Var>
+          </T>
+        </ContextChipLabel>
       </ContextChip>
     </NodeViewWrapper>
   );

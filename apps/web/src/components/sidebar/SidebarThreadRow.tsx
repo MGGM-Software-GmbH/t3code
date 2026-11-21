@@ -84,8 +84,7 @@ import { fogbugzEnvironment } from "../../state/fogbugz";
 import { FogBugzCategoryIcon } from "../fogbugz/FogBugzCategoryIcon";
 import { FogBugzThreadMetadata } from "../fogbugz/FogBugzThreadMetadata";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
-import { formatRelativeTime, parseTimestampDate } from "../../timestampFormat";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { formatRelativeTime } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
@@ -690,6 +689,7 @@ function ThreadRenameInput(props: {
 }
 
 const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const messages = useMessages();
   const {
@@ -1447,7 +1447,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           render={
                             <button
                               type="button"
-                              aria-label={`Dismiss ${wakeLabel} notification`}
+                              aria-label={uebersetzen("Dismiss {wert1} notification", {
+                                wert1: wakeLabel,
+                              })}
                               onClick={handleAcknowledgeWokeClick}
                               className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-warning-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                             >
@@ -1456,7 +1458,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             </button>
                           }
                         />
-                        <TooltipPopup side="top">Dismiss {wakeLabel} notification</TooltipPopup>
+                        <TooltipPopup side="top">
+                          <T>
+                            Dismiss <Var>{wakeLabel}</Var> notification
+                          </T>
+                        </TooltipPopup>
                       </Tooltip>
                     ) : inFolder && topStatus ? (
                       // Folder rows have no status line, so the status takes the time slot.
@@ -1651,7 +1657,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             render={
                               <button
                                 type="button"
-                                aria-label={`Dismiss ${wakeLabel} notification`}
+                                aria-label={uebersetzen("Dismiss {wert1} notification", {
+                                  wert1: wakeLabel,
+                                })}
                                 onClick={handleAcknowledgeWokeClick}
                                 className={cn(
                                   "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -1663,7 +1671,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                               </button>
                             }
                           />
-                          <TooltipPopup side="top">Dismiss {wakeLabel} notification</TooltipPopup>
+                          <TooltipPopup side="top">
+                            <T>
+                              Dismiss <Var>{wakeLabel}</Var> notification
+                            </T>
+                          </TooltipPopup>
                         </Tooltip>
                       ) : (
                         <span

@@ -72,6 +72,7 @@ export function DiffCommentAnnotation({
   focusOnMount = true,
   completionScope = null,
 }: DiffCommentAnnotationProps) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const messages = useMessages();
   const [localDraftText, setLocalDraftText] = useState(text);
@@ -163,7 +164,7 @@ export function DiffCommentAnnotation({
             <Button
               variant="ghost-muted"
               size="icon-xs"
-              aria-label="Edit comment"
+              aria-label={uebersetzen("Edit comment")}
               onClick={() => {
                 setLocalDraftText(text);
                 if (onEditDraftChange) onEditDraftChange(text);
@@ -271,7 +272,9 @@ export function DiffCommentAnnotation({
           disabled={speech?.preparing || pending || (!speech?.blocksSubmission && !trimmedText)}
           onClick={() => submit(speech, submitComment)}
         >
-          {editing ? gt("Save comment") : submitLabel ?? gt("Comment", { $context: "verb, submit button" })}
+          {editing
+            ? gt("Save comment")
+            : (submitLabel ?? gt("Comment", { $context: "verb, submit button" }))}
         </Button>
       </div>
     </div>

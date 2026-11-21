@@ -15,7 +15,6 @@ import {
   DEFAULT_SCHEDULE,
   scheduleDraftForTask,
   scheduleFromDraft,
-  createDraft,
   hasScheduledTaskDraftChanges,
 } from "./scheduledTaskDraft";
 

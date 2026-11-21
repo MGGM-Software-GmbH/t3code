@@ -741,6 +741,7 @@ function TaskForm({
   readonly onSaved: () => void;
   readonly onChangeEnvironment: (target: SettingsTarget) => void;
 }) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const m = useMessages();
   const locale = useLocale();
@@ -861,8 +862,8 @@ function TaskForm({
       config?.environment.capabilities.monthlyWeekdaySchedules !== true
     ) {
       Dialog.alert(
-        "Monthly weekdays are not available here",
-        "Update this environment to schedule a weekday of each month.",
+        uebersetzen("Monthly weekdays are not available here"),
+        uebersetzen("Update this environment to schedule a weekday of each month."),
       );
       return;
     }
@@ -1301,7 +1302,7 @@ function TaskForm({
                 }}
               />
               <SelectRow
-                label="Week of month"
+                label={uebersetzen("Week of month")}
                 value={
                   draft.schedule.weekOfMonth == null
                     ? "Every week"
@@ -1311,14 +1312,16 @@ function TaskForm({
                 actions={[
                   {
                     id: "0",
-                    title: "Every week",
+                    title: uebersetzen("Every week"),
                     state: draft.schedule.weekOfMonth == null ? "on" : undefined,
                   },
                   ...(config?.environment.capabilities.monthlyWeekdaySchedules === true ||
                   draft.schedule.weekOfMonth != null
                     ? ([1, 2, 3, 4, 5, -1] as const).map((week) => ({
                         id: String(week),
-                        title: `${MONTHLY_WEEKDAY_LABELS[week]} of every month`,
+                        title: uebersetzen("{wert1} of every month", {
+                          wert1: MONTHLY_WEEKDAY_LABELS[week],
+                        }),
                         state: draft.schedule.weekOfMonth === week ? ("on" as const) : undefined,
                       }))
                     : []),

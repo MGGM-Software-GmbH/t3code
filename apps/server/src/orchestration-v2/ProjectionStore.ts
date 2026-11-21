@@ -4960,15 +4960,18 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             -- for one long thread; only quota or enabled capacity retries qualify.
             AND t.thread_id IN (
               SELECT failure.thread_id FROM orchestration_v2_projection_turn_items failure
-              -- Spelled as in 099_BackgroundRecoveryIndexes so the partial index serves it.
+              -- Spelled as in 103_BackgroundRecoveryIndexes so the partial index serves it.
               WHERE failure.type = 'error' AND failure.status = 'failed'
-                AND CASE WHEN json_valid(failure.payload_json) THEN (
+                AND CASE WHEN json_valid(failure.payload_json) THEN
                   json_extract(failure.payload_json, '$.failure.class') = 'usage_limit'
-                  OR (
-                    ${booleanInt((options.modelCapacityRetryDelayMinutes ?? 0) > 0)}
-                    AND trim(json_extract(failure.payload_json, '$.failure.message')) = ${MODEL_CAPACITY_ERROR_MESSAGE}
-                  )
-                ) ELSE 0 END
+                  ELSE 0 END
+              UNION ALL
+              SELECT failure.thread_id FROM orchestration_v2_projection_turn_items failure
+              WHERE ${booleanInt((options.modelCapacityRetryDelayMinutes ?? 0) > 0)}
+                AND failure.type = 'error' AND failure.status = 'failed'
+                AND CASE WHEN json_valid(failure.payload_json) THEN
+                  trim(json_extract(failure.payload_json, '$.failure.message')) = ${MODEL_CAPACITY_ERROR_MESSAGE}
+                  ELSE 0 END
             )
             AND t.archived_at IS NULL
             AND json_extract(t.payload_json, '$.settledOverride') IS NOT 'settled'

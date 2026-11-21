@@ -1,3 +1,4 @@
+import { useGT, T, Var } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useState } from "react";
@@ -11,6 +12,7 @@ import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { FogBugzAutomationSettings } from "./FogBugzAutomationSettings";
 
 export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentId }) {
+  const uebersetzen = useGT();
   const status = useEnvironmentQuery(fogbugzEnvironment.status({ environmentId, input: {} }));
   const connection = status.data?.connection;
   const permission = useAtomValue(fogbugzEnvironment.connect.permissionAtom(environmentId));
@@ -52,7 +54,7 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
     if (result._tag === "Success") {
       setBaseUrl(result.value.baseUrl);
       setUsername(result.value.username);
-      setMessage(`Connected as ${result.value.personName}.`);
+      setMessage(uebersetzen("Connected as {wert1}.", { wert1: result.value.personName }));
       status.refresh();
     }
   }
@@ -67,10 +69,10 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
               </p>
             ) : null}
             <SettingsRow
-              title="Base URL"
+              title={uebersetzen("Base URL")}
               control={
                 <Input
-                  aria-label="FogBugz base URL"
+                  aria-label={uebersetzen("FogBugz base URL")}
                   type="url"
                   value={baseUrl ?? connection?.baseUrl ?? ""}
                   placeholder="https://fogbugz.example.com/"
@@ -79,10 +81,10 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
               }
             />
             <SettingsRow
-              title="Account E-Mail"
+              title={uebersetzen("Account E-Mail")}
               control={
                 <Input
-                  aria-label="FogBugz account"
+                  aria-label={uebersetzen("FogBugz account")}
                   autoComplete="username"
                   value={username ?? connection?.username ?? ""}
                   onChange={(event) => setUsername(event.target.value)}
@@ -90,19 +92,27 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
               }
             />
             <SettingsRow
-              title={requiresPassword ? "Password" : "Password (optional)"}
+              title={
+                requiresPassword ? uebersetzen("Password") : uebersetzen("Password (optional)")
+              }
               description={
                 accountChanged
-                  ? "Changing the account clears its project and thread links."
+                  ? uebersetzen("Changing the account clears its project and thread links.")
                   : requiresPassword
-                    ? "Sign in with your existing FogBugz account."
-                    : "Leave empty to keep your current sign-in. Changing the URL keeps your project and thread links."
+                    ? uebersetzen("Sign in with your existing FogBugz account.")
+                    : uebersetzen(
+                        "Leave empty to keep your current sign-in. Changing the URL keeps your project and thread links.",
+                      )
               }
               control={
                 <SecretInput
-                  aria-label="FogBugz password"
+                  aria-label={uebersetzen("FogBugz password")}
                   value={password}
-                  placeholder={requiresPassword ? "Account password" : "Keep current sign-in"}
+                  placeholder={
+                    requiresPassword
+                      ? uebersetzen("Account password")
+                      : uebersetzen("Keep current sign-in")
+                  }
                   onChange={(event) => setPassword(event.target.value)}
                 />
               }
@@ -110,13 +120,15 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
             {hasUnsavedChanges ? (
               <p role="status" className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
                 {requiresPassword && !password
-                  ? "Enter your password to save these connection changes."
-                  : "Unsaved connection changes. Save changes to apply and verify them."}
+                  ? uebersetzen("Enter your password to save these connection changes.")
+                  : uebersetzen(
+                      "Unsaved connection changes. Save changes to apply and verify them.",
+                    )}
               </p>
             ) : null}
             <div className="flex flex-wrap gap-2 px-3 py-3 sm:px-4">
               <Button type="submit" disabled={requiresPassword ? !password : !hasUnsavedChanges}>
-                {connection ? "Save changes" : "Connect"}
+                {connection ? uebersetzen("Save changes") : uebersetzen("Connect")}
               </Button>
               {connection ? (
                 <>
@@ -135,10 +147,14 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
                       );
                       status.refresh();
                       if (result._tag === "Success")
-                        setMessage(`Connection verified: ${result.value.personName}.`);
+                        setMessage(
+                          uebersetzen("Connection verified: {wert1}.", {
+                            wert1: result.value.personName,
+                          }),
+                        );
                     }}
                   >
-                    Test connection
+                    <T>Test connection</T>
                   </Button>
                   <Button
                     variant="outline"
@@ -154,11 +170,13 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
                       );
                       if (result._tag === "Success") {
                         status.refresh();
-                        setMessage("Disconnected. T3 threads and FogBugz cases are preserved.");
+                        setMessage(
+                          uebersetzen("Disconnected. T3 threads and FogBugz cases are preserved."),
+                        );
                       }
                     }}
                   >
-                    Disconnect
+                    <T>Disconnect</T>
                   </Button>
                 </>
               ) : null}
@@ -170,55 +188,67 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
             ) : null}
             {connection && !connection.authenticated ? (
               <p role="alert" className="px-3 py-3 text-sm sm:px-4">
-                Sign in again to reconnect FogBugz.
+                <T>Sign in again to reconnect FogBugz.</T>
               </p>
             ) : null}
             {connection?.authenticated ? (
               <div
                 className="space-y-2 px-3 py-3 text-sm sm:px-4"
                 role="status"
-                aria-label="FogBugz compatibility"
+                aria-label={uebersetzen("FogBugz compatibility")}
               >
                 {status.data?.compatibilityError ? (
                   <p className="text-destructive">
-                    Could not check integration features: {status.data.compatibilityError} Use Test
-                    connection to retry.
+                    <T>
+                      Could not check integration features:{" "}
+                      <Var>{status.data.compatibilityError}</Var> Use Test connection to retry.
+                    </T>
                   </p>
                 ) : !connection.capabilities ? (
                   <p className="text-muted-foreground">
-                    Integration features have not been checked. Use Test connection to check this
-                    FogBugz version.
+                    <T>
+                      Integration features have not been checked. Use Test connection to check this
+                      FogBugz version.
+                    </T>
                   </p>
                 ) : (
                   <>
                     {!connection.capabilities.projectGroups ? (
                       <p>
-                        Project groups are not supported by this FogBugz version. You can link
-                        individual projects. Existing group links are preserved but cannot load
-                        cases until FogBugz is updated.
+                        <T>
+                          Project groups are not supported by this FogBugz version. You can link
+                          individual projects. Existing group links are preserved but cannot load
+                          cases until FogBugz is updated.
+                        </T>
                       </p>
                     ) : null}
                     {!connection.capabilities.browserSession ? (
                       <p>
-                        Automatic browser sign-in is not supported by this FogBugz version. Sign in
-                        directly in the Browser panel.
+                        <T>
+                          Automatic browser sign-in is not supported by this FogBugz version. Sign
+                          in directly in the Browser panel.
+                        </T>
                       </p>
                     ) : null}
                     {!connection.capabilities.caseGit ? (
                       <p>
-                        Case-Git is not supported by this FogBugz version. Threads and cases remain
-                        available; case files and automatic file synchronization require a FogBugz
-                        update.
+                        <T>
+                          Case-Git is not supported by this FogBugz version. Threads and cases
+                          remain available; case files and automatic file synchronization require a
+                          FogBugz update.
+                        </T>
                       </p>
                     ) : null}
                     {Object.values(connection.capabilities).every(Boolean) ? (
                       <p className="text-muted-foreground">
-                        All integration features are supported.
+                        <T>All integration features are supported.</T>
                       </p>
                     ) : (
                       <p className="text-muted-foreground">
-                        Update FogBugz to enable these features, then use Test connection to check
-                        again.
+                        <T>
+                          Update FogBugz to enable these features, then use Test connection to check
+                          again.
+                        </T>
                       </p>
                     )}
                   </>
@@ -228,7 +258,7 @@ export function FogBugzSettings({ environmentId }: { environmentId: EnvironmentI
           </SettingsSection>
         </fieldset>
       </form>
-      <SettingsSection title="FogBugz automation">
+      <SettingsSection title={uebersetzen("FogBugz automation")}>
         <FogBugzAutomationSettings />
       </SettingsSection>
     </>

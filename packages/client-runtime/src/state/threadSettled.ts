@@ -503,6 +503,7 @@ export function resolveThreadWakeNotification(
       lastVisitedAt: thread.lastVisitedAt,
       latestRunCompletedAt: null,
     })
-    ? { at, label: latestIsReactivation ? "Reactivated" : "Woke" }
+    ? // oxlint-disable-next-line t3code/no-untranslated-copy -- Stable status tokens; clients translate them when rendering.
+      { at, label: latestIsReactivation ? "Reactivated" : "Woke" }
     : null;
 }

@@ -71,47 +71,6 @@ export function formatReviewCommentFence(language: string, contents: string): st
   return [`${fence}${language}`, contents.trimEnd(), fence].join("\n");
 }
 
-export function buildFileReviewComment(input: {
-  id: string;
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  text: string;
-  contents: string;
-}): ReviewCommentContext {
-  const startLine = Math.max(1, Math.min(input.startLine, input.endLine));
-  const endLine = Math.max(startLine, Math.max(input.startLine, input.endLine));
-  const selectedLines = input.contents.split("\n").slice(startLine - 1, endLine);
-  return {
-    id: input.id,
-    sectionId: `file:${input.filePath}`,
-    // oxlint-disable-next-line t3code/no-untranslated-copy -- stored in the review comment record sent to the agent
-    sectionTitle: "File comment",
-    filePath: input.filePath,
-    startIndex: startLine - 1,
-    endIndex: endLine - 1,
-    // oxlint-disable-next-line t3code/no-untranslated-copy -- stored in the review comment record sent to the agent
-    rangeLabel: startLine === endLine ? `L${startLine}` : `L${startLine} to L${endLine}`,
-    text: input.text.trim(),
-    diff: selectedLines.join("\n"),
-    fenceLanguage: inferReviewCommentFenceLanguage(input.filePath),
-  };
-}
-
-export function inferReviewCommentFenceLanguage(filePath: string): string {
-  const normalizedPath = filePath.replaceAll("\\", "/");
-  const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1).toLowerCase();
-  const extensionIndex = fileName.lastIndexOf(".");
-  if (extensionIndex > 0 && extensionIndex < fileName.length - 1) {
-    return fileName.slice(extensionIndex + 1);
-  }
-  if (fileName.startsWith(".") && fileName.length > 1) {
-    return fileName.slice(1);
-  }
-  return "text";
-}
-
-=======
 function stripTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value.slice(0, -1) : value;
 }

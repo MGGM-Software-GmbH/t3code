@@ -98,13 +98,25 @@ export function usageLimitRecoveryBannerItem(
       variant: "warning",
       group: "environment",
       icon: <GaugeIcon />,
-      title: props.capacity ? resolve(msg("Model at capacity")) : resolve(msg("Usage limit reached")),
+      title: props.capacity
+        ? resolve(msg("Model at capacity"))
+        : resolve(msg("Usage limit reached")),
       description: props.capacity
         ? props.recovery?.runId === runId && props.recovery.autoResume === false
-          ? "Automatic retry cancelled. Use Play to resume."
+          ? resolve(msg("Automatic retry cancelled. Use Play to resume."))
           : resetAt
-            ? `Retry with the same model ${formatUpcomingTimestamp(resetAt, timestampFormat)}`
-            : "Use Play to retry with the same model"
+            ? resolve(
+                msg("Retry with the same model {wert1}", {
+                  wert1: formatUpcomingTimestamp(
+                    resetAt,
+                    timestampFormat,
+                    undefined,
+                    undefined,
+                    resolve,
+                  ),
+                }),
+              )
+            : resolve(msg("Use Play to retry with the same model"))
         : resetDescription,
       actions: recoveryActions,
     };
@@ -144,6 +156,7 @@ function RecoveryActions({
   onChange,
   capacity,
 }: RecoveryProps) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const [pending, setPending] = useState(false);
 
@@ -203,7 +216,11 @@ function RecoveryActions({
           disabled={pending || (!snoozed && resetPassed)}
           onClick={() => void toggle("snooze")}
         >
-          {pending ? "Saving..." : snoozed ? "Wake now" : "Snooze until reset"}
+          {pending
+            ? uebersetzen("Saving...")
+            : snoozed
+              ? uebersetzen("Wake now")
+              : uebersetzen("Snooze until reset")}
         </InlineButton>
       ) : null}
     </span>

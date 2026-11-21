@@ -1170,27 +1170,8 @@ function makeLocalCommandHarness(input: {
       ),
     ensureThread: fallbackEnsureThread,
   };
-=======
-  const nativeStart = vi.fn(() => Effect.void);
-  const providerSession = {
-    id: providerSessionId,
-    driver: providerThread.driver,
-    providerInstanceId: newInstanceId,
-    status: "ready",
-    cwd: "/tmp/native-account-command",
-    model: null,
-    capabilities: {
-      ...CodexProviderCapabilitiesV2,
-      turns: {
-        ...CodexProviderCapabilitiesV2.turns,
-        ...(input.nativeGoals === undefined ? {} : { supportsNativeGoals: input.nativeGoals }),
-      },
-    },
-    createdAt: now,
-    updatedAt: now,
-    lastError: null,
-  };
   const startTurn = vi.fn((_turn: ProviderAdapter.ProviderAdapterV2TurnInput) => Effect.void);
+  const nativeStart = vi.fn(() => Effect.void);
   const sideChatThread = {
     ...providerThread,
     nativeThreadRef: {

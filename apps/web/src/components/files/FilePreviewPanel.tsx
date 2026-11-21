@@ -110,6 +110,7 @@ import {
   type FileCommentAnnotationGroup,
   type FileCommentLineAnnotation,
   formatFileCommentRange,
+  promptFileCommentEntries,
   nextFileCommentId,
   normalizeFileCommentRange,
 } from "./fileCommentAnnotations";
@@ -869,6 +870,7 @@ function EditableFileSurface({
   onPendingChange,
   onEditorChange,
 }: EditableFileSurfaceProps) {
+  const uebersetzen = useGT();
   const messages = useMessages();
   const syntax = useFileHighlighter(relativePath);
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
@@ -880,6 +882,7 @@ function EditableFileSurface({
     (store) =>
       store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_FILE_REVIEW_COMMENTS,
   );
+  const promptCommentIds = new Set(reviewComments.map((comment) => comment.id));
   const [draft, setDraft] = useState<ReviewCommentContext | null>(null);
   const [draftText, setDraftText] = useState("");
   const previousContentsRef = useRef<{ path: string; contents: string } | null>(null);
@@ -1066,10 +1069,15 @@ function EditableFileSurface({
           .map((comment) => (
             <div key={comment.id} className="max-h-48 overflow-auto border-b border-border">
               <p className="px-3 text-xs text-muted-foreground">
-                {comment.sourceStatus === "removed"
-                  ? "Commented lines were removed."
-                  : "Comment location could not be identified."}{" "}
-                Last known location: {comment.rangeLabel}.
+                <T>
+                  <Var>
+                    {comment.sourceStatus === "removed"
+                      ? uebersetzen("Commented lines were removed.")
+                      : uebersetzen("Comment location could not be identified.")}
+                  </Var>
+                  <Var> </Var>
+                  Last known location: <Var>{comment.rangeLabel}</Var>.
+                </T>
               </p>
               <DiffCommentAnnotation
                 kind="comment"
@@ -1089,7 +1097,9 @@ function EditableFileSurface({
         {draft && draft.sourceStatus !== "current" ? (
           <div>
             <p className="px-3 text-xs text-muted-foreground">
-              Source changed. This comment refers to the selected snapshot, not the current lines.
+              <T>
+                Source changed. This comment refers to the selected snapshot, not the current lines.
+              </T>
             </p>
             <DiffCommentAnnotation
               kind="draft"
@@ -1155,9 +1165,14 @@ function EditableFileSurface({
                       text={entry.kind === "draft" ? draftText : entry.text}
                       {...(entry.kind === "draft" ? { onTextChange: setDraftText } : {})}
                       onEdit={(text) => submitAnnotationEntry(entry.id, text)}
-                      editDraft={reviewComments.find((comment) => comment.id === entry.id)?.editDraft}
+                      editDraft={
+                        reviewComments.find((comment) => comment.id === entry.id)?.editDraft
+                      }
                       {...(entry.kind === "comment"
-                        ? { onEditDraftChange: (text: string | null) => setReviewCommentEditDraft(composerDraftTarget, entry.id, text) }
+                        ? {
+                            onEditDraftChange: (text: string | null) =>
+                              setReviewCommentEditDraft(composerDraftTarget, entry.id, text),
+                          }
                         : {})}
                       onCancel={() => removeAnnotationEntry(entry.id)}
                       onComment={(text) => submitAnnotationEntry(entry.id, text)}

@@ -1465,6 +1465,7 @@ function ScheduledTaskEditorForm({
   readonly onSavingChange: (saving: boolean) => void;
   readonly onClose: () => void;
 }) {
+  const uebersetzen = useGT();
   const messages = useMessages();
   const locale = useLocale();
   const gt = useGT();
@@ -1667,8 +1668,8 @@ function ScheduledTaskEditorForm({
       environment?.serverConfig?.environment.capabilities.monthlyWeekdaySchedules !== true
     ) {
       reportFailure(
-        "Monthly weekdays are not available here",
-        "Update this environment to schedule a weekday of each month.",
+        uebersetzen("Monthly weekdays are not available here"),
+        uebersetzen("Update this environment to schedule a weekday of each month."),
       );
       return;
     }
@@ -2281,7 +2282,7 @@ function ScheduledTaskEditorForm({
               </div>
             ) : draft.scheduleMode === "fixed" ? (
               <div className="flex flex-wrap items-center gap-3">
-                <Field label="Repeat" htmlFor="scheduled-task-month-week">
+                <Field label={uebersetzen("Repeat")} htmlFor="scheduled-task-month-week">
                   <Select
                     value={String(draft.weekOfMonth ?? 0)}
                     onValueChange={(value) =>
@@ -2291,15 +2292,22 @@ function ScheduledTaskEditorForm({
                       }))
                     }
                   >
-                    <SelectTrigger id="scheduled-task-month-week" aria-label="Week of month">
+                    <SelectTrigger
+                      id="scheduled-task-month-week"
+                      aria-label={uebersetzen("Week of month")}
+                    >
                       <SelectValue>
                         {draft.weekOfMonth == null
-                          ? "Every week"
-                          : `${MONTHLY_WEEKDAY_LABELS[draft.weekOfMonth]} of every month`}
+                          ? uebersetzen("Every week")
+                          : uebersetzen("{wert1} of every month", {
+                              wert1: MONTHLY_WEEKDAY_LABELS[draft.weekOfMonth],
+                            })}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectPopup>
-                      <SelectItem value="0">Every week</SelectItem>
+                      <SelectItem value="0">
+                        <T>Every week</T>
+                      </SelectItem>
                       {(environment?.serverConfig?.environment.capabilities
                         .monthlyWeekdaySchedules === true ||
                         draft.weekOfMonth != null) &&
@@ -2312,7 +2320,9 @@ function ScheduledTaskEditorForm({
                           [-1, "Last"],
                         ].map(([value, label]) => (
                           <SelectItem key={value} value={String(value)}>
-                            {label} of every month
+                            <T>
+                              <Var>{label}</Var> of every month
+                            </T>
                           </SelectItem>
                         ))}
                     </SelectPopup>

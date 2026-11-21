@@ -1,3 +1,4 @@
+import { useGT, Var } from "gt-react";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
 import {
@@ -65,6 +66,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   selectableUnavailableInstanceIds?: ReadonlySet<ProviderInstanceId>;
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
 }) {
+  const uebersetzen = useGT();
   const m = useMessages();
   const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
     props.onSelectInstance(instanceId);
@@ -285,10 +287,16 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                           expiringSoon ? "text-reset-expiry-foreground" : "text-muted-foreground",
                         )}
                       >
-                        Next banked reset expiry:{" "}
-                        {credits.nextExpiresAt
-                          ? `${formatGermanTimestamp(credits.nextExpiresAt)} (local time)`
-                          : "not reported"}
+                        <T>
+                          Next banked reset expiry:<Var> </Var>
+                          <Var>
+                            {credits.nextExpiresAt
+                              ? uebersetzen("{wert1} (local time)", {
+                                  wert1: formatGermanTimestamp(credits.nextExpiresAt),
+                                })
+                              : uebersetzen("not reported")}
+                          </Var>
+                        </T>
                       </div>
                     ) : null}
                   </TooltipPopup>

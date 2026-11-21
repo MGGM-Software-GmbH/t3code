@@ -1,13 +1,13 @@
+import { useGT, useMessages, T, Var } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import {
   collectLimitAccounts,
-  collectLimitNotices,
-  limitsNotice,
   summarizeWeeklyLimits,
   shouldShowWeeklyLimit,
   type LimitAccount,
 } from "@t3tools/shared/usageLimits";
+import { collectLimitNotices, limitsNotice } from "@t3tools/shared/usageLimitsCopy";
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type ReactElement } from "react";
 
@@ -33,28 +33,34 @@ function BankedResetExpiry({
   readonly credits: LimitAccount["limits"]["resetCredits"];
   readonly now: number;
 }) {
+  const uebersetzen = useGT();
   return (
     <div className="flex flex-wrap gap-x-1 text-muted-foreground">
-      <span className="whitespace-nowrap">Next banked reset expiry: </span>
+      <span className="whitespace-nowrap">
+        <T>Next banked reset expiry: </T>
+      </span>
       <span className="whitespace-nowrap">
         {credits?.availableCount === 0 ? (
           "none"
         ) : credits?.nextExpiresAt ? (
           <>
-            <time
-              dateTime={credits.nextExpiresAt}
-              className={
-                resetExpiringSoon(credits.nextExpiresAt, now)
-                  ? "text-reset-expiry-foreground"
-                  : undefined
-              }
-            >
-              {formatGermanTimestamp(credits.nextExpiresAt)}
-            </time>{" "}
-            (local time)
+            <T>
+              <time
+                dateTime={credits.nextExpiresAt}
+                className={
+                  resetExpiringSoon(credits.nextExpiresAt, now)
+                    ? "text-reset-expiry-foreground"
+                    : undefined
+                }
+              >
+                <Var>{formatGermanTimestamp(credits.nextExpiresAt)}</Var>
+              </time>
+              <Var> </Var>
+              (local time)
+            </T>
           </>
         ) : (
-          "not reported"
+          uebersetzen("not reported")
         )}
       </span>
     </div>
@@ -92,6 +98,7 @@ function WeeklyLimitIndicator({
   readonly onNavigate?: () => void;
   readonly autoRedeemAtWeeklyLimit?: boolean;
 }) {
+  const uebersetzen = useGT();
   const [openedAt, setOpenedAt] = useState(() => Date.now());
   const minute = useNowMinute();
   const now = Math.max(openedAt, Date.parse(`${minute}:00.000Z`));
@@ -109,8 +116,8 @@ function WeeklyLimitIndicator({
       render={render}
       label={label}
       onOpen={() => setOpenedAt(Date.now())}
-      actionLabel="Usage details"
-      desktopHint="Click for usage details."
+      actionLabel={uebersetzen("Usage details")}
+      desktopHint={uebersetzen("Click for usage details.")}
       onActivate={() => {
         saveUsagePagePreferences({ ...readUsagePagePreferences(), metric: "limits" });
         onNavigate?.();
@@ -196,28 +203,45 @@ function WeeklyLimitIndicator({
         <div className="font-medium">{title}</div>
         <div>
           {summary.capacityUnavailable
-            ? "Combined percentage unavailable: plan capacities are unknown or not comparable."
+            ? uebersetzen(
+                "Combined percentage unavailable: plan capacities are unknown or not comparable.",
+              )
             : percent === null
-              ? "No account-wide seven-day limit reported."
-              : `${percent}% remaining`}
+              ? uebersetzen("No account-wide seven-day limit reported.")
+              : uebersetzen("{wert1}% remaining", { wert1: percent })}
           {summary.members.length > 1 && !summary.capacityUnavailable
-            ? ` · ${summary.members.length} accounts, weighted by plan allowance`
+            ? uebersetzen(" · {wert1} accounts, weighted by plan allowance", {
+                wert1: summary.members.length,
+              })
             : null}
         </div>
         <div>
           {summary.elapsedDays === null
-            ? "Weekly period elapsed: not reported"
-            : `Weekly period elapsed: ${summary.elapsedDays.toFixed(1)} of 7 days${summary.members.length > 1 ? ` (average of ${summary.reportedPeriods} accounts)` : ""}`}
+            ? uebersetzen("Weekly period elapsed: not reported")
+            : uebersetzen("Weekly period elapsed: {wert1} of 7 days{wert2}", {
+                wert1: summary.elapsedDays.toFixed(1),
+                wert2:
+                  summary.members.length > 1
+                    ? ` (average of ${summary.reportedPeriods} accounts)`
+                    : "",
+              })}
           {summary.reportedPeriods < summary.members.length
-            ? `; ${summary.members.length - summary.reportedPeriods} periods not reported.`
+            ? uebersetzen("; {wert1} periods not reported.", {
+                wert1: summary.members.length - summary.reportedPeriods,
+              })
             : null}
         </div>
         <div>
           {banked === null
-            ? "Banked resets: not reported"
-            : `Banked resets${accounts.length > 1 ? " (total)" : ""}: ${banked}`}
+            ? uebersetzen("Banked resets: not reported")
+            : uebersetzen("Banked resets{wert1}: {wert2}", {
+                wert1: accounts.length > 1 ? " (total)" : "",
+                wert2: banked,
+              })}
           {banked !== null && summary.unreportedResetCredits > 0
-            ? `; ${summary.unreportedResetCredits} accounts not reported.`
+            ? uebersetzen("; {wert1} accounts not reported.", {
+                wert1: summary.unreportedResetCredits,
+              })
             : null}
           {summary.members.length === 1 ? (
             <BankedResetExpiry
@@ -228,8 +252,12 @@ function WeeklyLimitIndicator({
         </div>
         <div>
           {summary.nextResetAt && Date.parse(summary.nextResetAt) <= now
-            ? `Reported reset ${time(summary.nextResetAt)}; awaiting updated limits.`
-            : `Next regular reset: ${summary.nextResetAt ? time(summary.nextResetAt) : "not reported"} (local time)`}
+            ? uebersetzen("Reported reset {wert1}; awaiting updated limits.", {
+                wert1: time(summary.nextResetAt),
+              })
+            : uebersetzen("Next regular reset: {wert1} (local time)", {
+                wert1: summary.nextResetAt ? time(summary.nextResetAt) : "not reported",
+              })}
         </div>
         {summary.members.length > 1 ? (
           summary.members.map(({ account, window, remainingPercent, elapsedDays, capacity }) => (
@@ -242,22 +270,30 @@ function WeeklyLimitIndicator({
               <span>
                 {accountName(account)}{" "}
                 <span className="whitespace-nowrap tabular-nums">
-                  ({remainingPercent}% remaining)
+                  <T>
+                    (<Var>{remainingPercent}</Var>% remaining)
+                  </T>
                 </span>
               </span>
               <span className="text-muted-foreground">
                 {account.plan ? `${account.plan} · ` : ""}
-                {capacity === null ? "Plan capacity unknown" : `${capacity}× Plus allowance`}
+                {capacity === null
+                  ? uebersetzen("Plan capacity unknown")
+                  : uebersetzen("{wert1}× Plus allowance", { wert1: capacity })}
               </span>
               <span className="text-muted-foreground">
-                {window.resetsAt ? `Reset ${time(window.resetsAt)}` : "Reset not reported"}
+                {window.resetsAt
+                  ? uebersetzen("Reset {wert1}", { wert1: time(window.resetsAt) })
+                  : uebersetzen("Reset not reported")}
               </span>
               <span className="text-muted-foreground">
                 {elapsedDays === null
-                  ? "Period not reported"
-                  : `${elapsedDays.toFixed(1)} of 7 days elapsed`}
+                  ? uebersetzen("Period not reported")
+                  : uebersetzen("{wert1} of 7 days elapsed", { wert1: elapsedDays.toFixed(1) })}
                 {account.limits.resetCredits
-                  ? ` · ${account.limits.resetCredits.availableCount} banked resets`
+                  ? uebersetzen(" · {wert1} banked resets", {
+                      wert1: account.limits.resetCredits.availableCount,
+                    })
                   : ""}
               </span>
               <BankedResetExpiry credits={account.limits.resetCredits} now={now} />
@@ -274,18 +310,27 @@ function WeeklyLimitIndicator({
           </div>
         ) : null}
         {summary.missing.map((account) => (
-          <div key={account.key}>{accountName(account)}: weekly limit unavailable</div>
+          <div key={account.key}>
+            <T>
+              <Var>{accountName(account)}</Var>: weekly limit unavailable
+            </T>
+          </div>
         ))}
         {notices.map((notice) => (
           <div key={notice}>{notice}</div>
         ))}
         <div className="text-muted-foreground">
-          Outer ring: weekly allowance remaining. Inner segments: seven days elapsed. +N: banked
-          resets.
+          <T>
+            Outer ring: weekly allowance remaining. Inner segments: seven days elapsed. +N: banked
+            resets.
+          </T>
         </div>
         <div className="text-muted-foreground">
           {summary.oldestCheckedAt
-            ? `Updated ${time(summary.oldestCheckedAt)}${summary.members.length > 1 ? " (oldest report)" : ""}. `
+            ? uebersetzen("Updated {wert1}{wert2}. ", {
+                wert1: time(summary.oldestCheckedAt),
+                wert2: summary.members.length > 1 ? " (oldest report)" : "",
+              })
             : null}
         </div>
       </div>
@@ -295,16 +340,18 @@ function WeeklyLimitIndicator({
 
 /** All connected accounts share the same deduplication and cache as the Limits page. */
 export function SidebarWeeklyLimit() {
+  const uebersetzen = useGT();
+  const resolve = useMessages();
   const { isMobile, setOpenMobile } = useSidebar();
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
   const accounts = collectLimitAccounts(presentations);
-  const notices = collectLimitNotices(presentations);
+  const notices = collectLimitNotices(presentations, resolve);
   return (
     <SidebarMenuItem className="shrink-0">
       <WeeklyLimitIndicator
         accounts={accounts}
         notices={notices}
-        title="Weekly limit, all accounts"
+        title={uebersetzen("Weekly limit, all accounts")}
         render={<SidebarMenuButton size="icon" />}
         onNavigate={() => {
           if (isMobile) setOpenMobile(false);
@@ -324,6 +371,8 @@ export function ComposerWeeklyLimit({
   readonly instanceId: ProviderInstanceId;
   readonly size: "sm" | "xs";
 }) {
+  const uebersetzen = useGT();
+  const resolve = useMessages();
   const autoRedeemAtWeeklyLimit = useEnvironmentSettings(
     environmentId,
     (settings) => settings.mggmCodexAutoRedeemAtWeeklyLimit,
@@ -339,14 +388,16 @@ export function ComposerWeeklyLimit({
           new Map([[environmentId, { ...presentation, serverConfig: { providers: [provider] } }]]),
         )
       : [];
-  const notice = provider?.usageLimits ? limitsNotice(provider.usageLimits) : null;
+  const notice = provider?.usageLimits ? limitsNotice(provider.usageLimits, resolve) : null;
   if (provider && !shouldShowWeeklyLimit(provider)) return null;
   return (
     <WeeklyLimitIndicator
       accounts={accounts}
       autoRedeemAtWeeklyLimit={provider?.driver === "codex" && autoRedeemAtWeeklyLimit}
       notices={notice ? [notice] : []}
-      title={`Weekly limit, ${provider?.displayName ?? providerClients.get(provider?.driver)?.label ?? instanceId}`}
+      title={uebersetzen("Weekly limit, {wert1}", {
+        wert1: provider?.displayName ?? providerClients.get(provider?.driver)?.label ?? instanceId,
+      })}
       render={<ComposerControl size={size} className="px-1" data-composer-weekly-limit />}
     />
   );

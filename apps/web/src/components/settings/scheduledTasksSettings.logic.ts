@@ -69,7 +69,11 @@ export function scheduleLabel(
   const time = schedule.timeOfDay;
   const zone = scheduleTimeZoneLabel(timeZone, runAt);
   if (schedule.weekOfMonth != null) {
-    const occurrence = ({ [-1]: "Last", 1: "First", 2: "Second", 3: "Third", 4: "Fourth", 5: "Fifth" } as Readonly<Record<number, string>>)[schedule.weekOfMonth];
+    const occurrence = (
+      { [-1]: "Last", 1: "First", 2: "Second", 3: "Third", 4: "Fourth", 5: "Fifth" } as Readonly<
+        Record<number, string>
+      >
+    )[schedule.weekOfMonth];
     const days = weekdays.map((day) => weekdayShortLabel(day, locale)).join(", ");
     return `${occurrence} ${days} of every month at ${time}${zone === undefined ? "" : ` ${zone}`}`;
   }

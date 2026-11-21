@@ -846,6 +846,7 @@ function AutoSettleDaysInput({
 }
 
 export function GeneralSettingsPanel() {
+  const uebersetzen = useGT();
   const gt = useGT();
   const m = useMessages();
   const setting = useSearchableSetting();
@@ -863,13 +864,15 @@ export function GeneralSettingsPanel() {
       <SettingsSection id="notifications" title={gt("Notifications")}>
         <NotificationSettings />
         <SettingsRow
-          {...searchableSetting("slow-request-warning-threshold")}
-          description="Seconds before showing a slow-request warning. Set to 0 to disable."
+          {...setting("slow-request-warning-threshold")}
+          description={uebersetzen(
+            "Seconds before showing a slow-request warning. Set to 0 to disable.",
+          )}
           resetAction={
             settings.slowRequestWarningThresholdSeconds !==
             DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds ? (
               <SettingResetButton
-                label="slow request warning threshold"
+                ariaLabel={uebersetzen("slow request warning threshold")}
                 onClick={() =>
                   updateSettings({
                     slowRequestWarningThresholdSeconds:
@@ -899,13 +902,15 @@ export function GeneralSettingsPanel() {
                   updateSettings({ slowRequestWarningThresholdSeconds: seconds });
                 }
               }}
-              aria-label="Slow request warning threshold (seconds)"
+              aria-label={uebersetzen("Slow request warning threshold (seconds)")}
             />
           }
         />
         <SettingsRow
-          {...searchableSetting("in-app-notifications")}
-          description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
+          {...setting("in-app-notifications")}
+          description={uebersetzen(
+            "Show a toast when another thread finishes, fails, or needs input or approval while this app has focus.",
+          )}
           control={
             <Switch
               checked={settings.inAppNotificationsEnabled}
@@ -994,8 +999,10 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           serverScoped
-          {...searchableSetting("model-capacity-retry-delay")}
-          description="Minutes before retrying a model-capacity stop with the same model. Set to 0 to disable. Play resumes immediately."
+          {...setting("model-capacity-retry-delay")}
+          description={uebersetzen(
+            "Minutes before retrying a model-capacity stop with the same model. Set to 0 to disable. Play resumes immediately.",
+          )}
           settingKeys={["modelCapacityRetryDelayMinutes"]}
           control={
             <DraftInput
@@ -1011,14 +1018,16 @@ export function GeneralSettingsPanel() {
                   updateSettings({ modelCapacityRetryDelayMinutes: minutes });
                 }
               }}
-              aria-label="Model capacity retry delay (minutes)"
+              aria-label={uebersetzen("Model capacity retry delay (minutes)")}
             />
           }
         />
 
         <SettingsRow
-          {...searchableSetting("working-shelf")}
-          description="Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The boring sidebar in Labs has no Working section."
+          {...setting("working-shelf")}
+          description={uebersetzen(
+            "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The boring sidebar in Labs has no Working section.",
+          )}
           resetAction={
             settings.sidebarWorkingShelfEnabled !==
             DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (

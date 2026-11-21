@@ -2662,8 +2662,10 @@ export default function ChatView(props: ChatViewProps) {
             capacity: isModelCapacityError(serverRuntime?.lastError),
             errorCode: serverRuntime?.lastErrorCode ?? null,
             resetAt: isModelCapacityError(serverRuntime?.lastError)
-              ? settings.modelCapacityRetryDelayMinutes > 0 && activeThreadShell.limitRecovery?.runId === limitRecoveryRun.runId
-                ? activeThreadShell.limitRecovery.resetAt : null
+              ? settings.modelCapacityRetryDelayMinutes > 0 &&
+                activeThreadShell.limitRecovery?.runId === limitRecoveryRun.runId
+                ? activeThreadShell.limitRecovery.resetAt
+                : null
               : (serverRuntime?.usageLimitResetAt ?? null),
             stoppedAt: limitRecoveryRun.completedAt ?? activeThreadShell.updatedAt,
             settled: activeThreadShell.settledOverride === "settled",

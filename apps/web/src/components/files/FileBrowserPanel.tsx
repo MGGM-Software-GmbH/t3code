@@ -1,3 +1,4 @@
+import { Var } from "gt-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -182,6 +183,7 @@ export default function FileBrowserPanel({
   absoluteFileReferences = false,
   fileActions,
 }: FileBrowserPanelProps) {
+  const uebersetzen = useGT();
   const panelPath = (relativePath: string) =>
     hostFolder ? joinHostPath(cwd, relativePath) : relativePath;
   const gt = useGT();
@@ -250,9 +252,9 @@ export default function FileBrowserPanel({
             ...fileMenuItems,
             ...(fileActions && !fileActions.disabled
               ? [
-                  { id: "case-new-file", label: "New file" },
-                  { id: "case-new-folder", label: "New folder" },
-                  { id: "case-upload", label: "Upload files" },
+                  { id: "case-new-file", label: uebersetzen("New file") },
+                  { id: "case-new-folder", label: uebersetzen("New folder") },
+                  { id: "case-upload", label: uebersetzen("Upload files") },
                   { id: "case-delete", label: "Delete" },
                 ]
               : []),
@@ -664,7 +666,7 @@ export default function FileBrowserPanel({
               type="file"
               multiple
               className="hidden"
-              aria-label="Upload case files"
+              aria-label={uebersetzen("Upload case files")}
               onChange={(event) => {
                 fileActions.upload(
                   Array.from(event.currentTarget.files ?? []),
@@ -674,15 +676,23 @@ export default function FileBrowserPanel({
               }}
             />
             {[
-              { label: "New file", icon: FilePlus, action: () => fileActions.create("", false) },
-              { label: "New folder", icon: FolderPlus, action: () => fileActions.create("", true) },
               {
-                label: "Upload files",
+                label: uebersetzen("New file"),
+                icon: FilePlus,
+                action: () => fileActions.create("", false),
+              },
+              {
+                label: uebersetzen("New folder"),
+                icon: FolderPlus,
+                action: () => fileActions.create("", true),
+              },
+              {
+                label: uebersetzen("Upload files"),
                 icon: Upload,
                 action: openRootUpload,
               },
               {
-                label: "Delete selected",
+                label: uebersetzen("Delete selected"),
                 icon: Trash2,
                 action: () => {
                   const selected = model.getSelectedPaths().at(-1)?.replace(/\/$/, "");
@@ -750,7 +760,9 @@ export default function FileBrowserPanel({
       </div>
       {dropFolder !== null && (
         <div role="status" className="border-b bg-accent px-3 py-2 text-xs">
-          Drop files into {dropFolder || "case root"}
+          <T>
+            Drop files into <Var>{dropFolder || uebersetzen("case root")}</Var>
+          </T>
         </div>
       )}
       {error || pathSearch.error ? (

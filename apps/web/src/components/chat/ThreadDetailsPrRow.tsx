@@ -3,10 +3,7 @@ import { resolvePullRequestDetailChecks } from "@t3tools/client-runtime/pull-req
 import { changeRequestTermKind } from "../pullRequest/changeRequestTerm";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
-import {
-  capitalizeTerm,
-  sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { PullRequestChangeBreakdownRows } from "../pullRequest/PullRequestChangeBreakdownStat";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
