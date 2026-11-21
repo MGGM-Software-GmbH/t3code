@@ -1,4 +1,4 @@
-import { useGT, T, Var } from "gt-react";
+import { msg, useGT, useMessages, T, Var } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   FogBugzCaseGitCheckout,
@@ -49,6 +49,32 @@ class FallDateiUploadFehler extends Schema.TaggedError<FallDateiUploadFehler>()(
 ) {}
 
 const isFogBugzError = Schema.is(FogBugzError);
+
+const uebertrageFallDatei = Effect.fn("FogBugzCaseGitPanel.upload")(function* (
+  datei: File,
+  url: string,
+  resolve: ReturnType<typeof useMessages>,
+) {
+  const bytes = yield* Effect.tryPromise({
+    try: () => datei.arrayBuffer(),
+    catch: (error) =>
+      new FallDateiUploadFehler({
+        message: resolve(msg("Could not read the case file")),
+        cause: error,
+      }),
+  });
+  const response = yield* HttpClient.execute(
+    HttpClientRequest.post(url).pipe(
+      HttpClientRequest.bodyUint8Array(new Uint8Array(bytes)),
+      HttpClientRequest.setHeader("Content-Type", datei.type || "application/octet-stream"),
+    ),
+  );
+  if (response.status < 200 || response.status >= 300) {
+    return yield* new FallDateiUploadFehler({
+      message: resolve(msg("Upload rejected ({status})", { status: response.status })),
+    });
+  }
+}, Effect.provide(FetchHttpClient.layer));
 
 type Props = Pick<
   ComponentProps<typeof FilePreviewPanel>,
@@ -112,6 +138,7 @@ export function FogBugzCaseGitPanel(props: Props) {
 
 function CaseGitFiles(props: Props) {
   const uebersetzen = useGT();
+  const resolve = useMessages();
   const { environmentId, threadId } = props.threadRef;
   const prepare = useAtomCommand(fogbugzEnvironment.ensureCaseGit, { reportFailure: false });
   const mutate = useAtomCommand(fogbugzEnvironment.mutateCaseFiles, { reportFailure: false });
@@ -234,30 +261,7 @@ function CaseGitFiles(props: Props) {
                 const connection = readPreparedConnection(environmentId);
                 return connection ? resolveAssetUrl(connection.httpBaseUrl, url) : null;
               },
-              transport: Effect.fn("FogBugzCaseGitPanel.upload")(function* (url: string) {
-                const bytes = yield* Effect.tryPromise({
-                  try: () => file.arrayBuffer(),
-                  catch: (error) =>
-                    new FallDateiUploadFehler({
-                      message: uebersetzen("Could not read the case file"),
-                      cause: error,
-                    }),
-                });
-                const response = yield* HttpClient.execute(
-                  HttpClientRequest.post(url).pipe(
-                    HttpClientRequest.bodyUint8Array(new Uint8Array(bytes)),
-                    HttpClientRequest.setHeader(
-                      "Content-Type",
-                      file.type || "application/octet-stream",
-                    ),
-                  ),
-                );
-                if (response.status < 200 || response.status >= 300) {
-                  return yield* new FallDateiUploadFehler({
-                    message: uebersetzen("Upload rejected ({status})", { status: response.status }),
-                  });
-                }
-              }, Effect.provide(FetchHttpClient.layer)),
+              transport: (url) => uebertrageFallDatei(file, url, resolve),
             }),
           );
           if (result.attachmentId !== null) pendingIds.push(result.attachmentId);

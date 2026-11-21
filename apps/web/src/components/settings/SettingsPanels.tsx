@@ -872,7 +872,7 @@ export function GeneralSettingsPanel() {
             settings.slowRequestWarningThresholdSeconds !==
             DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds ? (
               <SettingResetButton
-                ariaLabel={uebersetzen("slow request warning threshold")}
+                ariaLabel={uebersetzen("Reset slow request warning threshold to default")}
                 onClick={() =>
                   updateSettings({
                     slowRequestWarningThresholdSeconds:

@@ -33,7 +33,7 @@ export function PdSecretsSettings() {
         resetAction={
           mixed || settings.pdSecretsPostLoginScript !== "" ? (
             <SettingResetButton
-              ariaLabel={uebersetzen("pd-secrets post-login script")}
+              ariaLabel={uebersetzen("Reset pd-secrets post-login script to default")}
               onClick={() => updateSettings({ pdSecretsPostLoginScript: "" })}
             />
           ) : null

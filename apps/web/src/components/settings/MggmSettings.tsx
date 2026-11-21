@@ -69,7 +69,7 @@ export function MggmSettingsPanel() {
             settings.mggmCodexAutoRedeemExpiringResets !==
             DEFAULT_SERVER_SETTINGS.mggmCodexAutoRedeemExpiringResets ? (
               <SettingResetButton
-                ariaLabel={uebersetzen("Redeem expiring banked resets")}
+                ariaLabel={uebersetzen("Reset Redeem expiring banked resets to default")}
                 onClick={() => updateSettings({ mggmCodexAutoRedeemExpiringResets: true })}
               />
             ) : null
@@ -94,7 +94,7 @@ export function MggmSettingsPanel() {
           resetAction={
             enabled !== DEFAULT_CLIENT_SETTINGS.mggmThreadSidebarEnabled ? (
               <SettingResetButton
-                ariaLabel={uebersetzen("MGGM thread layout")}
+                ariaLabel={uebersetzen("Reset MGGM thread layout to default")}
                 onClick={() =>
                   updateSettings({
                     mggmThreadSidebarEnabled: DEFAULT_CLIENT_SETTINGS.mggmThreadSidebarEnabled,

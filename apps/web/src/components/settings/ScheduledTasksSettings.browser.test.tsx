@@ -163,6 +163,18 @@ vi.mock(import("../../state/threads"), async (original) => {
     threadFamilies: { ...actual.threadFamilies, familyAtom: (() => threadFamilyRead) as never },
   };
 });
+vi.mock(import("../../state/queries"), async (original) => ({
+  ...(await original()),
+  usePaginatedBranches: (() => ({
+    data: { refs: [], isRepo: true, hasPrimaryRemote: false, nextCursor: null, totalCount: 0 },
+    refs: [],
+    error: null,
+    isPending: false,
+    isFetchingNextPage: false,
+    refresh: vi.fn(),
+    loadNext: vi.fn(),
+  })) as never,
+}));
 // Mirrors the real query: a null request (disconnected environment) has no data.
 vi.mock(import("../../state/query"), async (original) => ({
   ...(await original()),
