@@ -808,7 +808,6 @@ it("selecting a side-chat tab focuses that side chat's composer", async () => {
   const sideChat = (name: string) => ({
     ...threadWithHistory(name, 1),
     sideChatOf: parent.id,
-    olderSettled: false as const,
   });
   const side = sideChat("focus-side");
   const otherSide = sideChat("focus-other-side");
