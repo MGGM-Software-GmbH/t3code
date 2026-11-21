@@ -58,6 +58,9 @@ function installFakeEnvironment(...args: Parameters<typeof installEnvironment>) 
   const fixture = installEnvironment(...args);
   // The shared registry outlives a render; each fixture owns its connection state.
   appAtomRegistry.refresh(fogbugzEnvironment.status({ environmentId: ENVIRONMENT_ID, input: {} }));
+  appAtomRegistry.refresh(
+    fogbugzEnvironment.threadCases({ environmentId: ENVIRONMENT_ID, input: {} }),
+  );
   return fixture;
 }
 

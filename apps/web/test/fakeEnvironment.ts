@@ -425,7 +425,6 @@ const json = (body: unknown, status = 200) =>
 // Keyed by thread id: a live thread subscription's queue, for pushing events to it.
 const threadSubscribers = new Map<string, Queue.Queue<OrchestrationV2ThreadStreamItem>>();
 let terminalMetadataSubscriber: Queue.Queue<TerminalMetadataStreamEvent> | null = null;
-let shellSubscriber: Queue.Queue<OrchestrationV2ShellStreamItem> | null = null;
 let threads: ReadonlyArray<FakeThread> = [];
 let dispatched: OrchestrationV2Command[] = [];
 let acceptCommands = false;
@@ -461,7 +460,7 @@ const handlers: Record<string, (input: never) => unknown> = {
     Effect.suspend(() => {
       dispatched.push(command);
       if (acceptCommands && !holdCommand(command)) {
-        if (command.type !== "thread.fork" || !command.sideChat || shellSubscriber === null)
+        if (command.type !== "thread.fork" || !command.sideChat || shellSubscribers.size === 0)
           return Effect.succeed({ sequence: sequence + 1 });
         const fork: FakeThread = {
           id: command.targetThreadId,
@@ -472,12 +471,15 @@ const handlers: Record<string, (input: never) => unknown> = {
         };
         threads = [...threads, fork];
         sequence += 1;
-        return Queue.offer(shellSubscriber, {
+        const event: OrchestrationV2ShellStreamItem = {
           kind: "thread.updated",
           sequence,
           location: "active",
           thread: shellOf(fork),
-        }).pipe(Effect.as({ sequence }));
+        };
+        return Effect.forEach(shellSubscribers, (queue) => Queue.offer(queue, event)).pipe(
+          Effect.as({ sequence }),
+        );
       }
       const reply = Deferred.makeUnsafe<never, OrchestrationV2DispatchCommandError>();
       pendingDispatches.push({ command, reply });
@@ -643,6 +645,21 @@ export function installFakeEnvironment(
   extraHandlers = Object.fromEntries(
     Object.entries(options).filter(([, value]) => typeof value === "function"),
   ) as Record<string, (input: never) => unknown>;
+  // The runtime retains shell subscriptions between renders; each fixture replaces their data.
+  sequence += 1;
+  for (const queue of shellSubscribers) {
+    Queue.offerUnsafe(queue, {
+      kind: "snapshot",
+      snapshot: {
+        schemaVersion: 1,
+        snapshotSequence: sequence,
+        projects,
+        threads: threads.filter((thread) => !thread.olderSettled).map(shellOf),
+        archivedThreads: [],
+      },
+    });
+    Queue.offerUnsafe(queue, { kind: "synchronized" });
+  }
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
