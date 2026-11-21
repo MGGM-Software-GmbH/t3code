@@ -11,6 +11,18 @@ const decodeSchedule = Schema.decodeUnknownSync(ScheduledTaskSchedule);
 const decodeUpsertSchedule = Schema.decodeUnknownSync(ScheduledTaskUpsertSchedule);
 
 describe("ScheduledTaskSchedule", () => {
+  it("validates monthly weekday occurrences and permits clearing the restriction", () => {
+    for (const weekOfMonth of [-1, 1, 2, 3, 4, 5, null]) {
+      const schedule = { type: "fixed_time", timeOfDay: "09:00", weekdays: [3], weekOfMonth };
+      expect(decodeUpsertSchedule(schedule)).toEqual(schedule);
+      expect(decodeSchedule(schedule)).toEqual(schedule);
+    }
+    for (const weekOfMonth of [-2, 0, 6, 1.5, "1"]) {
+      expect(() =>
+        decodeUpsertSchedule({ type: "fixed_time", timeOfDay: "09:00", weekOfMonth }),
+      ).toThrow();
+    }
+  });
   it("keeps legacy sub-minute persisted schedules readable", () => {
     expect(
       decodeSchedule({

@@ -19,6 +19,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  DEFAULT_PROVIDER_INSTANCE_CONFIGS,
   defaultInstanceIdForDriver,
   type EnvironmentId,
   type AcpRegistryUrlAuthAction,
@@ -38,6 +39,7 @@ import {
   resolveServerBackgroundActivitySettings,
 } from "@t3tools/shared/backgroundActivitySettings";
 import * as Arr from "effect/Array";
+import * as Equal from "effect/Equal";
 import * as Duration from "effect/Duration";
 import * as Result from "effect/Result";
 import { PlusIcon } from "lucide-react";
@@ -58,6 +60,7 @@ import { ensureLocalApi } from "../../localApi";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
+import { isDefaultProviderInstance } from "../../providerInstances";
 import {
   useEnvironments,
   usePrimaryEnvironmentId,
@@ -793,7 +796,10 @@ export function EnvironmentProviderSettings({
         instanceId: id,
         explicitInstance: instance,
         driver: instance.driver,
-        isDefault: false,
+        isDefault: isDefaultProviderInstance(id, instance.driver),
+        isDirty:
+          isDefaultProviderInstance(id, instance.driver) &&
+          !Equal.equals(instance, DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]),
       });
     }
   }
@@ -804,7 +810,12 @@ export function EnvironmentProviderSettings({
         instanceId: id,
         explicitInstance: instance,
         driver: instance.driver,
-        isDefault: defaultSlotIdsBySource.has(String(id)),
+        isDefault:
+          defaultSlotIdsBySource.has(String(id)) ||
+          DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]?.driver === instance.driver,
+        isDirty:
+          DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]?.driver === instance.driver &&
+          !Equal.equals(instance, DEFAULT_PROVIDER_INSTANCE_CONFIGS[id]),
       });
     }
   }
@@ -921,12 +932,13 @@ export function EnvironmentProviderSettings({
     },
   );
 
-  const resetDefaultInstance = useStableCallback(async (driverKind: ProviderDriverKind) => {
-    const instanceId = defaultInstanceIdForDriver(driverKind);
-    const instance = settings.providerInstances?.[instanceId] ?? { driver: driverKind };
+  const resetDefaultInstance = useStableCallback(async (instanceId: ProviderInstanceId) => {
+    const defaults = DEFAULT_PROVIDER_INSTANCE_CONFIGS[instanceId];
+    const instance = settings.providerInstances?.[instanceId] ?? defaults;
+    if (instance === undefined) throw new Error("Provider instance no longer exists.");
     const turnsOff =
       resolveProviderInstanceEnabled(instance) &&
-      !resolveProviderInstanceEnabled({ driver: driverKind });
+      !resolveProviderInstanceEnabled(defaults ?? { driver: instance.driver });
     const confirmed = await confirmProviderInstanceRemoval(
       gt("Reset the {provider} provider to its defaults?", {
         provider: providerInstanceName(instance),
@@ -1274,7 +1286,7 @@ interface ProviderInstanceRowActions {
     instanceId: ProviderInstanceId,
     instance: ProviderInstanceConfig,
   ) => Promise<void>;
-  readonly resetDefaultInstance: (driverKind: ProviderDriverKind) => Promise<void>;
+  readonly resetDefaultInstance: (instanceId: ProviderInstanceId) => Promise<void>;
   readonly writeProjectOverride: (
     instanceId: ProviderInstanceId,
     next: boolean | undefined,
@@ -1467,7 +1479,7 @@ function ProviderInstanceRow({
             ariaLabel={gt("Reset {provider} provider settings to default", {
               provider: resetLabel,
             })}
-            onClick={() => actions.resetDefaultInstance(driver)}
+            onClick={() => actions.resetDefaultInstance(instanceId)}
           />
         ) : null
       }

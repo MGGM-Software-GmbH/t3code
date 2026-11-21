@@ -3,6 +3,25 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { isClearComposerCommand, parseSideChatCommand } from "@t3tools/shared/composerTrigger";
 import { armFreshSession, disarmFreshSession, readFreshSessionArm } from "./freshSessionArms";
+import { refreshFileReviewComments, type ReviewCommentContext } from "../../reviewCommentContext";
+import { readProjectFileForReview } from "../files/projectFilesQueryState";
+// Keep the async cleanup outside the component so React Compiler can compile the chat view.
+async function refreshReviewCommentsForSend(
+  comments: readonly ReviewCommentContext[],
+  readFile: Parameters<typeof refreshFileReviewComments>[1],
+  pending: { current: boolean },
+  onError: (message: string) => void,
+): Promise<ReviewCommentContext[] | null> {
+  pending.current = true;
+  try {
+    return await refreshFileReviewComments(comments, readFile);
+  } catch (error) {
+    onError(error instanceof Error ? error.message : "Could not refresh review comments.");
+    return null;
+  } finally {
+    pending.current = false;
+  }
+}
 import {
   mergeDirectPreviewAnnotation,
   resolveBackgroundDraftWorkspaceOptions,
@@ -197,6 +216,7 @@ type TimelineFollow = ReturnType<typeof useTimelineFollow>;
 
 interface ComposerSendInput {
   readonly environmentId: EnvironmentId;
+  readonly activeWorkspaceRoot: string | undefined;
   readonly routeThreadKey: string;
   readonly currentRouteThreadKeyRef: { readonly current: string | null };
   readonly draftId: DraftId | null;
@@ -298,6 +318,7 @@ interface ComposerSendInput {
 export function useComposerSend(input: ComposerSendInput) {
   const {
     environmentId,
+    activeWorkspaceRoot,
     routeThreadKey,
     currentRouteThreadKeyRef,
     draftId,
@@ -939,6 +960,18 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
     const threadIdForSend = activeThread.id;
+    const reviewRefreshPrompt = promptRef.current;
+    const refreshedReviewComments = await refreshReviewCommentsForSend(
+      composerReviewComments,
+      (filePath) => {
+        if (!activeWorkspaceRoot)
+          throw new Error("Cannot refresh review comments without a workspace.");
+        return readProjectFileForReview(environmentId, activeWorkspaceRoot, filePath);
+      },
+      sendInFlightRef,
+      (message) => setThreadError(activeThread.id, message),
+    );
+    if (refreshedReviewComments === null || promptRef.current !== reviewRefreshPrompt) return;
     const sendSnapshot = snapshotComposerSend({
       prompt: promptForSend,
       images: composerImages,
@@ -946,7 +979,7 @@ export function useComposerSend(input: ComposerSendInput) {
       terminalContexts: composerTerminalContexts,
       sendableTerminalContexts: sendableComposerTerminalContexts,
       previewAnnotations: composerPreviewAnnotations,
-      reviewComments: composerReviewComments,
+      reviewComments: refreshedReviewComments,
       threadContexts: composerThreadContexts,
       environmentContexts: composerEnvironmentContexts,
       replyTo,
@@ -1018,6 +1051,7 @@ export function useComposerSend(input: ComposerSendInput) {
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+      sendInFlightRef.current = false;
       return;
     }
 

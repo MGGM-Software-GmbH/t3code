@@ -11,12 +11,15 @@ import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClientServerSettingsPatch,
+  StoredClientSettingsSchema,
   ClaudeSettings,
+  CodexSettings,
   DEFAULT_SERVER_SETTINGS,
   globalIdleCompaction,
   idleCompactionPatch,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   requiredScopesForProjectMutation,
+  requiredScopesForServerSettingsPatch,
   resolveIdleCompaction,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -27,7 +30,22 @@ import {
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
+const decodeStoredClientSettings = Schema.decodeUnknownSync(StoredClientSettingsSchema);
 const encodeClientSettings = Schema.encodeSync(ClientSettingsSchema);
+
+describe("MGGM thread sidebar settings", () => {
+  it("enables the layout for new and stored settings and preserves an explicit opt-out", () => {
+    expect(decodeClientSettings({}).mggmThreadSidebarEnabled).toBe(true);
+    expect(decodeStoredClientSettings({}).mggmThreadSidebarEnabled).toBe(true);
+    const patch = decodeClientSettingsPatch({ mggmThreadSidebarEnabled: false });
+    expect(patch.mggmThreadSidebarEnabled).toBe(false);
+    const disabled = decodeClientSettings(patch);
+    expect(
+      decodeStoredClientSettings(encodeClientSettings(disabled)).mggmThreadSidebarEnabled,
+    ).toBe(false);
+    expect(() => decodeClientSettingsPatch({ mggmThreadSidebarEnabled: "true" })).toThrow();
+  });
+});
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const encodeProviderInstanceEnvironment = Schema.encodeSync(ProviderInstanceEnvironment);
 const decodeProviderInstanceEnvironment = Schema.decodeSync(ProviderInstanceEnvironment);
@@ -53,6 +71,191 @@ it("drops theme defaults from a client's settings patch", () => {
       defaultAppearanceSetAt: "2026-11-13T00:00:00.000Z",
     }),
   ).toEqual({ newWorktreesStartFromOrigin: false });
+});
+
+describe("MGGM Codex banked reset automation", () => {
+  it("defaults to expiry protection only and preserves both explicit choices", () => {
+    expect(decodeServerSettings({}).mggmCodexAutoRedeemExpiringResets).toBe(true);
+    expect(decodeServerSettings({}).mggmCodexAutoRedeemAtWeeklyLimit).toBe(false);
+    const patch = decodeServerSettingsPatch({
+      mggmCodexAutoRedeemExpiringResets: false,
+      mggmCodexAutoRedeemAtWeeklyLimit: true,
+    });
+    const restored = decodeServerSettings(encodeServerSettings(decodeServerSettings(patch)));
+    expect(restored.mggmCodexAutoRedeemExpiringResets).toBe(false);
+    expect(restored.mggmCodexAutoRedeemAtWeeklyLimit).toBe(true);
+  });
+
+  it.each(["mggmCodexAutoRedeemExpiringResets", "mggmCodexAutoRedeemAtWeeklyLimit"])(
+    "rejects a non-boolean %s",
+    (key) => expect(() => decodeServerSettingsPatch({ [key]: "true" })).toThrow(),
+  );
+});
+
+describe("scheduled SVN updates", () => {
+  it("defaults existing environments to enabled and persists an explicit opt-out", () => {
+    expect(decodeServerSettings({}).mggmAutoSvnUpdate).toBe(true);
+    const patch = decodeServerSettingsPatch({ mggmAutoSvnUpdate: false });
+    expect(
+      decodeServerSettings(encodeServerSettings(decodeServerSettings(patch))).mggmAutoSvnUpdate,
+    ).toBe(false);
+    expect(() => decodeServerSettingsPatch({ mggmAutoSvnUpdate: "false" })).toThrow();
+  });
+});
+
+describe("Codex weekly window starter", () => {
+  it("defaults to enabled for existing configurations and preserves an explicit opt-out", () => {
+    const decode = Schema.decodeUnknownSync(CodexSettings);
+    const encode = Schema.encodeSync(CodexSettings);
+    expect(decode({}).autoStartWeeklyWindow).toBe(true);
+    const disabled = decode({ autoStartWeeklyWindow: false });
+    expect(decode(encode(disabled)).autoStartWeeklyWindow).toBe(false);
+    expect(() => decode({ autoStartWeeklyWindow: "true" })).toThrow();
+  });
+});
+
+describe("slow request warnings", () => {
+  it("defaults to 60 seconds and persists zero as disabled", () => {
+    expect(decodeClientSettings({}).slowRequestWarningThresholdSeconds).toBe(60);
+    const disabled = decodeClientSettings({ slowRequestWarningThresholdSeconds: 0 });
+    expect(
+      decodeClientSettings(encodeClientSettings(disabled)).slowRequestWarningThresholdSeconds,
+    ).toBe(0);
+    expect(
+      decodeClientSettingsPatch({ slowRequestWarningThresholdSeconds: 0 })
+        .slowRequestWarningThresholdSeconds,
+    ).toBe(0);
+  });
+
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_484, "60"])(
+    "rejects invalid thresholds: %s",
+    (slowRequestWarningThresholdSeconds) => {
+      expect(() => decodeClientSettings({ slowRequestWarningThresholdSeconds })).toThrow();
+      expect(() => decodeClientSettingsPatch({ slowRequestWarningThresholdSeconds })).toThrow();
+    },
+  );
+});
+
+describe("pd-secrets post-login script", () => {
+  it("defaults to no script and preserves a host-local path through settings patches", () => {
+    expect(decodeServerSettings({}).pdSecretsPostLoginScript).toBe("");
+    const patch = decodeServerSettingsPatch({
+      pdSecretsPostLoginScript: "  ~/.claude/install/pd-secrets-post-login.sh  ",
+    });
+    expect(patch.pdSecretsPostLoginScript).toBe("~/.claude/install/pd-secrets-post-login.sh");
+    expect(
+      decodeServerSettings(
+        encodeServerSettings({
+          ...DEFAULT_SERVER_SETTINGS,
+          pdSecretsPostLoginScript: "~/.claude/install/pd-secrets-post-login.sh",
+        }),
+      ).pdSecretsPostLoginScript,
+    ).toBe(patch.pdSecretsPostLoginScript);
+    expect(
+      decodeServerSettingsPatch({ pdSecretsPostLoginScript: "" }).pdSecretsPostLoginScript,
+    ).toBe("");
+  });
+});
+
+describe("MGGM defaults", () => {
+  it("defaults FogBugz automation off and validates its guarded choices", () => {
+    expect(decodeServerSettings({})).toMatchObject({
+      fogbugzCaseGitDirectory: "",
+      fogbugzAutoSettle: "never",
+      fogbugzAutoUnsettle: false,
+      fogbugzAutoAnalyze: "never",
+    });
+    const projectId = ProjectId.make("project");
+    const patch = decodeServerSettingsPatch({
+      projectSettingsOverrides: {
+        [projectId]: { fogbugzCaseGitDirectory: "  docs/cases  " },
+      },
+    });
+    expect(patch.projectSettingsOverrides?.[projectId]?.fogbugzCaseGitDirectory).toBe("docs/cases");
+    expect(
+      decodeServerSettings({ ...encodeServerSettings(DEFAULT_SERVER_SETTINGS), ...patch })
+        .projectSettingsOverrides[projectId]?.fogbugzCaseGitDirectory,
+    ).toBe("docs/cases");
+    expect(
+      decodeServerSettingsPatch({ fogbugzAutoSettle: "closed", fogbugzAutoAnalyze: "initial" }),
+    ).toMatchObject({ fogbugzAutoSettle: "closed", fogbugzAutoAnalyze: "initial" });
+    expect(() => decodeServerSettingsPatch({ fogbugzAutoAnalyze: "always" })).toThrow();
+    expect(requiredScopesForServerSettingsPatch({ fogbugzAutoAnalyze: "assigned" })).toContain(
+      "orchestration:operate",
+    );
+    expect(
+      requiredScopesForServerSettingsPatch({
+        projectSettingsOverrides: {
+          [ProjectId.make("project")]: { fogbugzAutoAnalyze: "initial" },
+        },
+      }),
+    ).toContain("orchestration:operate");
+    expect(
+      requiredScopesForServerSettingsPatch({
+        projectSettingsOverrides: { [ProjectId.make("project")]: null },
+      }),
+    ).toContain("orchestration:operate");
+    expect(requiredScopesForServerSettingsPatch({ fogbugzAutoAnalyze: "never" })).toEqual([
+      "settings:write",
+    ]);
+    expect(
+      requiredScopesForServerSettingsPatch({
+        projectSettingsOverrides: { [ProjectId.make("project")]: {} },
+      }),
+    ).toContain("orchestration:operate");
+  });
+  it("starts with one Codex account and an adjustable Standard model selection", () => {
+    const settings = decodeServerSettings({});
+    expect(settings.defaultModelSelection).toEqual({
+      instanceId: "codex",
+      model: "gpt-6.1-sol",
+      options: [
+        { id: "reasoningEffort", value: "high" },
+        { id: "serviceTier", value: "default" },
+      ],
+    });
+    expect(settings.favorites).toEqual([{ provider: "codex", model: "gpt-6.1-sol" }]);
+    expect(settings.providerModelPreferences).toBeNull();
+    expect(decodeClaudeSettings({}).enabled).toBe(false);
+    expect(settings).toMatchObject({
+      defaultRuntimeMode: "full-access",
+      enableProviderUpdateChecks: false,
+      defaultAutoPull: true,
+      sidebarAutoSettleAfterDays: null,
+      autoResumeLimitedThreads: true,
+      modelCapacityRetryDelayMinutes: 5,
+      pullRequestMergeMethod: "rebase",
+    });
+  });
+
+  it("accepts zero and custom capacity retry delays and rejects invalid delays", () => {
+    for (const minutes of [0, 1, 5, 30]) {
+      expect(
+        decodeServerSettings({ modelCapacityRetryDelayMinutes: minutes })
+          .modelCapacityRetryDelayMinutes,
+      ).toBe(minutes);
+      expect(
+        decodeServerSettingsPatch({ modelCapacityRetryDelayMinutes: minutes })
+          .modelCapacityRetryDelayMinutes,
+      ).toBe(minutes);
+    }
+    for (const minutes of [-1, 0.5, "5", null]) {
+      expect(() =>
+        decodeServerSettingsPatch({ modelCapacityRetryDelayMinutes: minutes }),
+      ).toThrow();
+    }
+  });
+
+  it("starts the client with Working, steering, and the approved font sizes", () => {
+    expect(decodeClientSettings({})).toMatchObject({
+      sidebarWorkingShelfEnabled: true,
+      followUpBehavior: "steer",
+      fontSizeInterface: 17,
+      fontSizePrompt: 16,
+      fontSizeCode: 15,
+      glassOpacity: 90,
+    });
+  });
 });
 
 describe("storage cleanup settings", () => {
@@ -365,6 +568,23 @@ describe("provider enabled defaults", () => {
       resolveProviderInstanceEnabled({ driver: codex, enabled: false, config: { enabled: true } }),
     ).toBe(false);
   });
+
+  it("enables only Codex by default", () => {
+    const enabledByDefault = (driver: string) =>
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make(driver), config: {} });
+    expect(enabledByDefault("codex")).toBe(true);
+    for (const driver of [
+      "claudeAgent",
+      "cursor",
+      "grok",
+      "muse",
+      "pi",
+      "opencode",
+      "antigravity",
+    ]) {
+      expect(enabledByDefault(driver)).toBe(false);
+    }
+  });
 });
 
 describe("ServerSettings worktree defaults", () => {
@@ -482,6 +702,37 @@ describe("resolveProjectProviderInstanceEnabled", () => {
   const projectId = "project-a" as ProjectId;
   const instanceId = ProviderInstanceId.make("codex_work");
 
+  it("keeps the shipped Copilot instance off until explicitly enabled", () => {
+    const copilotId = ProviderInstanceId.make("githubCopilot");
+    expect(resolveProjectProviderInstanceEnabled(DEFAULT_SERVER_SETTINGS, null, copilotId)).toBe(
+      false,
+    );
+    expect(
+      resolveProjectProviderInstanceEnabled(
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          providerInstances: {
+            [copilotId]: { driver: ProviderDriverKind.make("acpRegistry"), enabled: true },
+          },
+        },
+        null,
+        copilotId,
+      ),
+    ).toBe(true);
+    expect(
+      resolveProjectProviderInstanceEnabled(
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          projectSettingsOverrides: {
+            [projectId]: { providerInstances: { [copilotId]: { enabled: false } } },
+          },
+        },
+        projectId,
+        copilotId,
+      ),
+    ).toBe(false);
+  });
+
   it("lets a project disable an instance the machine enabled", () => {
     const settings: ServerSettings = {
       ...DEFAULT_SERVER_SETTINGS,
@@ -546,7 +797,7 @@ describe("voice settings", () => {
 
 describe("server model preferences", () => {
   it("distinguishes unmigrated lists from deliberately cleared lists", () => {
-    expect(decodeServerSettings({})).toMatchObject({
+    expect(decodeServerSettings({ favorites: null })).toMatchObject({
       favorites: null,
       providerModelPreferences: null,
     });
@@ -554,4 +805,23 @@ describe("server model preferences", () => {
     expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
     expect(decodeServerSettingsPatch(input)).toEqual(input);
   });
+});
+
+it("defaults merge settlement on and inactivity settlement off", () => {
+  const settings = decodeServerSettings({});
+  expect(settings.sidebarAutoSettleAfterDays).toBeNull();
+  expect(settings.sidebarAutoSettleOnMerge).toBe(true);
+});
+
+it("defaults to steering and accepts either behavior", () => {
+  expect(decodeClientSettings({}).followUpBehavior).toBe("steer");
+  for (const followUpBehavior of ["queue", "steer"]) {
+    expect(decodeClientSettings({ followUpBehavior }).followUpBehavior).toBe(followUpBehavior);
+    expect(decodeClientSettingsPatch({ followUpBehavior }).followUpBehavior).toBe(followUpBehavior);
+  }
+  expect(() => decodeClientSettingsPatch({ followUpBehavior: "invalid" })).toThrow();
+});
+
+it("defaults to a readable translucent surface", () => {
+  expect(decodeClientSettings({}).glassOpacity).toBe(90);
 });

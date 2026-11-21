@@ -361,8 +361,11 @@ a teammate approves, the thread stays in **Working** until the pull request merg
 watch stays on and still wakes the agent on new comments, failed checks or conflicts, and a watched
 thread never auto-settles.
 
-Cross-repository links use a project on the same host. Azure DevOps reviews require a project checked
-out from the matching organization and repository.
+Cross-repository links can use a project on the same host to read a review. Azure DevOps reviews
+require a project checked out from the matching organization and repository. When **Fix** or
+**Resolve** opens a thread from thread details, the draft belongs to the current project.
+For a review from another repository, the draft includes the task and review URL, and T3 leaves
+the project's checkout in place.
 
 ## Issues
 

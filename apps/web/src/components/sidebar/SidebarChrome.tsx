@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { T, useGT } from "gt-react";
 import { memo } from "react";
@@ -38,6 +38,9 @@ import { readIssueListPreferences } from "../issue/issueListPreferences";
 import { IssueGlyph } from "../issue/issuePresentation";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
+import { PdSecretsControl } from "./PdSecretsControl";
+import { SidebarWeeklyLimit } from "../usage/WeeklyLimitIndicator";
+import { CodexResetForecastIndicator } from "../usage/CodexResetForecastIndicator";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -256,13 +259,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/settings" });
   };
 
-  const handleUsageClick = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/usage" });
-  };
-
   const handleBackClick = () => {
     closeMobileSidebar();
     void navigateToMainApp();
@@ -301,13 +297,23 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             />
           ) : null}
           <SidebarUtilityItem
+            icon={<span aria-hidden>#</span>}
+            label="Fogbugz Cases"
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/cases" });
+            }}
+          />
+          <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label={gt("Usage")}
             onClick={handleUsageClick}
           />
         </>
       )}
-      <SidebarThreadUndoNotice />
+      <PdSecretsControl />
+      <SidebarWeeklyLimit />
+      <CodexResetForecastIndicator />
       <SidebarUpdatePill />
     </SidebarMenu>
   );
@@ -318,6 +324,9 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     <SidebarFooter>
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
+      <SidebarMenu className="empty:hidden">
+        <SidebarThreadUndoNotice />
+      </SidebarMenu>
       <SidebarUtilityMenu />
     </SidebarFooter>
   );

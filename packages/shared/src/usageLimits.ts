@@ -701,6 +701,124 @@ export function remainingPercent(window: ServerProviderUsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
 }
 
+/** The account-wide seven-day allowance, never a session or model-specific substitute. */
+export function weeklyLimitWindow(limits: ServerProviderUsageLimits) {
+  if (limitsNotice(limits) !== null) return null;
+  const weekly = limits.windows.filter(
+    (window) =>
+      window.kind === "weekly" &&
+      ["primary", "secondary", "seven_day", "weekly"].includes(window.id) &&
+      (window.windowDurationMins === undefined || window.windowDurationMins === 7 * 24 * 60) &&
+      Number.isFinite(window.usedPercent),
+  );
+  const main = weekly.find((window) => window.id === "seven_day" || window.id === "weekly");
+  return main ?? (weekly.length === 1 ? weekly[0]! : null);
+}
+
+/** Registry agents such as Copilot do not advertise an account-wide quota probe. */
+export function shouldShowWeeklyLimit(
+  provider: Pick<ServerProvider, "driver" | "usageLimits">,
+): boolean {
+  return (
+    provider.driver !== "acpRegistry" ||
+    (provider.usageLimits !== undefined && weeklyLimitWindow(provider.usageLimits) !== null)
+  );
+}
+
+// Pro multipliers: https://x.com/thsottiaux/status/2119296267545419987.
+// Business Premium's initial 5× Standard allowance doubled on October 29, 2026:
+// https://help.openai.com/en/articles/11391654-chatgpt-business-release-notes.
+const CODEX_WEEKLY_PLAN_CAPACITY = new Map([
+  ["ChatGPT Plus Subscription", 1],
+  ["ChatGPT Pro 100 Subscription", 10],
+  ["ChatGPT Pro 200 Subscription", 20],
+  ["ChatGPT Pro 500 Subscription", 50],
+  ["ChatGPT Business Subscription", 1],
+  ["ChatGPT Business Standard Subscription", 1],
+  ["ChatGPT Business Premium Subscription", 10],
+  ["ChatGPT Team Subscription", 1],
+]);
+
+/**
+ * Weight Codex accounts by comparable plan allowances, never by subscription price.
+ * Callers deduplicate accounts with collectLimitAccounts first. Missing allowances stay visible,
+ * and a passed reset never fabricates a fresh balance. Elapsed periods are
+ * averaged separately from quota; banked credits are summed across accounts.
+ */
+export function summarizeWeeklyLimits(accounts: readonly LimitAccount[], now?: number) {
+  const members = accounts.flatMap((account) => {
+    const window = weeklyLimitWindow(account.limits);
+    if (!window) return [];
+    const elapsedDays =
+      now === undefined ? null : elapsedShare({ ...window, windowDurationMins: 10080 }, now);
+    return [
+      {
+        account,
+        window,
+        capacity:
+          account.driver === "codex" && account.plan
+            ? (CODEX_WEEKLY_PLAN_CAPACITY.get(account.plan) ?? null)
+            : null,
+        remainingPercent: remainingPercent(window),
+        elapsedDays: elapsedDays === null ? null : elapsedDays * 7,
+      },
+    ];
+  });
+  const periods = members.flatMap(({ elapsedDays }) => (elapsedDays === null ? [] : [elapsedDays]));
+  const credits = accounts.flatMap((account) =>
+    !account.limits.unavailable && account.limits.resetCredits ? [account.limits.resetCredits] : [],
+  );
+  const creditExpiries = credits.flatMap((credit) => {
+    const expires =
+      credit.availableCount > 0 && credit.nextExpiresAt
+        ? Date.parse(credit.nextExpiresAt)
+        : Number.NaN;
+    return Number.isFinite(expires) ? [expires] : [];
+  });
+  const resets = members.flatMap(({ window }) => {
+    const at = resetMillis(window);
+    return at === null ? [] : [at];
+  });
+  const capacityUnavailable =
+    members.length > 1 && members.some(({ capacity }) => capacity === null);
+  const totalCapacity = members.reduce((sum, { capacity }) => sum + (capacity ?? 0), 0);
+  const weightedUsed = members.reduce(
+    (sum, { window, capacity }) =>
+      sum + Math.max(0, Math.min(100, window.usedPercent)) * (capacity ?? 0),
+    0,
+  );
+  const checkedTimes = members
+    .map(({ account }) => Date.parse(account.limits.checkedAt))
+    .filter(Number.isFinite);
+  return {
+    members,
+    missing: accounts.filter((account) => !members.some((member) => member.account === account)),
+    capacityUnavailable,
+    remainingPercent:
+      members.length === 1
+        ? members[0]!.remainingPercent
+        : !capacityUnavailable && totalCapacity > 0
+          ? Math.round(100 - weightedUsed / totalCapacity)
+          : null,
+    elapsedDays:
+      periods.length > 0 ? periods.reduce((sum, days) => sum + days, 0) / periods.length : null,
+    reportedPeriods: periods.length,
+    bankedResets:
+      credits.length > 0 ? credits.reduce((sum, credit) => sum + credit.availableCount, 0) : null,
+    unreportedResetCredits: accounts.length - credits.length,
+    nextCreditExpiresAt:
+      creditExpiries.length > 0
+        ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...creditExpiries)))
+        : null,
+    nextResetAt:
+      resets.length > 0 ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...resets))) : null,
+    oldestCheckedAt:
+      checkedTimes.length > 0
+        ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...checkedTimes)))
+        : null,
+  };
+}
+
 function resetMillis(window: ServerProviderUsageWindow): number | null {
   if (window.resetsAt === undefined) return null;
   const at = Date.parse(window.resetsAt);

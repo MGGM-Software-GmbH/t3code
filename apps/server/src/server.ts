@@ -46,6 +46,11 @@ import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as SpawnWorker from "./process/SpawnWorker.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
+import * as PdSecrets from "./environment/PdSecrets.ts";
+import * as ClaudeSvnUpdate from "./environment/ClaudeSvnUpdate.ts";
+import * as FogBugz from "./fogbugz/FogBugzService.ts";
+import * as FogBugzCaseGit from "./fogbugz/FogBugzCaseGit.ts";
+import * as FogBugzAutomation from "./fogbugz/FogBugzAutomation.ts";
 import * as PullRequestHttp from "./pullRequest/http.ts";
 import * as SpeechModelStore from "./speech/SpeechModelStore.ts";
 import * as SpeechService from "./speech/SpeechService.ts";
@@ -214,6 +219,9 @@ import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAcco
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
+import * as CodexResetForecast from "./usage/CodexResetForecast.ts";
+import * as CodexWeeklyWindowStarter from "./provider/CodexWeeklyWindowStarter.ts";
+import * as CodexResetCreditAutomation from "./provider/CodexResetCreditAutomation.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ThreadViewers from "./orchestration-v2/ThreadViewers.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -690,6 +698,9 @@ const layerServerRestart = Layer.effect(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
+  Layer.effectDiscard(
+    Effect.flatMap(FogBugzAutomation.FogBugzAutomation, (service) => service.start()),
+  ).pipe(Layer.provide(FogBugzAutomation.layer)),
   AgentAwarenessRelay.layer,
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,
@@ -730,6 +741,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ).pipe(Layer.provide(DelegatedTaskQuestionReactor.layer), Layer.provide(ProjectionStoreV2.layer)),
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
+  ClaudeSvnUpdate.layer.pipe(
+    Layer.provide(layerServerSettings),
+    Layer.provide(ProcessRunner.layer),
+  ),
   ProviderInstallation.layer,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
@@ -769,6 +784,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
 );
 
 const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
+  Layer.provideMerge(PdSecrets.layer.pipe(Layer.provide(layerServerSettings))),
   Layer.provideMerge(layerPtyAdapter),
   Layer.provideMerge(AcpRegistrySupport.layerFromHost.pipe(Layer.provide(ProviderHostLive.layer))),
   Layer.provideMerge(
@@ -813,7 +829,18 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
 );
 
 const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
+  Layer.provideMerge(
+    FogBugzCaseGit.layer.pipe(
+      Layer.provide(ProcessRunner.layer),
+      Layer.provide(ProjectionStoreV2.layer),
+      Layer.provide(ProjectStore.layer),
+    ),
+  ),
+  Layer.provideMerge(FogBugz.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(layerUsage),
+  Layer.provideMerge(CodexResetForecast.layer),
+  Layer.provideMerge(CodexWeeklyWindowStarter.layer),
+  Layer.provideMerge(CodexResetCreditAutomation.layer),
   Layer.provideMerge(layerBackground),
   // The same layer the event sink uses; memoized, subscriptions and batch ranking share it.
   Layer.provideMerge(ThreadViewers.layer),
@@ -956,6 +983,9 @@ const layerMakeServer = Layer.unwrap(
       Effect.gen(function* () {
         yield* Deferred.succeed(runtimeStateParked, undefined).pipe(Effect.orDie);
         yield* awaitActivation;
+        const weeklyWindowStarter = yield* CodexWeeklyWindowStarter.CodexWeeklyWindowStarter;
+        yield* weeklyWindowStarter.start;
+        yield* (yield* CodexResetCreditAutomation.CodexResetCreditAutomation).start;
         const server = yield* HttpServer.HttpServer;
         const address = server.address;
         if (typeof address === "string" || !("port" in address)) {

@@ -12,6 +12,8 @@ export type ThreadHistoryMeta = {
   readonly error: string | null;
   readonly expanded: boolean;
   readonly latestLocalTurnOrdinal: number | null;
+  /** Oldest contiguous loaded row, excluding history retained across a snapshot gap. */
+  readonly oldestLoadedTurnOrdinal: number | null;
 };
 
 export const EMPTY_THREAD_HISTORY_META: ThreadHistoryMeta = {
@@ -21,6 +23,7 @@ export const EMPTY_THREAD_HISTORY_META: ThreadHistoryMeta = {
   error: null,
   expanded: false,
   latestLocalTurnOrdinal: null,
+  oldestLoadedTurnOrdinal: null,
 };
 
 export function isActiveHistoryRequestCursor(
@@ -81,6 +84,53 @@ function interleavePage(
   merged.push(...pending);
   emitCurrentThrough(current.length);
   return merged;
+}
+
+export function oldestLocalHistoryOrdinal(projection: {
+  readonly thread: Pick<OrchestrationV2ThreadProjection["thread"], "id">;
+  readonly visibleTurnItems: OrchestrationV2ThreadProjection["visibleTurnItems"];
+}): number | null {
+  let oldest: number | null = null;
+  for (const row of projection.visibleTurnItems) {
+    if (row.sourceThreadId !== projection.thread.id) continue;
+    oldest = Math.min(oldest ?? row.item.ordinal, row.item.ordinal);
+  }
+  return oldest;
+}
+
+export function oldestPendingQuestion(projection: OrchestrationV2ThreadProjection) {
+  const pending = new Set(
+    projection.runtimeRequests
+      .filter((request) => request.kind === "user_input" && request.status === "pending")
+      .map((request) => request.id),
+  );
+  let oldest:
+    | Extract<
+        OrchestrationV2ThreadProjection["turnItems"][number],
+        {
+          type: "user_input_request";
+        }
+      >
+    | undefined;
+  for (const item of projection.turnItems) {
+    if (item.type !== "user_input_request" || !pending.has(item.requestId)) continue;
+    if (oldest === undefined || item.ordinal < oldest.ordinal) oldest = item;
+  }
+  return oldest;
+}
+
+export function retainPendingQuestionHistory(
+  previous: OrchestrationV2ThreadProjection,
+  incoming: OrchestrationV2ThreadProjection,
+): OrchestrationV2ThreadProjection {
+  const question = oldestPendingQuestion(incoming);
+  if (question === undefined) return incoming;
+  return mergeOlderHistoryIntoProjection(
+    incoming,
+    previous.visibleTurnItems.filter(
+      (row) => row.sourceThreadId === incoming.thread.id && row.item.ordinal >= question.ordinal,
+    ),
+  );
 }
 
 export function mergeOlderHistoryIntoProjection(
@@ -213,8 +263,14 @@ export function applyHistoryPageMeta(
   page: {
     readonly nextCursor: string | null;
     readonly hasMoreHistory: boolean;
+    readonly items: ReadonlyArray<OrchestrationV2ProjectedTurnItem>;
   },
+  threadId: OrchestrationV2ThreadProjection["thread"]["id"],
 ): ThreadHistoryMeta {
+  const oldest = oldestLocalHistoryOrdinal({
+    thread: { id: threadId },
+    visibleTurnItems: page.items,
+  });
   return {
     historyCursor: page.nextCursor,
     hasMoreHistory: page.hasMoreHistory,
@@ -222,6 +278,10 @@ export function applyHistoryPageMeta(
     error: null,
     expanded: true,
     latestLocalTurnOrdinal: current.latestLocalTurnOrdinal,
+    oldestLoadedTurnOrdinal:
+      oldest === null
+        ? current.oldestLoadedTurnOrdinal
+        : Math.min(current.oldestLoadedTurnOrdinal ?? oldest, oldest),
   };
 }
 

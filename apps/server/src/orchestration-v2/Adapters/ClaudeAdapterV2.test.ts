@@ -372,10 +372,12 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       nativeThreadId: "native-permission-override",
       resume: false,
       cwd: "/workspace",
+      workspaceDirectories: ["/case-files/42/repo"],
       permissionMode: "default",
       settings: { ...AUTO_COMPACT_CLAUDE_SETTINGS, launchArgs },
     });
     assert.equal(options.permissionMode, expected);
+    assert.deepEqual(options.additionalDirectories, ["/workspace", "/case-files/42/repo"]);
     assert.isUndefined(options.extraArgs?.["permission-mode"]);
     assert.isUndefined(options.extraArgs?.["dangerously-skip-permissions"]);
   });
@@ -10221,8 +10223,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
   it.effect("merges cumulative stream usage into the message_start counts", () =>
     Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const homePath = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-usage-" });
       const harness = yield* makeWakeHarnessWithOptions({
-        settings: { ...DEFAULT_CLAUDE_SETTINGS, autoCompactWindow: "150000" },
+        settings: { ...DEFAULT_CLAUDE_SETTINGS, homePath, autoCompactWindow: "150000" },
       });
       yield* harness.runtime.startTurn(
         makeClaudeTestTurnInput({

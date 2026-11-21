@@ -528,6 +528,7 @@ export class AcpRegistryCatalog extends Context.Service<
     readonly inspect: (
       settings: AcpRegistrySettings,
       environment?: NodeJS.ProcessEnv,
+      options?: { readonly allowRegistryFetch?: boolean },
     ) => Effect.Effect<AcpRegistryInspection, AcpRegistryError>;
     readonly resolve: (
       settings: AcpRegistrySettings,
@@ -990,14 +991,23 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     return yield* refreshRegistry();
   });
 
-  const loadRegistry = Effect.fn("AcpRegistryCatalog.loadRegistry")(function* () {
+  const loadCachedRegistry = Effect.fn("AcpRegistryCatalog.loadCachedRegistry")(function* () {
     const current = yield* Ref.get(registryRef);
     if (current !== undefined) return current;
 
     const cached = yield* readCachedRegistry;
-    if (Option.isNone(cached)) return yield* refreshRegistry();
+    if (Option.isNone(cached)) {
+      return yield* new AcpRegistryError({
+        reason: "registry_unavailable",
+        detail: "No valid cached ACP Registry index is available.",
+      });
+    }
     yield* Ref.set(registryRef, cached.value);
     return cached.value;
+  });
+
+  const loadRegistry = Effect.fn("AcpRegistryCatalog.loadRegistry")(function* () {
+    return yield* loadCachedRegistry().pipe(Effect.catch(() => refreshRegistry()));
   });
 
   const runCommand = Effect.fn("AcpRegistryCatalog.runCommand")(function* (
@@ -1325,7 +1335,11 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     if (Option.isSome(receipt) && distribution === "npx") return receipt.value;
 
     const packageRoot = packageInstallRoot(agent, distribution);
-    yield* fileSystem.makeDirectory(packageRoot, { recursive: true }).pipe(
+    // npm 12 requires the POSIX global prefix's lib directory to exist before
+    // installing the first package into a T3-managed prefix.
+    const initialDirectory =
+      distribution === "npx" && platform !== "win32" ? path.join(packageRoot, "lib") : packageRoot;
+    yield* fileSystem.makeDirectory(initialDirectory, { recursive: true }).pipe(
       Effect.mapError(
         (cause) =>
           new AcpRegistryError({
@@ -1822,7 +1836,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
       : Effect.void;
 
   const inspect: AcpRegistryCatalog["Service"]["inspect"] = Effect.fn("AcpRegistryCatalog.inspect")(
-    function* (settings, environment) {
+    function* (settings, environment, options) {
       if (settings.source === "local") {
         const command = settings.commandPath.trim();
         if (!command) return { status: "unconfigured" } as const;
@@ -1838,7 +1852,9 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
       }
       const agentId = settings.agentId.trim();
       if (agentId.length === 0) return { status: "unconfigured" } as const;
-      const registry = yield* loadRegistry();
+      // Passive readiness stays local. Active probes may initialize a fresh
+      // environment's registry cache before its first configured agent runs.
+      const registry = yield* options?.allowRegistryFetch ? loadRegistry() : loadCachedRegistry();
       const agent = registry.agents.find((candidate) => candidate.id === agentId);
       if (agent === undefined) return { status: "not_found", agentId } as const;
       const documentationUrl = agent.website ?? agent.repository;

@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { GitPreparePullRequestThreadInput, GitRunStackedActionInput } from "./git.ts";
 import {
+  AuthFilesystemWriteScope,
   AuthAccessWriteScope,
   AuthEnvironmentMaintainScope,
   AuthOrchestrationOperateScope,
@@ -18,9 +19,23 @@ import { WS_METHODS } from "./rpc.ts";
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.providerAuthRemoveMethod]: AuthProvidersManageScope,
+  [WS_METHODS.fogbugzCaseContext]: AuthOrchestrationReadScope,
+  [WS_METHODS.fogbugzConnect]: AuthSettingsWriteScope,
+  [WS_METHODS.fogbugzDisconnect]: AuthSettingsWriteScope,
+  [WS_METHODS.fogbugzTest]: AuthSettingsWriteScope,
+  [WS_METHODS.fogbugzLinkProject]: AuthOrchestrationOperateScope,
+  [WS_METHODS.fogbugzLinkThread]: AuthOrchestrationOperateScope,
+  [WS_METHODS.fogbugzCreateThread]: AuthOrchestrationOperateScope,
+  [WS_METHODS.fogbugzOpenCase]: AuthPreviewOperateScope,
+  [WS_METHODS.fogbugzEnsureCaseGit]: AuthSourceControlWriteScope,
+  [WS_METHODS.fogbugzMutateCaseFiles]: AuthFilesystemWriteScope,
+  [WS_METHODS.fogbugzManageCaseGit]: AuthSourceControlWriteScope,
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   // Stopping a server signals its processes, as closing a terminal does.
   [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,
+  [WS_METHODS.pdSecretsLogin]: AuthEnvironmentMaintainScope,
+  [WS_METHODS.pdSecretsRespond]: AuthEnvironmentMaintainScope,
+  [WS_METHODS.pdSecretsCancel]: AuthEnvironmentMaintainScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   // Restarts the server, as an update does.
   [WS_METHODS.serverReclaimDatabaseSpace]: AuthEnvironmentMaintainScope,

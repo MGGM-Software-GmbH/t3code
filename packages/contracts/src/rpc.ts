@@ -34,6 +34,35 @@ import {
   ChatGptHandoffState,
 } from "./providerSetup.ts";
 import * as Schema from "effect/Schema";
+import { ProjectId, ThreadId } from "./baseSchemas.ts";
+import {
+  FogBugzConnection,
+  FogBugzStatus,
+  FogBugzProject,
+  FogBugzArea,
+  FogBugzCaseList,
+  FogBugzCaseContext,
+  FogBugzCaseContextInput,
+  FogBugzThreadLink,
+  FogBugzThreadCase,
+  FogBugzCaseGitCheckout,
+  FogBugzCaseFilesInput,
+  FogBugzCaseGitInput,
+  FogBugzCaseGitState,
+  FogBugzError,
+  FogBugzConnectInput,
+  FogBugzCasesInput,
+  FogBugzLinkThreadInput,
+  FogBugzCreateThreadInput,
+  FogBugzId,
+} from "./fogbugz.ts";
+import {
+  PdSecretsStatus,
+  PdSecretsLoginInput,
+  PdSecretsRespondInput,
+  PdSecretsLoginResult,
+  PdSecretsError,
+} from "./pdSecrets.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
@@ -383,6 +412,7 @@ import {
   ProviderConsumeResetCreditResult,
 } from "./providerUsageLimits.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
+import { CodexResetForecast, CodexResetForecastError } from "./codexResetForecast.ts";
 import {
   StorageCleanupReport,
   DatabaseReclaimError,
@@ -470,6 +500,27 @@ export const WS_METHODS = {
 
   providerUploadFeedback: "provider.uploadFeedback",
   providerAuthStart: "provider.auth.start",
+  pdSecretsStatus: "pd-secrets.status",
+  fogbugzStatus: "fogbugz.status",
+  fogbugzConnect: "fogbugz.connect",
+  fogbugzDisconnect: "fogbugz.disconnect",
+  fogbugzTest: "fogbugz.test",
+  fogbugzProjects: "fogbugz.projects",
+  fogbugzAreas: "fogbugz.areas",
+  fogbugzLinkProject: "fogbugz.link-project",
+  fogbugzCases: "fogbugz.cases",
+  fogbugzCaseContext: "fogbugz.case-context",
+  fogbugzThread: "fogbugz.thread",
+  fogbugzThreadCases: "fogbugz.thread-cases",
+  fogbugzLinkThread: "fogbugz.link-thread",
+  fogbugzCreateThread: "fogbugz.create-thread",
+  fogbugzOpenCase: "fogbugz.open-case",
+  fogbugzEnsureCaseGit: "fogbugz.ensure-case-git",
+  fogbugzMutateCaseFiles: "fogbugz.mutate-case-files",
+  fogbugzManageCaseGit: "fogbugz.manage-case-git",
+  pdSecretsLogin: "pd-secrets.login",
+  pdSecretsRespond: "pd-secrets.respond",
+  pdSecretsCancel: "pd-secrets.cancel",
   providerConsumeResetCredit: "provider.consumeResetCredit",
   providerAuthComplete: "provider.auth.complete",
   chatGptReconnectProfile: "provider.chatgpt.reconnect-profile",
@@ -576,6 +627,7 @@ export const WS_METHODS = {
   serverSignalProcess: "server.signalProcess",
   serverReportClientActivity: "server.reportClientActivity",
   serverGetUsageSummary: "server.getUsageSummary",
+  serverGetCodexResetForecast: "server.getCodexResetForecast",
   serverRefreshUsageRates: "server.refreshUsageRates",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
@@ -754,6 +806,28 @@ const WsProviderAuthStartRpc = Rpc.make(WS_METHODS.providerAuthStart, {
   payload: ProviderAuthStartInput,
   success: ProviderAuthState,
   error: ProviderSetupRpcError,
+});
+
+const PdSecretsRpcError = Schema.Union([PdSecretsError, EnvironmentAuthorizationError]);
+const WsPdSecretsStatusRpc = Rpc.make(WS_METHODS.pdSecretsStatus, {
+  payload: Schema.Struct({}),
+  success: PdSecretsStatus,
+  error: PdSecretsRpcError,
+});
+const WsPdSecretsLoginRpc = Rpc.make(WS_METHODS.pdSecretsLogin, {
+  payload: PdSecretsLoginInput,
+  success: PdSecretsLoginResult,
+  error: PdSecretsRpcError,
+});
+const WsPdSecretsRespondRpc = Rpc.make(WS_METHODS.pdSecretsRespond, {
+  payload: PdSecretsRespondInput,
+  success: PdSecretsLoginResult,
+  error: PdSecretsRpcError,
+});
+const WsPdSecretsCancelRpc = Rpc.make(WS_METHODS.pdSecretsCancel, {
+  payload: Schema.Struct({}),
+  success: Schema.Void,
+  error: PdSecretsRpcError,
 });
 
 const WsProviderAuthRespondRpc = Rpc.make(WS_METHODS.providerAuthRespond, {
@@ -1070,6 +1144,16 @@ const WsServerGetUsageSummaryRpc = Rpc.make(WS_METHODS.serverGetUsageSummary, {
   error: Schema.Union([EnvironmentAuthorizationError, UsageReadError]),
 });
 
+const WsServerGetCodexResetForecastRpc = Rpc.make(WS_METHODS.serverGetCodexResetForecast, {
+  payload: Schema.Struct({}),
+  success: CodexResetForecast,
+  error: Schema.Union([EnvironmentAuthorizationError, CodexResetForecastError]),
+});
+
+/**
+ * Refetches the model rate table ahead of its daily TTL, so a model released
+ * since the last fetch gets priced. The next usage summary uses the new table.
+ */
 const WsServerRefreshUsageRatesRpc = Rpc.make(WS_METHODS.serverRefreshUsageRates, {
   payload: Schema.Struct({}),
   success: UsagePricing,
@@ -2269,6 +2353,96 @@ export const WsRpcGroup = RpcGroup.make(
   WsIssueTrackersListRpc,
   WsIssueTrackersConnectRpc,
   WsIssueTrackersBindProjectRpc,
+  Rpc.make(WS_METHODS.fogbugzManageCaseGit, {
+    payload: FogBugzCaseGitInput,
+    success: FogBugzCaseGitState,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzMutateCaseFiles, {
+    payload: FogBugzCaseFilesInput,
+    success: Schema.Void,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzEnsureCaseGit, {
+    payload: Schema.Struct({ threadId: ThreadId }),
+    success: FogBugzCaseGitCheckout,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzThreadCases, {
+    payload: Schema.Struct({}),
+    success: Schema.Array(FogBugzThreadCase),
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzStatus, {
+    payload: Schema.Struct({}),
+    success: FogBugzStatus,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzOpenCase, {
+    payload: PreviewOpenInput,
+    success: PreviewSessionSnapshot,
+    error: Schema.Union([FogBugzError, PreviewError]),
+  }),
+  Rpc.make(WS_METHODS.fogbugzConnect, {
+    payload: FogBugzConnectInput,
+    success: FogBugzConnection,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzDisconnect, {
+    payload: Schema.Struct({}),
+    success: Schema.Void,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzTest, {
+    payload: Schema.Struct({}),
+    success: FogBugzConnection,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzProjects, {
+    payload: Schema.Struct({}),
+    success: Schema.Array(FogBugzProject),
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzAreas, {
+    payload: { fogbugzProjectId: FogBugzId },
+    success: Schema.Array(FogBugzArea),
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzLinkProject, {
+    payload: Schema.Struct({
+      projectId: ProjectId,
+      fogbugzProjectId: Schema.NullOr(FogBugzId),
+      fogbugzProjectGroupId: Schema.optionalKey(Schema.NullOr(FogBugzId)),
+      fogbugzAreaId: Schema.optionalKey(Schema.NullOr(FogBugzId)),
+    }),
+    success: Schema.Void,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzCases, {
+    payload: FogBugzCasesInput,
+    success: FogBugzCaseList,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzCaseContext, {
+    payload: FogBugzCaseContextInput,
+    success: FogBugzCaseContext,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzThread, {
+    payload: Schema.Struct({ threadId: ThreadId }),
+    success: Schema.NullOr(FogBugzThreadLink),
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzLinkThread, {
+    payload: FogBugzLinkThreadInput,
+    success: Schema.Void,
+    error: FogBugzError,
+  }),
+  Rpc.make(WS_METHODS.fogbugzCreateThread, {
+    payload: FogBugzCreateThreadInput,
+    success: ThreadId,
+    error: FogBugzError,
+  }),
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -2276,6 +2450,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpdateProviderRpc,
   WsProviderConsumeResetCreditRpc,
   WsProviderAuthStartRpc,
+  WsPdSecretsStatusRpc,
+  WsPdSecretsLoginRpc,
+  WsPdSecretsRespondRpc,
+  WsPdSecretsCancelRpc,
   WsProviderAuthCompleteRpc,
   WsChatGptReconnectProfileRpc,
   WsChatGptImportProfileRpc,
@@ -2328,6 +2506,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerListTextGeneratorModelsRpc,
   WsServerPrepareTriageRpc,
   WsServerGetUsageSummaryRpc,
+  WsServerGetCodexResetForecastRpc,
   WsServerRefreshUsageRatesRpc,
   WsServerSignalProcessRpc,
   WsScheduledTasksSubscribeRpc,

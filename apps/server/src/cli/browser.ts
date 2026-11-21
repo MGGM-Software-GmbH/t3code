@@ -166,7 +166,18 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
             "T3's browser needs fontconfig and system fonts; setup installs them.",
           );
         }
-        return yield* Console.log(`\nThis needs root. Run:\n\n  ${setupCommand}\n`);
+        yield* Console.log(`\nThis needs root. Run:\n\n  ${setupCommand}\n`);
+        return yield* needsProfile
+          ? new PreviewBrowserHost.PreviewBrowserSandboxError({ setupCommand })
+          : missing.length > 0
+            ? new PreviewBrowserHost.PreviewBrowserLibrariesError({
+                setupCommand,
+                libraries: missing,
+              })
+            : new BrowserSetupStepError({
+                step: "install browser fonts",
+                detail: "Root privileges are required.",
+              });
       }
 
       if (needsProfile) {

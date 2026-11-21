@@ -6,7 +6,7 @@ import { msg } from "gt-react";
 import { m, type MessageResolver } from "~/i18n/messages";
 
 export function resolveFilePreviewPath(path: string | null, cwd: string): string | null {
-  if (path === null) return null;
+  if (path === null || path === "") return null;
   return path === "." || workspaceRelativeFilePath(path, cwd) === "." ? null : path;
 }
 

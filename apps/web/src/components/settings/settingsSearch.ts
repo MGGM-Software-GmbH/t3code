@@ -20,6 +20,7 @@ import type { ResolvedSettingsScope } from "./settingsScope";
 export type SettingsPath =
   | "/settings/projects"
   | "/settings/general"
+  | "/settings/mggm"
   | "/settings/diagnostics"
   | "/settings/voice"
   | "/settings/appearance"
@@ -117,6 +118,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/about": msg("About"),
   "/settings/voice": msg("Voice"),
   "/settings/archived": msg("Archive"),
+  "/settings/mggm": msg("MGGM"),
 };
 
 /** Sidebar labels; an entry of its own lets a translator shorten one below its page title. */
@@ -139,6 +141,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     headingHidden: true,
     paths: [
       "/settings/general",
+      "/settings/mggm",
       "/settings/appearance",
       "/settings/chat",
       "/settings/diffs",
@@ -462,6 +465,47 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("sort projects sidebar manual created recent")],
   },
   {
+    id: "mggm-thread-sidebar",
+    title: "MGGM thread layout",
+    to: "/settings/mggm",
+    searchTerms: ["sidebar idle 24h projects groups pinned compact activity separators"],
+  },
+  {
+    id: "mggm-auto-svn-update",
+    title: "Auto-SVN-Update ~/.claude/",
+    to: "/settings/mggm",
+    scope: "environment",
+    searchTerms: ["svn subversion update working copy checkout claude 06:00 13:00"],
+  },
+  {
+    id: "mggm-codex-expiring-resets",
+    title: "Redeem expiring banked resets",
+    to: "/settings/mggm",
+    scope: "environment",
+    searchTerms: ["codex banked reset credits automatic expiry hour"],
+  },
+  {
+    id: "fogbugz-auto-settle",
+    title: "Auto-Settle on",
+    to: "/settings/mggm",
+    scope: "environment-defaults",
+    searchTerms: ["fogbugz cases resolved closed never"],
+  },
+  {
+    id: "fogbugz-auto-unsettle",
+    title: "Auto-Unsettle On reactivate",
+    to: "/settings/mggm",
+    scope: "environment-defaults",
+    searchTerms: ["fogbugz cases reopen status"],
+  },
+  {
+    id: "fogbugz-auto-analyze",
+    title: "Auto-Analyze New Cases",
+    to: "/settings/mggm",
+    scope: "environment-defaults",
+    searchTerms: ["fogbugz cases assigned initial analysis agent"],
+  },
+  {
     id: "snooze-options",
     title: msg("Snooze options"),
     to: "/settings/threads",
@@ -480,6 +524,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: msg("Resume after usage limits"),
     to: "/settings/threads",
     searchTerms: [msg("usage quota rate limit reset recover continue")],
+  },
+  {
+    id: "model-capacity-retry-delay",
+    title: "Model capacity retry delay",
+    to: "/settings/general",
+    searchTerms: [
+      "selected model at capacity retry minutes recover continue play same model disable",
+    ],
   },
   {
     id: "working-shelf",
@@ -741,6 +793,12 @@ export const SETTINGS_SEARCH_ITEMS = [
         "locale translation english deutsch german español spanish français french português portuguese brasil brazilian chinese 中文 japanese 日本語 korean 한국어 russian русский swedish svenska sprache idioma langue 语言 言語 언어 язык",
       ),
     ],
+  },
+  {
+    id: "slow-request-warning-threshold",
+    title: "Slow request warning threshold",
+    to: "/settings/general",
+    searchTerms: ["some requests are slow warning timeout threshold seconds disable"],
   },
   {
     id: "time-format",
@@ -1090,6 +1148,13 @@ export const SETTINGS_SEARCH_ITEMS = [
         "device hosts ssh remote mac mini identity key connection eas expo cloud simlock pool gateway local simulators",
       ),
     ],
+  },
+  {
+    id: "pd-secrets-post-login-script",
+    title: "Post-login script",
+    to: "/settings/access",
+    scope: "environment",
+    searchTerms: ["pd-secrets Password Depot sign in login bash script integration"],
   },
   {
     id: "agent-device-access",
@@ -1474,6 +1539,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/projects": "project",
   "/settings/general": null,
   "/settings/voice": null,
+  "/settings/mggm": null,
   "/settings/appearance": null,
   "/settings/chat": null,
   "/settings/diffs": null,

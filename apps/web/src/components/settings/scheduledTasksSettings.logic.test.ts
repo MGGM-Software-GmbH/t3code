@@ -179,6 +179,20 @@ describe("editing scheduled task branch settings", () => {
 });
 
 describe("fixed-time scheduled tasks", () => {
+  it("round-trips a monthly weekday and can clear its monthly restriction", () => {
+    const schedule = {
+      type: "fixed_time",
+      timeOfDay: "09:00",
+      weekdays: [3],
+      weekOfMonth: 1,
+    } as const;
+    const draft = taskToDraft({ ...legacyTask, schedule });
+    expect(scheduleFromDraft(draft)).toEqual(schedule);
+    expect(scheduleFromDraft({ ...draft, weekOfMonth: null })).toEqual({
+      ...schedule,
+      weekOfMonth: null,
+    });
+  });
   it("pads a stored single-digit hour so the time input shows it", () => {
     const draft = taskToDraft({
       ...legacyTask,

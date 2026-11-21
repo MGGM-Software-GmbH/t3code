@@ -125,6 +125,10 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           yield* fileSystem.makeDirectory(shadowHome, { recursive: true });
           yield* writeTextFile(path.join(shadowHome, "auth.json"), '{"shadow":true}\n');
           yield* writeTextFile(path.join(shadowHome, "auth.lock"), "");
+          const sharedAuthLock = path.join(sharedHome, "auth.json.lock");
+          const shadowAuthLock = path.join(shadowHome, "auth.json.lock");
+          yield* writeTextFile(sharedAuthLock, "shared lock");
+          yield* writeTextFile(shadowAuthLock, "shadow lock");
           yield* fileSystem.symlink(
             path.join(sharedHome, "models_cache.json"),
             path.join(shadowHome, "models_cache.json"),
@@ -162,6 +166,14 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           expect(authLinkResult._tag).toBe("Failure");
           expect(authContents).toContain("shadow");
           expect(authLockLinkResult._tag).toBe("Failure");
+          expect(yield* fileSystem.readFileString(shadowAuthLock)).toBe("shadow lock");
+
+          // Older servers could link the lock before Codex created its shadow copy.
+          yield* fileSystem.remove(shadowAuthLock);
+          yield* fileSystem.symlink(sharedAuthLock, shadowAuthLock);
+          yield* materializeCodexShadowHome(layout);
+          expect(yield* fileSystem.exists(shadowAuthLock)).toBe(false);
+          expect(yield* fileSystem.readFileString(sharedAuthLock)).toBe("shared lock");
         }),
     );
 

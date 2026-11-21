@@ -18,7 +18,6 @@ import {
 import { type ReactNode, useRef, useState } from "react";
 import type {
   EnvironmentId,
-  ModelSelection,
   OrchestrationV2ThreadLaunchWorkspaceStrategy,
   ProjectId,
   ScheduledTask,
@@ -55,7 +54,9 @@ import { m, type MessageResolver } from "../../i18n/messages";
 
 import { formatRelativeTime } from "../../timestampFormat";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
-import { getCustomModelOptionsByInstance } from "../../modelSelection";
+import { getCustomModelOptionsByInstance, selectsPlanAgent } from "../../modelSelection";
+import { getProviderModelCapabilities } from "../../providerModels";
+import { createModelSelection, withImplicitFastModeDefault } from "@t3tools/shared/model";
 import { providerInstanceEntriesFor } from "../../providerInstances";
 import { usePrimaryCloudLinkState } from "../../cloud/cloudLinkState";
 import { requestConfirmDialog } from "../../confirmDialog";
@@ -119,6 +120,7 @@ import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/men
 import { ToggleGroup, Toggle } from "../ui/toggle-group";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "../ui/empty";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { TraitsPicker } from "../chat/TraitsPicker";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import {
@@ -155,6 +157,14 @@ import {
 } from "./settingsLayout";
 
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
+const MONTHLY_WEEKDAY_LABELS: Readonly<Record<number, string>> = {
+  [-1]: "Last",
+  1: "First",
+  2: "Second",
+  3: "Third",
+  4: "Fourth",
+  5: "Fifth",
+};
 const WEEKDAY_SHORT = [
   msg("Su", { $context: "two-letter Sunday" }),
   msg("Mo", { $context: "two-letter Monday" }),
@@ -199,10 +209,9 @@ const EMPTY_DRAFT: DraftState = {
   baseRef: "",
   startFromOrigin: true,
   existingWorktreePath: "",
-  modelKey: "",
+  modelSelection: null,
   runtimeMode: "full-access",
   interactionMode: "default",
-  baseModelSelection: null,
   signatureEnabled: false,
   ...WEBHOOK_SIGNATURE_DEFAULTS,
   signatureSecret: "",
@@ -339,15 +348,6 @@ function Field({
       {children}
     </div>
   );
-}
-
-function splitModelKey(value: string): ModelSelection | null {
-  const index = value.indexOf(":");
-  if (index <= 0 || index === value.length - 1) return null;
-  return {
-    instanceId: ProviderInstanceId.make(value.slice(0, index)),
-    model: value.slice(index + 1),
-  };
 }
 
 /** formatRelativeTime handles only the past; upcoming runs need future labels. */
@@ -1551,7 +1551,7 @@ function ScheduledTaskEditorForm({
   );
 
   const firstInstance = instanceEntries[0];
-  const draftSelection = draft.modelKey ? splitModelKey(draft.modelKey) : null;
+  const draftSelection = draft.modelSelection;
   const activeSelection =
     draftSelection &&
     instanceEntries.some((entry) => entry.instanceId === draftSelection.instanceId && entry.enabled)
@@ -1570,6 +1570,19 @@ function ScheduledTaskEditorForm({
     : { instanceId: activeInstanceId, model: activeModel };
   const shownInstanceId = shownSelection?.instanceId ?? activeInstanceId;
   const shownModel = shownSelection?.model ?? "";
+  const activeEntry = instanceEntries.find((entry) => entry.instanceId === activeInstanceId);
+  const modelOptions =
+    activeEntry && !draft.threadId
+      ? withImplicitFastModeDefault(
+          getProviderModelCapabilities(
+            activeEntry.models,
+            activeModel,
+            activeEntry.driverKind,
+            selectsPlanAgent(activeSelection?.options),
+          ),
+          activeSelection?.options,
+        )
+      : activeSelection?.options;
   const modelOptionsByInstance = getCustomModelOptionsByInstance(
     settings,
     providers,
@@ -1648,6 +1661,17 @@ function ScheduledTaskEditorForm({
       );
       return;
     }
+    if (
+      schedule.type === "fixed_time" &&
+      schedule.weekOfMonth != null &&
+      environment?.serverConfig?.environment.capabilities.monthlyWeekdaySchedules !== true
+    ) {
+      reportFailure(
+        "Monthly weekdays are not available here",
+        "Update this environment to schedule a weekday of each month.",
+      );
+      return;
+    }
     if (draft.workspaceMode === "existing_worktree" && !draft.existingWorktreePath.trim()) {
       reportFailure(
         gt("Checkout path is required"),
@@ -1655,12 +1679,6 @@ function ScheduledTaskEditorForm({
       );
       return;
     }
-    const modelSelection =
-      draft.baseModelSelection !== null &&
-      draft.baseModelSelection.instanceId === selection.instanceId &&
-      draft.baseModelSelection.model === selection.model
-        ? draft.baseModelSelection
-        : selection;
     const workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy =
       draft.workspaceMode === "root"
         ? { type: "root" }
@@ -1681,7 +1699,7 @@ function ScheduledTaskEditorForm({
       threadId: draft.threadId ? (draft.threadId as ThreadId) : null,
       ...(offersThreadModes ? { threadMode: draft.threadMode } : {}),
       workspaceStrategy,
-      modelSelection,
+      modelSelection: createModelSelection(selection.instanceId, selection.model, modelOptions),
       // Tasks have no mode picker; a mode above the administrator's ceiling would fail every run.
       runtimeMode:
         clampManagedRuntimeMode(environment?.serverConfig?.managedPolicy, draft.runtimeMode) ??
@@ -1737,7 +1755,7 @@ function ScheduledTaskEditorForm({
                   projectId: defaultScheduledTaskProjectId(projectsOn(next.environmentId), scope),
                   modelKey: "",
                   baseModelSelection: null,
-                  baseRef: "",
+                  baseRef: "main",
                   startFromOrigin: true,
                   existingWorktreePath: "",
                 }));
@@ -1938,7 +1956,7 @@ function ScheduledTaskEditorForm({
           </Field>
 
           <Field label={gt("Model")}>
-            <div>
+            <div className="flex flex-wrap items-center gap-1.5">
               <ProviderModelPicker
                 environmentId={environmentId}
                 // The saved selection only seeds new threads; bound runs ignore it.
@@ -1950,10 +1968,33 @@ function ScheduledTaskEditorForm({
                 modelOptionsByInstance={modelOptionsByInstance}
                 isComposerOwned={false}
                 triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                onInstanceModelChange={(instanceId, model) =>
-                  setDraft((current) => ({ ...current, modelKey: `${instanceId}:${model}` }))
-                }
+                onInstanceModelChange={(instanceId, model) => {
+                  if (instanceId === activeSelection?.instanceId && model === activeSelection.model)
+                    return;
+                  setDraft((current) => ({
+                    ...current,
+                    modelSelection: createModelSelection(instanceId, model),
+                  }));
+                }}
               />
+              {!draft.threadId && activeSelection && activeEntry ? (
+                <TraitsPicker
+                  provider={activeEntry.driverKind}
+                  models={activeEntry.models}
+                  model={activeModel}
+                  modelOptions={modelOptions ?? []}
+                  allowPromptInjectedEffort={false}
+                  includePlanAgent={selectsPlanAgent(activeSelection.options)}
+                  disabled={saving || !connected}
+                  triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                  onModelOptionsChange={(options) =>
+                    setDraft((current) => ({
+                      ...current,
+                      modelSelection: createModelSelection(activeInstanceId, activeModel, options),
+                    }))
+                  }
+                />
+              ) : null}
             </div>
           </Field>
 
@@ -2240,6 +2281,43 @@ function ScheduledTaskEditorForm({
               </div>
             ) : draft.scheduleMode === "fixed" ? (
               <div className="flex flex-wrap items-center gap-3">
+                <Field label="Repeat" htmlFor="scheduled-task-month-week">
+                  <Select
+                    value={String(draft.weekOfMonth ?? 0)}
+                    onValueChange={(value) =>
+                      setDraft((current) => ({
+                        ...current,
+                        weekOfMonth: Number(value) === 0 ? null : Number(value),
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="scheduled-task-month-week" aria-label="Week of month">
+                      <SelectValue>
+                        {draft.weekOfMonth == null
+                          ? "Every week"
+                          : `${MONTHLY_WEEKDAY_LABELS[draft.weekOfMonth]} of every month`}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      <SelectItem value="0">Every week</SelectItem>
+                      {(environment?.serverConfig?.environment.capabilities
+                        .monthlyWeekdaySchedules === true ||
+                        draft.weekOfMonth != null) &&
+                        [
+                          [1, "First"],
+                          [2, "Second"],
+                          [3, "Third"],
+                          [4, "Fourth"],
+                          [5, "Fifth"],
+                          [-1, "Last"],
+                        ].map(([value, label]) => (
+                          <SelectItem key={value} value={String(value)}>
+                            {label} of every month
+                          </SelectItem>
+                        ))}
+                    </SelectPopup>
+                  </Select>
+                </Field>
                 <div className="flex items-center gap-2">
                   <Label htmlFor="scheduled-task-time">
                     <T>Run at</T>

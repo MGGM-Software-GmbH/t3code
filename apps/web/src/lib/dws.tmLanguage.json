@@ -1,0 +1,165 @@
+{
+  "name": "mggm-dws",
+  "scopeName": "source.mggm-dws",
+  "patterns": [
+    {
+      "name": "meta.embedded.inline.pascal",
+      "begin": "<%=",
+      "end": "%>",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.begin.pascal"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.pascal"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#pascal-expressions"
+        }
+      ]
+    },
+    {
+      "name": "meta.embedded.block.pascal",
+      "begin": "<%",
+      "end": "%>",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.begin.pascal"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.embedded.end.pascal"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#pascal-code"
+        }
+      ]
+    },
+    {
+      "include": "source.js"
+    }
+  ],
+  "repository": {
+    "pascal-expressions": {
+      "patterns": [
+        {
+          "name": "keyword.control.pascal",
+          "match": "(?i)\\b(if|then|else|while|for|to|downto|do|repeat|until|case|of|with|try|except|finally|raise|begin|end)\\b"
+        },
+        {
+          "name": "keyword.operator.pascal",
+          "match": "(?i)\\b(and|or|not|xor|div|mod|shl|shr|in|is|as)\\b"
+        },
+        {
+          "name": "storage.type.pascal",
+          "match": "(?i)\\b(var|const|type|function|procedure|array|record|string|integer|boolean|real|char|byte|word|pointer)\\b"
+        },
+        {
+          "name": "constant.language.pascal",
+          "match": "(?i)\\b(nil|true|false)\\b"
+        },
+        {
+          "name": "support.function.pascal",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        },
+        {
+          "name": "constant.numeric.pascal",
+          "match": "\\b\\d+(?:\\.\\d+)?\\b"
+        },
+        {
+          "name": "keyword.operator.pascal",
+          "match": "(?i):=|<>|<=|>=|[+\\-*=<>]|/(?!/)"
+        },
+        {
+          "name": "variable.other.pascal",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+        },
+        {
+          "name": "string.quoted.single.pascal",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.pascal",
+              "match": "''"
+            }
+          ]
+        },
+        {
+          "name": "comment.line.double-slash.pascal",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.pascal",
+          "begin": "\\{",
+          "end": "\\}"
+        },
+        {
+          "name": "comment.block.pascal",
+          "begin": "\\(\\*",
+          "end": "\\*\\)"
+        }
+      ]
+    },
+    "pascal-code": {
+      "patterns": [
+        {
+          "include": "#pascal-expressions"
+        }
+      ]
+    }
+  },
+  "injections": {
+    "L:source.mggm-dws": {
+      "patterns": [
+        {
+          "name": "meta.embedded.inline.pascal.dws-js",
+          "begin": "<%=",
+          "end": "%>",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.embedded.begin.pascal"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.embedded.end.pascal"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#pascal-expressions"
+            }
+          ]
+        },
+        {
+          "name": "meta.embedded.block.pascal.dws-js",
+          "begin": "<%",
+          "end": "%>",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.embedded.begin.pascal"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.embedded.end.pascal"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#pascal-code"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

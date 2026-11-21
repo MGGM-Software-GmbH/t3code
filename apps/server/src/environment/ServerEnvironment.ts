@@ -22,6 +22,7 @@ import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import { databaseMigrationHead } from "../persistence/databaseMigrationHead.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import { checkoutProbe } from "./ClaudeSvnUpdate.ts";
 import { isSpeechPlatformSupported } from "../speech/platform.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
 import { detectServerEnvironmentMachineKind } from "./ServerEnvironmentMachine.ts";
@@ -190,6 +191,7 @@ export const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const hostPlatform = yield* HostProcess.Platform;
   const hostArchitecture = yield* HostProcess.Architecture;
+  const hasCheckout = yield* checkoutProbe;
   const hostLibc = hostPlatform === "linux" ? yield* HostProcess.LinuxLibc : undefined;
   const environmentId = yield* identity.getEnvironmentId;
   const cwdBaseName = path.basename(serverConfig.cwd).trim();
@@ -256,6 +258,7 @@ export const make = Effect.gen(function* () {
       usageLimitSources: true,
       providerWorkspaceSnapshotsOnDemand: true,
       modelCatalogRefresh: true,
+      pdSecrets: true,
       usagePriceOverrides: true,
       usageModelAliases: true,
       threadPinning: true,
@@ -281,6 +284,7 @@ export const make = Effect.gen(function* () {
       ignoredFileSearch: true,
       triage: true,
       oneTimeSchedules: true,
+      monthlyWeekdaySchedules: true,
       freshContext: true,
       scheduledTaskThreadModes: true,
       npmReleaseLookup: true,
@@ -308,10 +312,14 @@ export const make = Effect.gen(function* () {
   return ServerEnvironment.of({
     getEnvironmentId: Effect.succeed(environmentId),
     // Publishing opt-in and relay links change at runtime; read the capability per request.
-    getDescriptor: readAgentActivityPublishingActive(secrets).pipe(
-      Effect.map((agentActivityPublishing) => ({
+    getDescriptor: Effect.all([readAgentActivityPublishingActive(secrets), hasCheckout]).pipe(
+      Effect.map(([agentActivityPublishing, mggmClaudeSvnCheckout]) => ({
         ...descriptor,
-        capabilities: { ...descriptor.capabilities, agentActivityPublishing },
+        capabilities: {
+          ...descriptor.capabilities,
+          agentActivityPublishing,
+          mggmClaudeSvnCheckout,
+        },
       })),
     ),
   });
