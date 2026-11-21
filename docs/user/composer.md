@@ -265,6 +265,10 @@ not been sent yet. On mobile they appear above the composer. Each shows its text
 images. **Send now** sends a message right away, into the running turn if there is one. You can
 also edit or remove it.
 
+On web and desktop, hover over a queued message and drag the grip on its left.
+Drop it where the line marks the new position. You can also tab to the grip and
+press the up or down arrow key to move the message one place.
+
 If you stop the agent or the server restarts, queued messages keep their order and are held.
 Press **Resume** in an empty composer to continue. For stopped runs and usage limits,
 this uses the provider's native continuation without sending a new prompt. If the provider
