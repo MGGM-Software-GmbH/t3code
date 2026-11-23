@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   type LimitAccount,
+  antigravityGeminiWeeklyWindows,
   displayLimitWindows,
   cursorUsageWindowDetails,
   collectProviderUsageLimits,
@@ -22,6 +23,7 @@ import {
   exhaustedUsageWindow,
   paceOf,
   paceRemainingPercent,
+  shouldShowWeeklyLimit,
   weeklyLimitWindow,
   summarizeWeeklyLimits,
   usesChatGptSharing,
@@ -471,6 +473,103 @@ describe("weekly toolbar limits", () => {
     ]);
     expect(summary.remainingPercent).toBe(65);
     expect(summary.nextResetAt).toBeNull();
+  });
+
+  it("resolves Antigravity Gemini weekly windows including model-specific variants", () => {
+    const antigravity = ProviderDriverKind.make("antigravity");
+    const geminiWeekly = {
+      ...weekly,
+      id: "gemini-weekly",
+      label: "Gemini · Weekly",
+      usedPercent: 12,
+    };
+    const argonWeekly = {
+      ...weekly,
+      id: "gemini-argon-wtu-weekly",
+      label: "Gemini 4 Argon · Weekly",
+      usedPercent: 40,
+    };
+    const neonWeekly = {
+      ...weekly,
+      id: "gemini-neon-wtu-weekly",
+      label: "Gemini 4 Neon · Weekly",
+      usedPercent: 25,
+    };
+    const shared3pWeekly = {
+      ...weekly,
+      id: "3p-weekly",
+      label: "Claude & GPT (shared) · Weekly",
+      usedPercent: 95,
+    };
+    const gemini5h = { ...window, id: "gemini-5h", label: "Gemini · 5-hour", usedPercent: 30 };
+    const fullLimits = {
+      checkedAt: "2026-09-03T11:00:00.000Z",
+      windows: [shared3pWeekly, argonWeekly, gemini5h, neonWeekly, geminiWeekly],
+    };
+
+    expect(antigravityGeminiWeeklyWindows(fullLimits).map((entry) => entry.id)).toEqual([
+      "gemini-weekly",
+      "gemini-argon-wtu-weekly",
+      "gemini-neon-wtu-weekly",
+    ]);
+    expect(weeklyLimitWindow(fullLimits, { driver: antigravity })?.id).toBe("gemini-weekly");
+    expect(
+      weeklyLimitWindow(fullLimits, { driver: antigravity, model: "gemini-4-argon" })?.id,
+    ).toBe("gemini-argon-wtu-weekly");
+    expect(weeklyLimitWindow(fullLimits, { driver: antigravity, model: "gemini-4-neon" })?.id).toBe(
+      "gemini-neon-wtu-weekly",
+    );
+    expect(
+      weeklyLimitWindow(fullLimits, { driver: antigravity, model: "gemini-3.8-flash-high" })?.id,
+    ).toBe("gemini-weekly");
+    expect(
+      weeklyLimitWindow(fullLimits, { driver: antigravity, model: "antigravity-default" })?.id,
+    ).toBe("gemini-weekly");
+    expect(
+      weeklyLimitWindow(fullLimits, { driver: antigravity, model: "claude-opus-5-5" }),
+    ).toBeNull();
+    expect(
+      shouldShowWeeklyLimit({ driver: antigravity, usageLimits: fullLimits }, "gemini-4-neon"),
+    ).toBe(true);
+    expect(
+      shouldShowWeeklyLimit({ driver: antigravity, usageLimits: fullLimits }, "claude-opus-5-5"),
+    ).toBe(false);
+
+    // A personal account reporting only one Gemini variant weekly bucket still resolves it.
+    const singleVariant = {
+      checkedAt: fullLimits.checkedAt,
+      windows: [shared3pWeekly, argonWeekly],
+    };
+    expect(weeklyLimitWindow(singleVariant, { driver: antigravity })?.id).toBe(
+      "gemini-argon-wtu-weekly",
+    );
+    // Multiple model-specific Gemini buckets without a default gemini-weekly stay unknown without a model.
+    const multiVariantOnly = {
+      checkedAt: fullLimits.checkedAt,
+      windows: [argonWeekly, neonWeekly],
+    };
+    expect(weeklyLimitWindow(multiVariantOnly, { driver: antigravity })).toBeNull();
+    expect(
+      weeklyLimitWindow(multiVariantOnly, { driver: antigravity, model: "gemini-4-neon" })?.id,
+    ).toBe("gemini-neon-wtu-weekly");
+    // Non-Gemini or session-only buckets are never substituted.
+    expect(
+      weeklyLimitWindow(
+        { checkedAt: fullLimits.checkedAt, windows: [shared3pWeekly, gemini5h] },
+        { driver: antigravity },
+      ),
+    ).toBeNull();
+
+    const agAccount = {
+      ...account("antigravity", 0),
+      driver: antigravity,
+      plan: undefined,
+      limits: fullLimits,
+    };
+    expect(summarizeWeeklyLimits([agAccount], now).remainingPercent).toBe(88);
+    expect(
+      summarizeWeeklyLimits([agAccount], now, { model: "gemini-4-neon" }).remainingPercent,
+    ).toBe(75);
   });
 });
 

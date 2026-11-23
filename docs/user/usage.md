@@ -1,8 +1,8 @@
 # Usage and limits
 
-Open **Usage** from the sidebar or the command palette, or press `mod+u` on web and
-desktop when the terminal is not focused. Customize `usage.open` in
-**Settings → Keybindings**.
+Open **Usage** by clicking a weekly limit indicator in the sidebar or composer, from the command
+palette, or by pressing `mod+u` on web and desktop when the terminal is not focused. Customize
+`usage.open` in **Settings → Keybindings**.
 
 On mobile, choose **Usage** in the workspace navigation.
 
@@ -150,7 +150,11 @@ stale reset times have no refill estimate; refresh Limits for a new reading. Cla
 model-specific weekly allowances keep their reported values.
 
 The weekly indicators in the sidebar and next to the composer's access selector show the remaining
-seven-day allowance across accounts and for the selected account. The combined percentage weights
+seven-day allowance across accounts and for the selected account. When Antigravity is connected, its
+Gemini weekly allowance appears in its own compact sidebar ring beside the pooled Codex ring, as
+well as in the model picker and composer (matching model-specific Gemini weekly buckets when
+reported). Clicking any weekly limit indicator opens **Usage → Limits** directly, replacing a
+separate Usage button under the thread list. The combined percentage weights
 Codex accounts by their included plan allowance: Plus and Business Standard (formerly Team) count
 as 1, Pro 100 and Business Premium as 10, Pro 200 as 20, and Pro 500 as 50. These are allowance
 ratios, not subscription-price ratios. A combined percentage is unavailable when reporting accounts

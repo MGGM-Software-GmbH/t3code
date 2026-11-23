@@ -508,6 +508,151 @@ it.each([
   },
 );
 
+function antigravityProvider(
+  usedPercent: number,
+  options: {
+    readonly instanceId?: ProviderInstanceId;
+    readonly extraWindows?: ServerProvider["usageLimits"] extends infer U
+      ? U extends { readonly windows: infer W }
+        ? W
+        : never
+      : never;
+    readonly unavailable?: {
+      readonly reason: "unsupported" | "probeFailed";
+      readonly message?: string;
+    };
+    readonly fingerprint?: string;
+  } = {},
+): ServerProvider {
+  const instanceId = options.instanceId ?? ProviderInstanceId.make("antigravity");
+  return {
+    instanceId,
+    driver: ProviderDriverKind.make("antigravity"),
+    displayName: "Antigravity",
+    enabled: true,
+    installed: true,
+    status: "ready",
+    version: null,
+    auth: { status: "authenticated" },
+    models: [],
+    skills: [],
+    slashCommands: [],
+    checkedAt: "2026-10-19T08:00:00.000Z",
+    usageLimits: {
+      checkedAt: "2026-10-19T08:00:00.000Z",
+      credentialFingerprint: options.fingerprint ?? "google-account-1",
+      ...(options.unavailable ? { unavailable: options.unavailable } : {}),
+      windows: options.unavailable
+        ? []
+        : [
+            {
+              id: "gemini-weekly",
+              kind: "weekly",
+              label: "Gemini · Weekly",
+              windowDurationMins: 10080,
+              usedPercent,
+              resetsAt: "2026-10-23T08:00:00.000Z",
+            },
+            {
+              id: "3p-weekly",
+              kind: "weekly",
+              label: "Claude & GPT (shared) · Weekly",
+              windowDurationMins: 10080,
+              usedPercent: 100,
+              resetsAt: "2026-10-21T08:00:00.000Z",
+            },
+            ...(options.extraWindows ?? []),
+          ],
+    },
+  };
+}
+
+it("renders a dedicated Antigravity Gemini ring alongside Codex in the sidebar and supports model matching in the composer", async () => {
+  await using test = await setup();
+  const { container, setProviders, render, labels } = test;
+  const agInstance = ProviderInstanceId.make("antigravity");
+  const agWsl = antigravityProvider(12, {
+    instanceId: agInstance,
+    extraWindows: [
+      {
+        id: "gemini-neon-wtu-weekly",
+        kind: "weekly",
+        label: "Gemini 4 Neon · Weekly",
+        windowDurationMins: 10080,
+        usedPercent: 25,
+        resetsAt: "2026-10-24T08:00:00.000Z",
+      },
+    ],
+  });
+  const agDgx = antigravityProvider(12, { instanceId: agInstance });
+  setProviders([provider(codex, 25, "team@example.test"), agWsl], [agDgx]);
+  await render(wsl, agInstance, "gemini-4-neon");
+
+  expect(labels()).toEqual([
+    "Weekly limit, all accounts: 75% remaining",
+    "Weekly limit, Gemini (Antigravity): 88% remaining",
+    "Weekly limit, Antigravity: 75% remaining",
+  ]);
+  expect(container.querySelector("[data-sidebar-antigravity-weekly-limit]")).not.toBeNull();
+  expect(container.querySelector('[data-provider-badge="antigravity"]')).not.toBeNull();
+
+  // Clicking the Antigravity sidebar ring opens Usage → Limits.
+  const agSidebarButton = container.querySelector<HTMLButtonElement>(
+    "[data-sidebar-antigravity-weekly-limit]",
+  )!;
+  await act(async () => agSidebarButton.click());
+  expect(actions.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/usage" });
+  expect(readUsagePagePreferences().metric).toBe("limits");
+
+  // Hovering/focusing the composer ring shows the matched Neon bucket and lists Gemini · Weekly without noisy banked-reset copy.
+  const composerButton = container.querySelector<HTMLButtonElement>(
+    "[data-composer-weekly-limit]",
+  )!;
+  await act(async () => {
+    composerButton.focus();
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(document.body.textContent).toContain("Gemini 4 Neon · Weekly");
+  expect(document.body.textContent).toContain("Gemini · Weekly: 88% remaining");
+  expect(document.body.textContent).not.toContain("Banked resets: not reported");
+
+  // Selecting a non-Gemini model on Antigravity hides the Gemini weekly indicator in the composer.
+  await render(wsl, agInstance, "claude-opus-5-5");
+  expect(container.querySelector("[data-composer-weekly-limit]")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("shows only the Antigravity ring when no other limit accounts exist, and hides unsupported API-key accounts", async () => {
+  await using test = await setup();
+  const { container, setProviders, render, labels } = test;
+  const agInstance = ProviderInstanceId.make("antigravity");
+  setProviders([antigravityProvider(4, { instanceId: agInstance })]);
+  await render(wsl, agInstance, "gemini-4-neon");
+  expect(labels()).toEqual([
+    "Weekly limit, Gemini (Antigravity): 96% remaining",
+    "Weekly limit, Antigravity: 96% remaining",
+  ]);
+
+  // API-key Antigravity accounts report unsupported and should not add a stray sidebar ring.
+  setProviders([
+    provider(codex, 20, "team@example.test"),
+    antigravityProvider(0, {
+      instanceId: agInstance,
+      unavailable: {
+        reason: "unsupported",
+        message: "Sign in with Google to see Antigravity limits.",
+      },
+    }),
+  ]);
+  await render(wsl, codex);
+  expect(labels()).toEqual([
+    "Weekly limit, all accounts: 80% remaining",
+    "Weekly limit, Team: 80% remaining",
+  ]);
+  expect(container.querySelector("[data-sidebar-antigravity-weekly-limit]")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 async function setup() {
   let root: Root;
   let container: HTMLDivElement;
@@ -521,14 +666,19 @@ async function setup() {
       ]),
     );
   }
-  async function render(environmentId = wsl, instanceId = codex) {
+  async function render(environmentId = wsl, instanceId = codex, model?: string) {
     await act(async () =>
       root.render(
         <RegistryContext.Provider value={registry}>
           <ul>
             <SidebarWeeklyLimit />
           </ul>
-          <ComposerWeeklyLimit environmentId={environmentId} instanceId={instanceId} size="sm" />
+          <ComposerWeeklyLimit
+            environmentId={environmentId}
+            instanceId={instanceId}
+            model={model}
+            size="sm"
+          />
         </RegistryContext.Provider>,
       ),
     );

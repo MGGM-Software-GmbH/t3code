@@ -313,6 +313,7 @@ export function ComposerControlsBar(props: {
         <ComposerWeeklyLimit
           environmentId={environmentId}
           instanceId={selectedInstanceId}
+          model={selectedModel}
           size={composerControlsCollapsed ? "xs" : "sm"}
         />
       </>

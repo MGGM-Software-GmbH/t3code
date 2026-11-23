@@ -2,6 +2,7 @@ import { useGT, Var } from "gt-react";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
 import {
+  antigravityGeminiWeeklyWindows,
   remainingPercent,
   weeklyLimitWindow,
   shouldShowWeeklyLimit,
@@ -166,7 +167,15 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
             const limits = entry.snapshot.usageLimits;
             const showLimit = shouldShowWeeklyLimit(entry.snapshot);
-            const weekly = limits ? weeklyLimitWindow(limits) : null;
+            const weekly = limits
+              ? weeklyLimitWindow(limits, { driver: entry.snapshot.driver })
+              : null;
+            const extraGeminiWindows =
+              limits && entry.snapshot.driver === "antigravity"
+                ? antigravityGeminiWeeklyWindows(limits).filter(
+                    (window) => window.id !== weekly?.id,
+                  )
+                : [];
             const percent = weekly ? remainingPercent(weekly) : null;
             const credits = limits && !limits.unavailable ? limits.resetCredits : undefined;
             const expiringSoon =
@@ -281,6 +290,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                         {creditsLabel}
                       </div>
                     ) : null}
+                    {extraGeminiWindows.map((window) => (
+                      <div key={window.id} className="text-muted-foreground">
+                        {`${window.label}: ${uebersetzen("{wert1}% remaining", { wert1: remainingPercent(window) })}`}
+                      </div>
+                    ))}
                     {credits && credits.availableCount > 0 ? (
                       <div
                         className={cn(

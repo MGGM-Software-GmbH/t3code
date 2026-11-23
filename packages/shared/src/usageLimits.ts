@@ -701,27 +701,79 @@ export function remainingPercent(window: ServerProviderUsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
 }
 
-/** The account-wide seven-day allowance, never a session or model-specific substitute. */
-export function weeklyLimitWindow(limits: ServerProviderUsageLimits) {
+export interface WeeklyLimitWindowOptions {
+  readonly driver?: ServerProvider["driver"] | undefined;
+  readonly model?: string | undefined;
+}
+
+function isSevenDayWeeklyWindow(window: ServerProviderUsageWindow): boolean {
+  return (
+    window.kind === "weekly" &&
+    (window.windowDurationMins === undefined || window.windowDurationMins === 7 * 24 * 60) &&
+    Number.isFinite(window.usedPercent)
+  );
+}
+
+/** Gemini weekly windows reported by Antigravity, ordered with the default Gemini bucket first. */
+export function antigravityGeminiWeeklyWindows(
+  limits: ServerProviderUsageLimits,
+): readonly ServerProviderUsageWindow[] {
+  if (limitsNotice(limits) !== null) return [];
+  return limits.windows
+    .filter((window) => isSevenDayWeeklyWindow(window) && window.id.startsWith("gemini-"))
+    .sort(
+      (left, right) =>
+        Number(left.id !== "gemini-weekly") - Number(right.id !== "gemini-weekly") ||
+        left.id.localeCompare(right.id),
+    );
+}
+
+/** The account-wide seven-day allowance, or Antigravity's Gemini weekly allowance. */
+export function weeklyLimitWindow(
+  limits: ServerProviderUsageLimits,
+  options?: WeeklyLimitWindowOptions,
+) {
   if (limitsNotice(limits) !== null) return null;
+  if (options?.driver === "antigravity") {
+    const model = options.model?.trim().toLowerCase();
+    // Third-party models on Antigravity (Claude/GPT) do not draw from Gemini's weekly quota.
+    if (model && /^(claude|gpt)-/.test(model)) return null;
+    const geminiWeekly = antigravityGeminiWeeklyWindows(limits);
+    if (geminiWeekly.length === 0) return null;
+    if (model && model.startsWith("gemini-")) {
+      const variant = model.match(/^gemini-(?:\d+(?:\.\d+)?-)?([a-z]+)/)?.[1];
+      if (variant) {
+        const matched = geminiWeekly.find((window) => window.id.startsWith(`gemini-${variant}-`));
+        if (matched) return matched;
+      }
+    }
+    const mainGemini = geminiWeekly.find((window) => window.id === "gemini-weekly");
+    return mainGemini ?? (geminiWeekly.length === 1 ? geminiWeekly[0]! : null);
+  }
   const weekly = limits.windows.filter(
     (window) =>
-      window.kind === "weekly" &&
-      ["primary", "secondary", "seven_day", "weekly"].includes(window.id) &&
-      (window.windowDurationMins === undefined || window.windowDurationMins === 7 * 24 * 60) &&
-      Number.isFinite(window.usedPercent),
+      isSevenDayWeeklyWindow(window) &&
+      ["primary", "secondary", "seven_day", "weekly", "gemini-weekly"].includes(window.id),
   );
-  const main = weekly.find((window) => window.id === "seven_day" || window.id === "weekly");
+  const main = weekly.find(
+    (window) =>
+      window.id === "seven_day" || window.id === "weekly" || window.id === "gemini-weekly",
+  );
   return main ?? (weekly.length === 1 ? weekly[0]! : null);
 }
 
 /** Registry agents such as Copilot do not advertise an account-wide quota probe. */
 export function shouldShowWeeklyLimit(
   provider: Pick<ServerProvider, "driver" | "usageLimits">,
+  model?: string,
 ): boolean {
+  if (provider.driver === "antigravity" && model && /^(claude|gpt)-/i.test(model.trim())) {
+    return false;
+  }
   return (
     provider.driver !== "acpRegistry" ||
-    (provider.usageLimits !== undefined && weeklyLimitWindow(provider.usageLimits) !== null)
+    (provider.usageLimits !== undefined &&
+      weeklyLimitWindow(provider.usageLimits, { driver: provider.driver, model }) !== null)
   );
 }
 
@@ -745,9 +797,16 @@ const CODEX_WEEKLY_PLAN_CAPACITY = new Map([
  * and a passed reset never fabricates a fresh balance. Elapsed periods are
  * averaged separately from quota; banked credits are summed across accounts.
  */
-export function summarizeWeeklyLimits(accounts: readonly LimitAccount[], now?: number) {
+export function summarizeWeeklyLimits(
+  accounts: readonly LimitAccount[],
+  now?: number,
+  options?: { readonly model?: string | undefined },
+) {
   const members = accounts.flatMap((account) => {
-    const window = weeklyLimitWindow(account.limits);
+    const window = weeklyLimitWindow(account.limits, {
+      driver: account.driver,
+      model: options?.model,
+    });
     if (!window) return [];
     const elapsedDays =
       now === undefined ? null : elapsedShare({ ...window, windowDurationMins: 10080 }, now);
