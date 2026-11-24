@@ -762,16 +762,13 @@ export function weeklyLimitWindow(
   return main ?? (weekly.length === 1 ? weekly[0]! : null);
 }
 
-/** Registry agents such as Copilot do not advertise an account-wide quota probe. */
+/** Registry agents and Antigravity need a matching quota report to show a weekly indicator. */
 export function shouldShowWeeklyLimit(
   provider: Pick<ServerProvider, "driver" | "usageLimits">,
   model?: string,
 ): boolean {
-  if (provider.driver === "antigravity" && model && /^(claude|gpt)-/i.test(model.trim())) {
-    return false;
-  }
   return (
-    provider.driver !== "acpRegistry" ||
+    (provider.driver !== "acpRegistry" && provider.driver !== "antigravity") ||
     (provider.usageLimits !== undefined &&
       weeklyLimitWindow(provider.usageLimits, { driver: provider.driver, model }) !== null)
   );
@@ -792,10 +789,10 @@ const CODEX_WEEKLY_PLAN_CAPACITY = new Map([
 ]);
 
 /**
- * Weight Codex accounts by comparable plan allowances, never by subscription price.
- * Callers deduplicate accounts with collectLimitAccounts first. Missing allowances stay visible,
- * and a passed reset never fabricates a fresh balance. Elapsed periods are
- * averaged separately from quota; banked credits are summed across accounts.
+ * Deduplicate accounts first. Weight Codex by comparable allowances, never by price.
+ * Matching Antigravity buckets count each account once, as on Usage → Limits.
+ * Missing allowances stay visible and a passed reset never fabricates a fresh balance.
+ * Average elapsed periods separately from quota and sum banked credits across accounts.
  */
 export function summarizeWeeklyLimits(
   accounts: readonly LimitAccount[],
@@ -838,12 +835,21 @@ export function summarizeWeeklyLimits(
     const at = resetMillis(window);
     return at === null ? [] : [at];
   });
+  const averageAntigravity =
+    members.length > 1 &&
+    members.every(
+      ({ account, window }) =>
+        account.driver === "antigravity" && window.id === members[0]!.window.id,
+    );
   const capacityUnavailable =
-    members.length > 1 && members.some(({ capacity }) => capacity === null);
-  const totalCapacity = members.reduce((sum, { capacity }) => sum + (capacity ?? 0), 0);
+    members.length > 1 && !averageAntigravity && members.some(({ capacity }) => capacity === null);
+  const totalCapacity = averageAntigravity
+    ? members.length
+    : members.reduce((sum, { capacity }) => sum + (capacity ?? 0), 0);
   const weightedUsed = members.reduce(
     (sum, { window, capacity }) =>
-      sum + Math.max(0, Math.min(100, window.usedPercent)) * (capacity ?? 0),
+      sum +
+      Math.max(0, Math.min(100, window.usedPercent)) * (averageAntigravity ? 1 : (capacity ?? 0)),
     0,
   );
   const checkedTimes = members

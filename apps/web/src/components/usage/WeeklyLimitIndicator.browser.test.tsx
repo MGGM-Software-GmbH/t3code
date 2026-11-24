@@ -653,6 +653,57 @@ it("shows only the Antigravity ring when no other limit accounts exist, and hide
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it("hides Antigravity rings without a usable Gemini weekly report", async () => {
+  await using test = await setup();
+  const { setProviders, render, labels } = test;
+  const antigravity = antigravityProvider(80);
+  for (const snapshot of [
+    { ...antigravity, usageLimits: undefined },
+    { ...antigravity, enabled: false },
+    { ...antigravity, auth: { status: "unauthenticated" } as const },
+    {
+      ...antigravity,
+      usageLimits: {
+        ...antigravity.usageLimits!,
+        windows: antigravity.usageLimits!.windows.filter((window) => window.id === "3p-weekly"),
+      },
+    },
+    antigravityProvider(0, { unavailable: { reason: "probeFailed" } }),
+  ]) {
+    setProviders([provider(codex, 20, "team@example.test"), snapshot]);
+    await render(wsl, antigravity.instanceId, "gemini-4-neon");
+    expect(labels()).toEqual(["Weekly limit, all accounts: 80% remaining"]);
+  }
+});
+
+it("shows the average Gemini balance across distinct accounts and lists each balance", async () => {
+  await using test = await setup();
+  const { container, setProviders, render, labels } = test;
+  const local = antigravityProvider(80);
+  const remote = {
+    ...antigravityProvider(30, { fingerprint: "google-account-2" }),
+    displayName: "Antigravity remote",
+  };
+  setProviders([local], [remote]);
+  await render(wsl, local.instanceId, "gemini-4-neon");
+
+  expect(labels()).toEqual([
+    "Weekly limit, Gemini (Antigravity): 45% remaining",
+    "Weekly limit, Antigravity: 20% remaining",
+  ]);
+  const ring = container.querySelector<HTMLButtonElement>(
+    "[data-sidebar-antigravity-weekly-limit]",
+  )!;
+  await act(async () => {
+    ring.focus();
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(document.body.textContent).toContain("Antigravity (20% remaining)");
+  expect(document.body.textContent).toContain("Antigravity remote (70% remaining)");
+  expect(document.body.textContent).not.toContain("weighted by plan allowance");
+  expect(document.body.textContent).not.toContain("Plan capacity unknown");
+});
+
 async function setup() {
   let root: Root;
   let container: HTMLDivElement;
