@@ -1,4 +1,4 @@
-import { editorFailure } from "~/useOpenEditorWithFeedback";
+import { editorFailure } from "~/editorFailure";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";

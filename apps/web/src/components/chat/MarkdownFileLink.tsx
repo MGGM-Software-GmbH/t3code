@@ -1,4 +1,4 @@
-import { editorFailure } from "~/useOpenEditorWithFeedback";
+import { editorFailure } from "~/editorFailure";
 import { useNativeFileDrag } from "../../useNativeFileDrag";
 import { useAssetUrlState } from "../../assets/assetUrls";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";

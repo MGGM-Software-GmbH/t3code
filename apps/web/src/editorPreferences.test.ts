@@ -35,7 +35,7 @@ vi.mock("./hooks/useLocalStorage", () => ({
 }));
 
 import { useOpenInPreferredEditor } from "./editorPreferences";
-import { editorFailure } from "./useOpenEditorWithFeedback";
+import { editorFailure } from "./editorFailure";
 
 const primary = EnvironmentId.make("primary");
 const secondary = EnvironmentId.make("secondary");

@@ -1,4 +1,4 @@
-import { editorFailure } from "~/useOpenEditorWithFeedback";
+import { editorFailure } from "~/editorFailure";
 import { toastManager } from "./ui/toast";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { RefreshIcon } from "~/components/ui/refresh-icon";

@@ -1,4 +1,4 @@
-import { editorFailure } from "~/useOpenEditorWithFeedback";
+import { editorFailure } from "~/editorFailure";
 
 import {
   AuthOrchestrationOperateScope,

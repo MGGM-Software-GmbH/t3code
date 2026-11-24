@@ -1,4 +1,4 @@
-import { editorFailure } from "~/useOpenEditorWithFeedback";
+import { editorFailure } from "~/editorFailure";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { sourceControlInstallHintText } from "@t3tools/client-runtime/contract-labels";
 import { msg, T, useGT, useMessages, Var } from "gt-react";

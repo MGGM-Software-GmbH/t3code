@@ -16,7 +16,8 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { editorFailure, useOpenEditorWithFeedback } from "./useOpenEditorWithFeedback";
+import { editorFailure } from "./editorFailure";
+import { useOpenEditorWithFeedback } from "./useOpenEditorWithFeedback";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { toastManager } from "./components/ui/toast";
 import { useAtomValue } from "@effect/atom-react";
