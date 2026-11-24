@@ -413,9 +413,14 @@ it.effect.skipIf(windowsHost)(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-for (const exitCode of [0, 69, 1]) {
+for (const [setting, exitCode] of [
+  ["true", 0],
+  ["true", 69],
+  ["true", 1],
+  ["invalid", 0],
+] as const) {
   it.effect.skipIf(windowsHost)(
-    `reports the VS Code remote CLI result for exit code ${exitCode}`,
+    `reports the VS Code remote CLI result for setting ${setting} and exit code ${exitCode}`,
     () =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
@@ -433,13 +438,22 @@ for (const exitCode of [0, 69, 1]) {
           Effect.provide(
             layerTest({
               platform: "linux",
-              env: { PATH: binDir, T3CODE_VSCODE_REMOTE_CLI: "true" },
-              spawnResult: () => ({ exitCode: exitCode }),
+              env: { PATH: binDir, T3CODE_VSCODE_REMOTE_CLI: setting },
+              spawnResult: () => ({ exitCode }),
             }),
           ),
           Effect.exit,
         );
-        if (exitCode === 0) {
+        if (setting === "invalid") {
+          assert.isTrue(Exit.isFailure(result));
+          if (Exit.isFailure(result)) {
+            assert.propertyVal(
+              Cause.squash(result.cause),
+              "_tag",
+              "ExternalLauncherEditorConfigError",
+            );
+          }
+        } else if (exitCode === 0) {
           assert.isTrue(Exit.isSuccess(result));
         } else {
           assert.isTrue(Exit.isFailure(result));

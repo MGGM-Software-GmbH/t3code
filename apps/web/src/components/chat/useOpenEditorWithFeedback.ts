@@ -3,17 +3,8 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
-import {
-  EnvironmentAuthorizationError,
-  ExternalLauncherCommandNotFoundError,
-  ExternalLauncherEditorConfigError,
-  ExternalLauncherEditorExitError,
-  ExternalLauncherEditorSpawnError,
-  ExternalLauncherEditorTimeoutError,
-  ExternalLauncherUnknownEditorError,
-  ExternalLauncherUnsupportedEditorError,
-  ExternalLauncherUnsupportedTargetError,
-} from "@t3tools/contracts";
+import { EnvironmentAuthorizationError, ExternalLauncherError } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { msg } from "gt-react";
 import { editorLabelForPlatform } from "../../editorLabels";
 import { m } from "../../i18n/messages";
@@ -21,62 +12,61 @@ import { shellEnvironment } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
+const isLauncherError = Schema.is(ExternalLauncherError);
+const isAuthorizationError = Schema.is(EnvironmentAuthorizationError);
+
 /** Describe the observable failure and keep recovery instructions in the viewing user's language. */
 function editorFailure(error: unknown, editor: string): string {
-  if (error instanceof ExternalLauncherEditorConfigError) {
-    return m(msg("Set T3CODE_VSCODE_REMOTE_CLI to true or false in the server environment."));
-  }
-  if (error instanceof ExternalLauncherEditorExitError) {
-    if (error.exitCode === 69) {
-      return m(
-        msg(
-          "{editor} is unavailable (code 69). Open a window connected to this environment and try again.",
-          { editor },
-        ),
-      );
+  if (isLauncherError(error)) {
+    switch (error._tag) {
+      case "ExternalLauncherEditorConfigError":
+        return m(msg("Set T3CODE_VSCODE_REMOTE_CLI to true or false in the server environment."));
+      case "ExternalLauncherEditorExitError":
+        if (error.exitCode === 69) {
+          return m(
+            msg(
+              "{editor} is unavailable (code 69). Open a window connected to this environment and try again.",
+              { editor },
+            ),
+          );
+        }
+        return m(
+          msg(
+            "{editor} returned exit code {code}. Run its command in the environment terminal for details.",
+            {
+              editor,
+              code: error.exitCode,
+            },
+          ),
+        );
+      case "ExternalLauncherEditorTimeoutError":
+        return m(
+          msg(
+            "{editor} did not respond. Check that its window is connected to this environment and try again.",
+            { editor },
+          ),
+        );
+      case "ExternalLauncherCommandNotFoundError":
+      case "ExternalLauncherUnsupportedEditorError":
+      case "ExternalLauncherUnknownEditorError":
+        return m(
+          msg(
+            "The environment could not find {editor}. Check that its command is installed and on PATH.",
+            { editor },
+          ),
+        );
+      case "ExternalLauncherEditorSpawnError":
+        return m(
+          msg(
+            "The environment could not start {editor}. Check that its command can run in the environment terminal.",
+            { editor },
+          ),
+        );
+      case "ExternalLauncherUnsupportedTargetError":
+        return m(msg("{editor} cannot open this path.", { editor }));
     }
-    return m(
-      msg(
-        "{editor} returned exit code {code}. Run its command in the environment terminal for details.",
-        {
-          editor,
-          code: error.exitCode,
-        },
-      ),
-    );
   }
-  if (error instanceof ExternalLauncherEditorTimeoutError) {
-    return m(
-      msg(
-        "{editor} did not respond. Check that its window is connected to this environment and try again.",
-        { editor },
-      ),
-    );
-  }
-  if (
-    error instanceof ExternalLauncherCommandNotFoundError ||
-    error instanceof ExternalLauncherUnsupportedEditorError ||
-    error instanceof ExternalLauncherUnknownEditorError
-  ) {
-    return m(
-      msg(
-        "The environment could not find {editor}. Check that its command is installed and on PATH.",
-        { editor },
-      ),
-    );
-  }
-  if (error instanceof ExternalLauncherEditorSpawnError) {
-    return m(
-      msg(
-        "The environment could not start {editor}. Check that its command can run in the environment terminal.",
-        { editor },
-      ),
-    );
-  }
-  if (error instanceof ExternalLauncherUnsupportedTargetError) {
-    return m(msg("{editor} cannot open this path.", { editor }));
-  }
-  if (error instanceof EnvironmentAuthorizationError) {
+  if (isAuthorizationError(error)) {
     return m(msg("This connection cannot open an editor on this environment."));
   }
   return thrownErrorMessage(error, m) || m(msg("The editor command failed."));
