@@ -18,8 +18,7 @@ import { AsyncResult } from "effect/reactivity";
 import { msg } from "gt-react";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "./hooks/useLocalStorage";
 import { m } from "./i18n/messages";
-import { shellEnvironment } from "./state/shell";
-import { useAtomCommand } from "./state/use-atom-command";
+import { useOpenEditorWithFeedback } from "./useOpenEditorWithFeedback";
 import { readEnvironmentScope } from "./state/session";
 
 const LAST_EDITOR_KEY = "t3code:last-editor";
@@ -93,9 +92,7 @@ export function useOpenInPreferredEditor(
   availableEditors: readonly EditorId[],
   projectRoot?: string,
 ) {
-  const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
-    reportFailure: false,
-  });
+  const openInEditor = useOpenEditorWithFeedback("caller");
   type OpenInEditorError = AtomCommandFailure<Awaited<ReturnType<typeof openInEditor>>>;
 
   return async (

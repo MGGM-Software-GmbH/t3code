@@ -1,11 +1,14 @@
-import { m } from "../i18n/messages";
-import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { editorFailure } from "~/editorFailure";
+
 import {
   AuthOrchestrationOperateScope,
   type EditorId,
   type EnvironmentId,
 } from "@t3tools/contracts";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { T, useGT, Var } from "gt-react";
 
 import { useOpenInPreferredEditor } from "../editorPreferences";
@@ -39,13 +42,13 @@ export function KeybindingsConfigWarning({
           onClick={async () => {
             if (!configPath) return;
             const result = await openInEditor(configPath);
-            if (result._tag === "Success") return;
+            if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
             const error = squashAtomCommandFailure(result);
             toastManager.add(
               stackedThreadToast({
                 type: "error",
                 title: gt("Unable to open keybindings file"),
-                description: thrownErrorMessage(error, m) ?? gt("Unknown error opening file."),
+                description: editorFailure(error),
               }),
             );
           }}

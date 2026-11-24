@@ -6,6 +6,9 @@ import {
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherEditorSpawnError,
+  ExternalLauncherEditorConfigError,
+  ExternalLauncherEditorExitError,
+  ExternalLauncherEditorTimeoutError,
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
   ExternalLauncherUnsupportedTargetError,
@@ -37,6 +40,9 @@ import { makeStaleWhileRevalidate } from "../environment/staleWhileRevalidate.ts
 import { WindowsVerbatimSpawn } from "./windowsVerbatimSpawn.ts";
 export {
   ExternalLauncherError,
+  ExternalLauncherEditorConfigError,
+  ExternalLauncherEditorExitError,
+  ExternalLauncherEditorTimeoutError,
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherEditorSpawnError,
@@ -931,6 +937,57 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
   const spawnCommand = yield* resolveSpawnCommand(launch.command, launch.args, { env });
   if (spawnCommand.shell && launch.args.some((arg) => WINDOWS_SHIM_UNSAFE_ARG_PATTERN.test(arg))) {
     return yield* new ExternalLauncherUnsupportedTargetError({ editor: launch.editor });
+  }
+  if (
+    (launch.editor === "vscode" || launch.editor === "vscode-insiders") &&
+    (yield* Config.Boolean("T3CODE_VSCODE_REMOTE_CLI").pipe(
+      Config.withDefault(false),
+      Effect.mapError(() => new ExternalLauncherEditorConfigError()),
+    ))
+  ) {
+    // The remote CLI exits once VS Code acknowledges the request.
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const { ELECTRON_RUN_AS_NODE: _runAsNode, ...cliEnv } = yield* HostProcess.Environment;
+    const exitCode = yield* spawner
+      .spawn(
+        ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+          // A POSIX wrapper can spawn an IPC client. Give the CLI its own process group
+          // so scope cleanup can terminate the wrapper and its descendants together.
+          // A stalled CLI can ignore SIGTERM. Bound scoped cleanup after the request times out.
+          forceKillAfter: "1 second",
+          shell: spawnCommand.shell,
+          env: cliEnv,
+          extendEnv: false,
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "ignore",
+        }),
+      )
+      .pipe(
+        Effect.flatMap((handle) => handle.exitCode),
+        Effect.mapError(
+          (cause) =>
+            new ExternalLauncherEditorSpawnError({
+              editor: launch.editor,
+              target: launch.target,
+              command: spawnCommand.command,
+              args: spawnCommand.args,
+              cause,
+            }),
+        ),
+        Effect.timeoutOrElse({
+          duration: "15 seconds",
+          orElse: () => new ExternalLauncherEditorTimeoutError({ editor: launch.editor }),
+        }),
+        Effect.scoped,
+      );
+    if (exitCode !== 0) {
+      return yield* new ExternalLauncherEditorExitError({
+        editor: launch.editor,
+        exitCode,
+      });
+    }
+    return;
   }
   yield* launchAndUnref(
     {

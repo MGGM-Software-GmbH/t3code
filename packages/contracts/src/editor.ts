@@ -336,12 +336,42 @@ export class ExternalLauncherEditorSpawnError extends Schema.TaggedError<Externa
   }
 }
 
+export class ExternalLauncherEditorExitError extends Schema.TaggedError<ExternalLauncherEditorExitError>()(
+  "ExternalLauncherEditorExitError",
+  { editor: EditorId, exitCode: Schema.Int },
+) {
+  override get message(): string {
+    return `The ${EDITORS.find((editor) => editor.id === this.editor)?.label ?? this.editor} command failed with exit code ${this.exitCode}.`;
+  }
+}
+
+export class ExternalLauncherEditorTimeoutError extends Schema.TaggedError<ExternalLauncherEditorTimeoutError>()(
+  "ExternalLauncherEditorTimeoutError",
+  { editor: EditorId },
+) {
+  override get message(): string {
+    return `${EDITORS.find((editor) => editor.id === this.editor)?.label ?? this.editor} did not acknowledge the open request.`;
+  }
+}
+
+export class ExternalLauncherEditorConfigError extends Schema.TaggedError<ExternalLauncherEditorConfigError>()(
+  "ExternalLauncherEditorConfigError",
+  {},
+) {
+  override get message(): string {
+    return "Invalid T3CODE_VSCODE_REMOTE_CLI setting.";
+  }
+}
+
 export const ExternalLauncherError = Schema.Union([
+  ExternalLauncherEditorConfigError,
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherUnsupportedTargetError,
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherEditorSpawnError,
+  ExternalLauncherEditorExitError,
+  ExternalLauncherEditorTimeoutError,
 ]);
 export type ExternalLauncherError = typeof ExternalLauncherError.Type;
