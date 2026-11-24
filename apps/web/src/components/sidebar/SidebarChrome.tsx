@@ -228,6 +228,49 @@ function SidebarUtilityItem({
   );
 }
 
+/** Keep the forecast only when every toolbar item fits on the first flex line. */
+function observeForecastFit(menu: HTMLUListElement) {
+  const forecast = menu.querySelector<HTMLLIElement>("[data-sidebar-forecast]");
+  if (!forecast) return;
+
+  const wraps = () => {
+    const firstRowBottom = menu.firstElementChild!.getBoundingClientRect().bottom;
+    return Array.from(menu.children).some(
+      (item) => item.getBoundingClientRect().top >= firstRowBottom,
+    );
+  };
+  const measure = () => {
+    if (!menu.clientWidth) return;
+    // Try normal spacing with the gauge first, including when the previous layout hid it.
+    menu.removeAttribute("data-compact");
+    forecast.hidden = false;
+    if (wraps()) {
+      forecast.hidden = true;
+      menu.toggleAttribute("data-compact", wraps());
+    }
+  };
+  // Changing the line count resizes the observed menu. Apply the layout outside observer delivery.
+  let frame = 0;
+  const observeItems = () =>
+    observeResize([menu, ...menu.children], () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
+  let stopObserving = observeItems();
+  const itemsChanged = new MutationObserver(() => {
+    stopObserving();
+    stopObserving = observeItems();
+    measure();
+  });
+  itemsChanged.observe(menu, { childList: true });
+  measure();
+  return () => {
+    cancelAnimationFrame(frame);
+    itemsChanged.disconnect();
+    stopObserving();
+  };
+}
+
 const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const uebersetzen = useGT();
   const navigate = useNavigate();
@@ -266,7 +309,10 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   };
 
   return (
-    <SidebarMenu className="flex-row flex-wrap items-center">
+    <ul
+      className="flex w-full min-w-0 flex-wrap items-center gap-1 data-compact:justify-between data-compact:gap-x-0"
+      ref={observeForecastFit}
+    >
       {isOnUtilityPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
           <SidebarMenuButton onClick={handleBackClick}>
@@ -311,7 +357,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
       <SidebarWeeklyLimit />
       <CodexResetForecastIndicator />
       <SidebarUpdatePill />
-    </SidebarMenu>
+    </ul>
   );
 });
 
