@@ -1,3 +1,4 @@
+import { editorFailure } from "~/useOpenEditorWithFeedback";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { sourceControlInstallHintText } from "@t3tools/client-runtime/contract-labels";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
@@ -1507,7 +1508,7 @@ function CheckoutGitActionsControl({
         stackedThreadToast({
           type: "error",
           title: gt("Unable to open file"),
-          description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+          description: editorFailure(error),
           ...(threadToastData !== undefined ? { data: threadToastData } : {}),
         }),
       );

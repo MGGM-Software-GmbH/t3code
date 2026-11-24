@@ -66,7 +66,7 @@ import {
 } from "../JetBrainsIcons";
 import { announce } from "~/lib/announce";
 import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
-import { useOpenEditorWithFeedback } from "./useOpenEditorWithFeedback";
+import { useOpenEditorWithFeedback } from "../../useOpenEditorWithFeedback";
 import {
   THREAD_DETAILS_PANEL_CHEVRON_CLASS,
   THREAD_DETAILS_PANEL_ICON_CLASS,

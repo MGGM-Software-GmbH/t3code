@@ -12,8 +12,11 @@ import {
 } from "~/components/preview/fileExplorerLabel";
 import { readLocalApi } from "./localApi";
 import { serverEnvironment } from "./state/server";
-import { shellEnvironment } from "./state/shell";
-import { useAtomCommand } from "./state/use-atom-command";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import { editorFailure, useOpenEditorWithFeedback } from "./useOpenEditorWithFeedback";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { toastManager } from "./components/ui/toast";
 import { useAtomValue } from "@effect/atom-react";
@@ -95,7 +98,7 @@ function buildFileContextMenuItems(input: {
 }
 
 export function useFileContextMenu(environmentId: EnvironmentId | null) {
-  const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
+  const openInEditor = useOpenEditorWithFeedback("caller");
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const resolve = useMessages();
 
@@ -132,7 +135,7 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
       environmentId,
       input: { cwd: absolutePath, editor, ...(reveal ? { reveal: true } : {}) },
     });
-    if (result._tag !== "Failure") return;
+    if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
     toastManager.add({
       type: "error",
       title:
@@ -145,7 +148,7 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
                   editor: EDITOR_LABEL_BY_ID.get(editor) ?? editor,
                 }),
               ),
-      description: absolutePath,
+      description: editorFailure(squashAtomCommandFailure(result)),
     });
   };
 

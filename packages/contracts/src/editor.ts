@@ -341,7 +341,7 @@ export class ExternalLauncherEditorExitError extends Schema.TaggedError<External
   { editor: EditorId, exitCode: Schema.Int },
 ) {
   override get message(): string {
-    return `The VS Code command failed with exit code ${this.exitCode}.`;
+    return `The ${EDITORS.find((editor) => editor.id === this.editor)?.label ?? this.editor} command failed with exit code ${this.exitCode}.`;
   }
 }
 
@@ -350,7 +350,7 @@ export class ExternalLauncherEditorTimeoutError extends Schema.TaggedError<Exter
   { editor: EditorId },
 ) {
   override get message(): string {
-    return "VS Code did not acknowledge the open request.";
+    return `${EDITORS.find((editor) => editor.id === this.editor)?.label ?? this.editor} did not acknowledge the open request.`;
   }
 }
 

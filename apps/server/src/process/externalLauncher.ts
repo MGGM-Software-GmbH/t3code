@@ -40,6 +40,9 @@ import { makeStaleWhileRevalidate } from "../environment/staleWhileRevalidate.ts
 import { WindowsVerbatimSpawn } from "./windowsVerbatimSpawn.ts";
 export {
   ExternalLauncherError,
+  ExternalLauncherEditorConfigError,
+  ExternalLauncherEditorExitError,
+  ExternalLauncherEditorTimeoutError,
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherEditorSpawnError,
@@ -944,15 +947,16 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
   ) {
     // The remote CLI exits once VS Code acknowledges the request.
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const { ELECTRON_RUN_AS_NODE: _runAsNode, ...umgebung } = yield* HostProcess.Environment;
-    const rueckgabecode = yield* spawner
+    const { ELECTRON_RUN_AS_NODE: _runAsNode, ...cliEnv } = yield* HostProcess.Environment;
+    const exitCode = yield* spawner
       .spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-          detached: false,
+          // A POSIX wrapper can spawn an IPC client. Give the CLI its own process group
+          // so scope cleanup can terminate the wrapper and its descendants together.
           // A stalled CLI can ignore SIGTERM. Bound scoped cleanup after the request times out.
           forceKillAfter: "1 second",
           shell: spawnCommand.shell,
-          env: umgebung,
+          env: cliEnv,
           extendEnv: false,
           stdin: "ignore",
           stdout: "ignore",
@@ -960,7 +964,7 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
         }),
       )
       .pipe(
-        Effect.flatMap((prozess) => prozess.exitCode),
+        Effect.flatMap((handle) => handle.exitCode),
         Effect.mapError(
           (cause) =>
             new ExternalLauncherEditorSpawnError({
@@ -977,10 +981,10 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
         }),
         Effect.scoped,
       );
-    if (rueckgabecode !== 0) {
+    if (exitCode !== 0) {
       return yield* new ExternalLauncherEditorExitError({
         editor: launch.editor,
-        exitCode: rueckgabecode,
+        exitCode,
       });
     }
     return;

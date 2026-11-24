@@ -1,3 +1,4 @@
+import { editorFailure } from "~/useOpenEditorWithFeedback";
 import { useNativeFileDrag } from "../../useNativeFileDrag";
 import { useAssetUrlState } from "../../assets/assetUrls";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
@@ -99,7 +100,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: gt("Unable to open file"),
-            description: error instanceof Error ? error.message : gt("An error occurred."),
+            description: editorFailure(error),
           }),
         );
       } catch (cause) {
@@ -187,7 +188,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: gt("Unable to reveal file"),
-            description: error instanceof Error ? error.message : gt("An error occurred."),
+            description: editorFailure(error),
           }),
         );
       } catch (cause) {

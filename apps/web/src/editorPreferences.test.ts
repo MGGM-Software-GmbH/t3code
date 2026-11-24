@@ -1,6 +1,8 @@
 import {
   AuthOrchestrationOperateScope,
   EnvironmentAuthorizationError,
+  ExternalLauncherEditorExitError,
+  ExternalLauncherEditorTimeoutError,
   EnvironmentId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -10,11 +12,16 @@ import { assert, beforeEach, expect, it, vi } from "vite-plus/test";
 const state = vi.hoisted(() => ({
   allowed: new Set<string>(),
   run: vi.fn(),
+  toast: vi.fn(() => "progress"),
+  close: vi.fn(),
   getPreference: vi.fn(),
   setPreference: vi.fn(),
 }));
 
-vi.mock("react", () => ({ useCallback: (callback: unknown) => callback }));
+vi.mock("./components/ui/toast", () => ({
+  toastManager: { add: state.toast, close: state.close },
+  stackedThreadToast: (options: unknown) => options,
+}));
 vi.mock("./state/shell", () => ({ shellEnvironment: { openInEditor: "openInEditor" } }));
 vi.mock("./state/use-atom-command", () => ({ useAtomCommand: () => state.run }));
 vi.mock("./state/session", () => ({
@@ -28,6 +35,7 @@ vi.mock("./hooks/useLocalStorage", () => ({
 }));
 
 import { useOpenInPreferredEditor } from "./editorPreferences";
+import { editorFailure } from "./useOpenEditorWithFeedback";
 
 const primary = EnvironmentId.make("primary");
 const secondary = EnvironmentId.make("secondary");
@@ -37,6 +45,52 @@ beforeEach(() => {
   state.run.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   state.getPreference.mockReset().mockReturnValue(null);
   state.setPreference.mockReset();
+});
+
+it("shares progress across editor gestures and clears it on completion or interruption", async () => {
+  state.allowed.add(secondary);
+  state.toast.mockClear();
+  state.close.mockClear();
+  vi.useFakeTimers();
+  try {
+    const open = useOpenInPreferredEditor(secondary, ["vscode-insiders"]);
+    await open("/fast");
+    expect(state.toast).not.toHaveBeenCalled();
+    const delayed = Promise.withResolvers<ReturnType<typeof AsyncResult.failure<void, never>>>();
+    state.run.mockReturnValueOnce(delayed.promise);
+    const first = open("/slow");
+    await vi.advanceTimersByTimeAsync(999);
+    expect(state.toast).not.toHaveBeenCalled();
+    const duplicate = await open("/slow");
+    assert(duplicate._tag === "Failure");
+    expect(Cause.hasInterruptsOnly(duplicate.cause)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(state.toast).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ title: "Waiting for VS Code Insiders…" }),
+    );
+    await open("/different");
+    expect(state.run).toHaveBeenCalledTimes(3);
+    delayed.resolve(AsyncResult.failure(Cause.interrupt()));
+    await first;
+    expect(state.close).toHaveBeenCalledExactlyOnceWith("progress");
+    await open("/slow");
+    expect(state.run).toHaveBeenCalledTimes(4);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("distinguishes an unavailable editor, other CLI exits and missing acknowledgements", () => {
+  const editor = "vscode-insiders";
+  expect(editorFailure(new ExternalLauncherEditorExitError({ editor, exitCode: 69 }))).toContain(
+    "VS Code Insiders is unavailable",
+  );
+  expect(editorFailure(new ExternalLauncherEditorExitError({ editor, exitCode: 2 }))).toContain(
+    "VS Code Insiders returned exit code 2",
+  );
+  expect(editorFailure(new ExternalLauncherEditorTimeoutError({ editor }))).toContain(
+    "VS Code Insiders did not respond",
+  );
 });
 
 it("does not use another environment's grant or change preferences when denied", async () => {

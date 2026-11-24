@@ -15,7 +15,7 @@ import { m } from "../../i18n/messages";
 import { announce } from "../../lib/announce";
 import { openRemoteEditorUrl, useRemoteCapableEditors, useRemoteOpenState } from "../../remoteOpen";
 import { registerCommands } from "../../shortcuts/dispatcher";
-import { useOpenEditorWithFeedback } from "./useOpenEditorWithFeedback";
+import { useOpenEditorWithFeedback } from "../../useOpenEditorWithFeedback";
 
 /** Marks an OpenInPicker's primary button as the target of `editor.openFavorite`. */
 export const OPEN_FAVORITE_EDITOR_ATTRIBUTE = "data-open-favorite-editor";

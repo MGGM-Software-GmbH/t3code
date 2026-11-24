@@ -486,6 +486,11 @@ it.effect.skipIf(windowsHost)("bounds cleanup when the VS Code remote CLI stalls
           env: { PATH: binDir, T3CODE_VSCODE_REMOTE_CLI: "true" },
           onSpawn: (command) => {
             if (command.command.endsWith("code")) {
+              assert.notEqual(
+                command.options.detached,
+                false,
+                "CLI wrappers need their own process group",
+              );
               assert.equal(command.options.forceKillAfter, "1 second");
               Deferred.doneUnsafe(started, Effect.void);
             }

@@ -1,3 +1,5 @@
+import { editorFailure } from "~/useOpenEditorWithFeedback";
+import { toastManager } from "./ui/toast";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
@@ -766,6 +768,11 @@ export default function DiffPanel({
         void (async () => {
           const result = await openInPreferredEditor(targetPath);
           if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            toastManager.add({
+              type: "error",
+              title: gt("Unable to open file"),
+              description: editorFailure(squashAtomCommandFailure(result)),
+            });
             console.warn("Failed to open diff file in editor.", {
               operation: "open-diff-file",
               ...(routeThreadRef

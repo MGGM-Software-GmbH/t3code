@@ -37,7 +37,9 @@ test(
       await expect.poll(toastFits).toBe(true);
       await app.screenshot("waiting-for-vscode");
     } finally {
-      await runPromise(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(gate)));
+      await runPromise(
+        Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(gate, { force: true })),
+      );
     }
     await expect(
       screen.getByText(
