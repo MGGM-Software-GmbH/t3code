@@ -8,11 +8,13 @@ The FogBugz settings show when your server lacks project groups, automatic brows
 
 In **Settings > Projects**, select a T3 project and choose a **FogBugz project or group** visible to your account. A group includes all its currently accessible projects, including later membership changes. Each T3 project has its own assignment. Choose **Not linked** to remove it.
 
-For a directly linked FogBugz project, optionally choose a **FogBugz area**. **All areas** includes the entire project. A selected area restricts case lists, new case links, new linked threads, and automation to cases in that area. Project groups cannot have an area restriction. Changing or clearing only the area preserves existing thread-case links and resets automation tracking. Changing the project or group removes affected case links while preserving T3 threads and FogBugz cases.
+For a directly linked FogBugz project, optionally choose a **FogBugz area**. **All areas** includes the entire project. A selected area restricts case lists, thread creation from those lists, and automation to cases in that area. Project groups cannot have an area restriction. Changing or clearing the project, group, or area preserves thread-case links and resets automation tracking.
 
-Open **Fogbugz Cases** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. The **+** menu processes a case in a new linked thread. When several T3 projects match, choose the destination project first. Existing threads appear as direct links; a thread can also link a case by number or remove that association.
+Open **Fogbugz Cases** from the sidebar menu or command palette to see open cases assigned to that account in linked projects. Search, filter, or refresh the list. The **+** menu processes a case in a new linked thread. When several T3 projects match, choose the destination project first. Existing threads appear as direct links.
 
-Within a thread linked to a case, open the **Fogbugz-Cases** surface from the side panel. Its case list stays scoped to that thread's T3 project, including all accessible FogBugz projects in a linked group.
+In an existing thread, choose **Link FogBugz case** in thread details and enter the number of any case your connected account can read. This works across projects and areas, including when the T3 project has no FogBugz mapping. Use **Unlink FogBugz case** in the same panel to remove the association.
+
+In any saved thread in a mapped T3 project, open **Fogbugz-Cases** from the side panel to browse the project's cases. The list uses the selected FogBugz area or project group even when the thread has no linked case.
 
 For a thread linked to a case, **FogBugz-Case-Git** in the FogBugz section of thread details or the side panel's surface menu opens that case's files using the existing file viewer. By default, T3 prepares a separate local clone for each thread under `<T3 home>/case-files/<connection>/<person>/<case>/<thread>/repo`. In **Settings > Projects > FogBugz**, set **Case-Git checkout folder** to share one checkout per case across the project's threads. Use an absolute path or a path relative to the project root; case 12345 uses `<folder>/FB12345`. The folder may be inside the project repository. For SVN projects, adding this folder to `svn:ignore` is recommended. T3 does not change SVN properties. Clearing or changing the setting keeps existing checkouts on disk. FogBugz creates a missing repository when your account has write access and the project's case file storage is enabled. Unlinking preserves the local files and the FogBugz repository.
 
@@ -36,7 +38,7 @@ For a later assignment, the analysis focuses on what you are expected to contrib
 
 Click a case number to open it in a new browser tab using your existing FogBugz browser session. This link does not pass an API token.
 
-Creating a linked thread from the case list opens the case in the Browser panel using the selected browser profile. Switching between existing threads preserves your panel selection, including a closed panel. Use **Open FogBugz case** in thread details to open it again. T3 exchanges the stored API token for a browser session without another password prompt. This requires the MGGM FogBugz browser-session API. Changing the base URL for the same account preserves its sign-in and existing links. Changing the account, removing a project mapping, or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. FogBugz comment editing is not included.
+Creating a linked thread from the case list opens the case in the Browser panel using the selected browser profile. Switching between existing threads preserves your panel selection, including a closed panel. Use **Open FogBugz case** in thread details to open it again. T3 exchanges the stored API token for a browser session without another password prompt. This requires the MGGM FogBugz browser-session API. Changing the base URL for the same account preserves its sign-in and existing links. Changing the account or disconnecting removes the affected links while preserving T3 threads and FogBugz cases. FogBugz comment editing is not included.
 
 ## Settings scope
 
@@ -79,7 +81,7 @@ machine's setting. Every other provider setting stays per machine.
 
 On mobile, open **Settings** and use the filter in its header to choose connected environments
 and a project. The filter stays available in server-setting pages. With **All projects** selected,
-the server-setting pages, such as Threads, Source control and Worktrees, edit the selected
+the server-setting pages, such as Threads, Source control & issues and Worktrees, edit the selected
 environments' defaults. Choosing a project edits its overrides on the selected
 environments. Use **Use defaults** in a page to remove that page's project overrides.
 Open **Settings → Projects** to rename the project across its selected
@@ -221,7 +223,7 @@ than** on the task.
 ## Defaults and inheritance
 
 Threads contains the model and workspace for new threads. Browser controls agent browser
-access. Source control contains automatic pull, the default pull request merge method and text
+access. Source control & issues contains automatic pull, the default pull request merge method and text
 generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
 
@@ -246,6 +248,15 @@ selected to override it there) to **Top level only** to stop at the ones the rep
 itself, or **Skip** to leave them for a setup script. It resolves in the same order as the
 workspace default: a `"worktreeSubmodules"` value in the `t3.json` of the branch being checked out
 applies when the project and environment are both on **Inherit**.
+
+New worktrees check out every file. For a large repository, set `"worktreeSparsePatternsPath"` in
+`t3.json` to a repository-relative file of git sparse-checkout patterns in non-cone syntax. New
+worktrees then check out only the matching files, before any other file is written. Both files are
+read from the branch being checked out, so the patterns can leave out `t3.json` and `.gitmodules`.
+If the pattern file is missing, creating the worktree fails instead of checking out everything.
+Submodules still follow **Submodules** above, also under excluded paths; set it to **Skip** to leave
+them empty. The first sparse worktree turns on Git's `extensions.worktreeConfig` for the repository.
+This needs Git 2.35 or newer.
 
 ## Worktree location
 
@@ -339,9 +350,9 @@ from the icon palette, derived from the saved project name. For example, `Nebula
 
 ## Keep the default branch current
 
-In Source control, enable **Automatically pull** to keep the default-branch checkout up to date
+In Source control & issues, enable **Automatically pull** to keep the default-branch checkout up to date
 with its configured upstream. Choose an environment to set the default or a project to override it.
-On mobile, use **Settings → Source control** to change selected environment defaults or project overrides.
+On mobile, use **Settings → Source control & issues** to change selected environment defaults or project overrides.
 
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has

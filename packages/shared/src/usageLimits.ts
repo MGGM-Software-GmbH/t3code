@@ -11,7 +11,6 @@ import {
   isProviderAvailable,
   PROVIDER_DISPLAY_NAMES,
   type ServerProvider,
-  type ServerProviderResetCredits,
   type ServerProviderUsageLimits,
   type ServerProviderUsageWindow,
   type UsageLimitSourceSnapshot,
@@ -23,8 +22,6 @@ import * as DateTime from "effect/DateTime";
 import { isLocalLoopbackHost, isWildcardHost } from "./hostClassification.ts";
 
 const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
 
 export function exhaustedUsageWindow(
   provider: ServerProvider | undefined,
@@ -161,7 +158,9 @@ function cursorUsageWindowRank(id: string): number {
   return rank < 0 ? CURSOR_USAGE_WINDOWS.length : rank;
 }
 
-function providersWithLimits(providers: readonly ServerProvider[]): readonly ServerProvider[] {
+export function providersWithLimits(
+  providers: readonly ServerProvider[],
+): readonly ServerProvider[] {
   return providers.filter(
     (provider) =>
       provider.enabled &&
@@ -182,7 +181,10 @@ export type LimitPresentations = ReadonlyMap<
   }
 >;
 
-export function collectExternalUsageLinks(presentations: LimitPresentations) {
+export function collectExternalUsageLinks(
+  presentations: LimitPresentations,
+  accountLabel = (provider: string, environment: string) => `${provider} on ${environment}`,
+) {
   const links = new Map<
     string,
     {
@@ -196,7 +198,10 @@ export function collectExternalUsageLinks(presentations: LimitPresentations) {
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
       const external = provider.usageLimits?.externalUsage;
       if (external && provider.auth.status === "authenticated") {
-        const account = `${provider.displayName ?? provider.instanceId} on ${presentation.entry.target.label}`;
+        const account = accountLabel(
+          provider.displayName ?? provider.instanceId,
+          presentation.entry.target.label,
+        );
         links.set(external.url, {
           ...external,
           message: provider.usageLimits?.unavailable?.message,
@@ -424,29 +429,6 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
     }
   }
   return [...accounts.values()];
-}
-
-export function collectLimitNotices(presentations: LimitPresentations): readonly string[] {
-  const label = (environmentLabel: string, subject: string) =>
-    presentations.size > 1 ? `${environmentLabel} · ${subject}` : subject;
-  const notices = new Set<string>();
-  for (const presentation of presentations.values()) {
-    const environmentLabel = presentation.entry.target.label;
-    for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
-      if (provider.usageLimits?.unavailable?.reason === "unsupported") continue;
-      const notice = provider.usageLimits ? limitsNotice(provider.usageLimits) : null;
-      const name = provider.displayName?.trim() || String(provider.driver);
-      if (notice) notices.add(`${label(environmentLabel, name)}: ${notice}`);
-    }
-    for (const source of presentation.serverConfig?.usageLimitSources ?? []) {
-      if (source.error) {
-        notices.add(`${label(environmentLabel, source.label)}: ${source.error}`);
-      } else if (source.accounts.length === 0) {
-        notices.add(`${label(environmentLabel, source.label)}: No accounts reported.`);
-      }
-    }
-  }
-  return [...notices];
 }
 
 export interface LimitPoolMember {
@@ -705,7 +687,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
   return pools.sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind]);
 }
 
-export function limitsNotice(limits: ServerProviderUsageLimits): string | null {
+function limitsNotice(limits: ServerProviderUsageLimits): string | null {
   if (limits.unavailable?.reason === "unsupported") {
     return limits.unavailable.message ?? "This account has no subscription limits.";
   }
@@ -719,27 +701,79 @@ export function remainingPercent(window: ServerProviderUsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
 }
 
-/** The account-wide seven-day allowance, never a session or model-specific substitute. */
-export function weeklyLimitWindow(limits: ServerProviderUsageLimits) {
+export interface WeeklyLimitWindowOptions {
+  readonly driver?: ServerProvider["driver"] | undefined;
+  readonly model?: string | undefined;
+}
+
+function isSevenDayWeeklyWindow(window: ServerProviderUsageWindow): boolean {
+  return (
+    window.kind === "weekly" &&
+    (window.windowDurationMins === undefined || window.windowDurationMins === 7 * 24 * 60) &&
+    Number.isFinite(window.usedPercent)
+  );
+}
+
+/** Gemini weekly windows reported by Antigravity, ordered with the default Gemini bucket first. */
+export function antigravityGeminiWeeklyWindows(
+  limits: ServerProviderUsageLimits,
+): readonly ServerProviderUsageWindow[] {
+  if (limitsNotice(limits) !== null) return [];
+  return limits.windows
+    .filter((window) => isSevenDayWeeklyWindow(window) && window.id.startsWith("gemini-"))
+    .sort(
+      (left, right) =>
+        Number(left.id !== "gemini-weekly") - Number(right.id !== "gemini-weekly") ||
+        left.id.localeCompare(right.id),
+    );
+}
+
+/** The account-wide seven-day allowance, or Antigravity's Gemini weekly allowance. */
+export function weeklyLimitWindow(
+  limits: ServerProviderUsageLimits,
+  options?: WeeklyLimitWindowOptions,
+) {
   if (limitsNotice(limits) !== null) return null;
+  if (options?.driver === "antigravity") {
+    const model = options.model?.trim().toLowerCase();
+    // Third-party models on Antigravity (Claude/GPT) do not draw from Gemini's weekly quota.
+    if (model && /^(claude|gpt)-/.test(model)) return null;
+    const geminiWeekly = antigravityGeminiWeeklyWindows(limits);
+    if (geminiWeekly.length === 0) return null;
+    if (model && model.startsWith("gemini-")) {
+      const variant = model.match(/^gemini-(?:\d+(?:\.\d+)?-)?([a-z]+)/)?.[1];
+      if (variant) {
+        const matched = geminiWeekly.find((window) => window.id.startsWith(`gemini-${variant}-`));
+        if (matched) return matched;
+      }
+    }
+    const mainGemini = geminiWeekly.find((window) => window.id === "gemini-weekly");
+    return mainGemini ?? (geminiWeekly.length === 1 ? geminiWeekly[0]! : null);
+  }
   const weekly = limits.windows.filter(
     (window) =>
-      window.kind === "weekly" &&
-      ["primary", "secondary", "seven_day", "weekly"].includes(window.id) &&
-      (window.windowDurationMins === undefined || window.windowDurationMins === 7 * 24 * 60) &&
-      Number.isFinite(window.usedPercent),
+      isSevenDayWeeklyWindow(window) &&
+      ["primary", "secondary", "seven_day", "weekly", "gemini-weekly"].includes(window.id),
   );
-  const main = weekly.find((window) => window.id === "seven_day" || window.id === "weekly");
+  const main = weekly.find(
+    (window) =>
+      window.id === "seven_day" || window.id === "weekly" || window.id === "gemini-weekly",
+  );
   return main ?? (weekly.length === 1 ? weekly[0]! : null);
 }
 
 /** Registry agents such as Copilot do not advertise an account-wide quota probe. */
 export function shouldShowWeeklyLimit(
   provider: Pick<ServerProvider, "driver" | "usageLimits">,
+  model?: string,
 ): boolean {
+  if (provider.driver === "antigravity" && model && /^(claude|gpt)-/i.test(model.trim())) {
+    return false;
+  }
   return (
     provider.driver !== "acpRegistry" ||
-    (provider.usageLimits !== undefined && weeklyLimitWindow(provider.usageLimits) !== null)
+    (provider.usageLimits !== undefined &&
+      weeklyLimitWindow(provider.usageLimits, { driver: provider.driver, model }) !== null)
   );
 }
 
@@ -763,9 +797,16 @@ const CODEX_WEEKLY_PLAN_CAPACITY = new Map([
  * and a passed reset never fabricates a fresh balance. Elapsed periods are
  * averaged separately from quota; banked credits are summed across accounts.
  */
-export function summarizeWeeklyLimits(accounts: readonly LimitAccount[], now?: number) {
+export function summarizeWeeklyLimits(
+  accounts: readonly LimitAccount[],
+  now?: number,
+  options?: { readonly model?: string | undefined },
+) {
   const members = accounts.flatMap((account) => {
-    const window = weeklyLimitWindow(account.limits);
+    const window = weeklyLimitWindow(account.limits, {
+      driver: account.driver,
+      model: options?.model,
+    });
     if (!window) return [];
     const elapsedDays =
       now === undefined ? null : elapsedShare({ ...window, windowDurationMins: 10080 }, now);
@@ -874,16 +915,6 @@ function paceOfShares(usedPercent: number, elapsed: number): LimitPace {
   return "on";
 }
 
-export function formatDuration(ms: number): string {
-  const remaining = Math.max(0, ms);
-  const days = Math.floor(remaining / DAY);
-  const hours = Math.floor((remaining % DAY) / HOUR);
-  const minutes = Math.floor((remaining % HOUR) / MINUTE);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
 /** One redeemable reset as clients offer it; `input` already names the chosen credit. */
 export interface ResetCreditChoice {
   readonly key: string;
@@ -894,52 +925,20 @@ export interface ResetCreditChoice {
   readonly input: ProviderConsumeResetCreditInput;
 }
 
-export function resetCreditChoices(
-  credits: ServerProviderResetCredits,
-  input: ProviderConsumeResetCreditInput,
-  now: number,
-  compact = false,
-): ReadonlyArray<ResetCreditChoice> {
-  const expiresIn = (at: string | undefined) => (at ? formatDuration(Date.parse(at) - now) : null);
-  if (credits.options && "instanceId" in input) {
-    return credits.options.map((option) => {
-      const expires = expiresIn(option.expiresAt);
-      return {
-        key: option.creditId,
-        summary: `${option.label} · ${option.availableCount} left${expires ? ` · expires in ${expires}` : ""}`,
-        actionLabel: "Use",
-        confirmDescription: `${option.label}: ${option.description} This cannot be undone.`,
-        availableCount: option.availableCount,
-        input: { ...input, creditId: option.creditId },
-      };
-    });
-  }
-  const count = credits.availableCount;
-  const expires = expiresIn(credits.nextExpiresAt);
-  return [
-    {
-      key: "next",
-      summary:
-        count === 0
-          ? "No reset credits banked"
-          : compact
-            ? `${count} banked${expires ? ` · expires in ${expires}` : ""}`
-            : `${count} ${count === 1 ? "reset credit" : "reset credits"} banked${expires ? ` · next expires in ${expires}` : ""}`,
-      actionLabel: "Use reset",
-      confirmDescription:
-        "This redeems one credit on your account and clears the current rate-limit windows. It cannot be undone.",
-      availableCount: count,
-      input,
-    },
-  ];
-}
+export type ResetCountdown =
+  | { readonly kind: "now" }
+  | { readonly kind: "momentarily" }
+  | { readonly kind: "in"; readonly ms: number };
 
-export function formatResetsIn(window: ServerProviderUsageWindow, now: number): string | null {
+export function resetCountdown(
+  window: ServerProviderUsageWindow,
+  now: number,
+): ResetCountdown | null {
   const resetsAt = resetMillis(window);
   if (resetsAt === null) return null;
-  if (resetsAt <= now) return "resets now";
-  if (resetsAt - now < MINUTE) return "Resets momentarily";
-  return `resets in ${formatDuration(resetsAt - now)}`;
+  if (resetsAt <= now) return { kind: "now" };
+  if (resetsAt - now < MINUTE) return { kind: "momentarily" };
+  return { kind: "in", ms: resetsAt - now };
 }
 
 export const USAGE_LIMITS_COMMAND = {

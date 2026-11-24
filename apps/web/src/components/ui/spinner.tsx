@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { LoaderCircleIcon } from "lucide-react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
@@ -36,9 +37,10 @@ function Spinner({
   motion,
   ...props
 }: React.ComponentPropsWithoutRef<typeof LoaderCircleIcon> & VariantProps<typeof spinnerVariants>) {
+  const gt = useGT();
   return (
     <LoaderCircleIcon
-      aria-label="Loading"
+      aria-label={gt("Loading")}
       ref={motion === "progress" ? observeProgressAnimation : observeVisibleAnimation}
       className={cn(spinnerVariants({ size, tone, motion }), className)}
       role="status"

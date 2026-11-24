@@ -1,3 +1,4 @@
+import { useGT, T } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { CommandId, EnvironmentId, ProjectId, type FogBugzCase } from "@t3tools/contracts";
@@ -44,6 +45,7 @@ import {
 } from "./fogbugzCaseActions";
 
 export function FogBugzCasesPage() {
+  const uebersetzen = useGT();
   const primary = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
   const [selected, setSelected] = useState<EnvironmentId | null>(null);
@@ -51,7 +53,9 @@ export function FogBugzCasesPage() {
   return (
     <SidebarInset className="h-dvh min-w-0">
       <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-b py-2 pr-4 pl-14 sm:py-0">
-        <h1 className="shrink-0 text-base font-semibold sm:text-lg">Fogbugz Cases</h1>
+        <h1 className="shrink-0 text-base font-semibold sm:text-lg">
+          <T>Fogbugz Cases</T>
+        </h1>
         <div className="ml-auto min-w-0 max-w-full sm:max-w-xs">
           <Select
             value={environmentId ?? ""}
@@ -59,10 +63,10 @@ export function FogBugzCasesPage() {
               if (value) setSelected(EnvironmentId.make(value));
             }}
           >
-            <SelectTrigger size="xs" aria-label="Environment">
+            <SelectTrigger size="xs" aria-label={uebersetzen("Environment")}>
               <SelectValue>
                 {environments.find((item) => item.environmentId === environmentId)?.label ??
-                  "Select environment"}
+                  uebersetzen("Select environment")}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
@@ -78,7 +82,9 @@ export function FogBugzCasesPage() {
       {environmentId ? (
         <FogBugzCases key={environmentId} environmentId={environmentId} />
       ) : (
-        <p className="p-4">Connect to an environment to load cases.</p>
+        <p className="p-4">
+          <T>Connect to an environment to load cases.</T>
+        </p>
       )}
     </SidebarInset>
   );
@@ -95,6 +101,7 @@ export function FogBugzCases({
   onCaseAction?: (action: FogBugzCaseAction, item: FogBugzCase) => Promise<void>;
   canProcessCase?: boolean;
 }) {
+  const uebersetzen = useGT();
   const navigate = useNavigate();
   const projects = useProjects().filter((item) => item.environmentId === environmentId);
   const configs = useAtomValue(environmentServerConfigsAtom);
@@ -166,7 +173,7 @@ export function FogBugzCases({
     if (preview._tag === "Failure") {
       toastManager.add({
         type: "error",
-        title: "Unable to open FogBugz case",
+        title: uebersetzen("Unable to open FogBugz case"),
         description: formatEnvironmentQueryError(preview.cause),
       });
     }
@@ -199,7 +206,11 @@ export function FogBugzCases({
       const description = cause instanceof Error ? cause.message : "Unable to process the case.";
       setError(description);
       if (!scopedProjectId)
-        toastManager.add({ type: "error", title: "Unable to process the case", description });
+        toastManager.add({
+          type: "error",
+          title: uebersetzen("Unable to process the case"),
+          description,
+        });
     }
     setBusy(false);
   }
@@ -219,13 +230,13 @@ export function FogBugzCases({
         >
           <Input
             size="sm"
-            aria-label="Search cases"
+            aria-label={uebersetzen("Search cases")}
             value={query}
-            placeholder="Search cases"
+            placeholder={uebersetzen("Search cases")}
             onChange={(event) => setQuery(event.target.value)}
           />
           <Button size="sm" variant="outline" type="submit">
-            Search
+            <T>Search</T>
           </Button>
         </form>
         <div className="min-w-0 sm:w-36">
@@ -235,15 +246,25 @@ export function FogBugzCases({
               if (value === "open" || value === "closed" || value === "all") setState(value);
             }}
           >
-            <SelectTrigger size="sm" aria-label="Case status">
+            <SelectTrigger size="sm" aria-label={uebersetzen("Case status")}>
               <SelectValue>
-                {state === "open" ? "Open" : state === "closed" ? "Closed" : "All statuses"}
+                {state === "open"
+                  ? uebersetzen("Open")
+                  : state === "closed"
+                    ? uebersetzen("Closed")
+                    : uebersetzen("All statuses")}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="closed">Closed</SelectItem>
-              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="open">
+                <T>Open</T>
+              </SelectItem>
+              <SelectItem value="closed">
+                <T>Closed</T>
+              </SelectItem>
+              <SelectItem value="all">
+                <T>All statuses</T>
+              </SelectItem>
             </SelectPopup>
           </Select>
         </div>
@@ -254,12 +275,18 @@ export function FogBugzCases({
               if (value) setAssigned(value);
             }}
           >
-            <SelectTrigger size="sm" aria-label="Assignee">
-              <SelectValue>{assigned === "me" ? "Assigned to me" : "All assignees"}</SelectValue>
+            <SelectTrigger size="sm" aria-label={uebersetzen("Assignee")}>
+              <SelectValue>
+                {assigned === "me" ? uebersetzen("Assigned to me") : uebersetzen("All assignees")}
+              </SelectValue>
             </SelectTrigger>
             <SelectPopup>
-              <SelectItem value="me">Assigned to me</SelectItem>
-              <SelectItem value="all">All assignees</SelectItem>
+              <SelectItem value="me">
+                <T>Assigned to me</T>
+              </SelectItem>
+              <SelectItem value="all">
+                <T>All assignees</T>
+              </SelectItem>
             </SelectPopup>
           </Select>
         </div>
@@ -272,13 +299,16 @@ export function FogBugzCases({
                   if (value) setProjectId(value);
                 }}
               >
-                <SelectTrigger size="sm" aria-label="T3 project">
+                <SelectTrigger size="sm" aria-label={uebersetzen("T3 project")}>
                   <SelectValue>
-                    {projects.find((item) => item.id === projectId)?.title ?? "All linked projects"}
+                    {projects.find((item) => item.id === projectId)?.title ??
+                      uebersetzen("All linked projects")}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
-                  <SelectItem value="all">All linked projects</SelectItem>
+                  <SelectItem value="all">
+                    <T>All linked projects</T>
+                  </SelectItem>
                   {projects
                     .filter((item) => linked.some((link) => link.projectId === item.id))
                     .map((item) => (
@@ -299,7 +329,7 @@ export function FogBugzCases({
               cases.refresh();
             }}
           >
-            Refresh
+            <T>Refresh</T>
           </Button>
         </div>
       </WorkspacePageContainer>
@@ -311,15 +341,19 @@ export function FogBugzCases({
       {(!status.data && status.isPending) ||
       (status.data?.connection?.authenticated && linked.length > 0 && cases.isPending) ? (
         <p role="status" className="px-5 py-1 text-xs text-muted-foreground sm:px-6">
-          {cases.data ? "Refreshing cases…" : "Loading cases…"}
+          {cases.data ? uebersetzen("Refreshing cases…") : uebersetzen("Loading cases…")}
         </p>
       ) : null}
       {status.isSuccess && !status.data?.connection?.authenticated ? (
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>Connect FogBugz</EmptyTitle>
+            <EmptyTitle>
+              <T>Connect FogBugz</T>
+            </EmptyTitle>
             <EmptyDescription>
-              <Link to="/settings/mggm">Set up your account in Settings &gt; MGGM.</Link>
+              <Link to="/settings/mggm">
+                <T>Set up your account in Settings &gt; MGGM.</T>
+              </Link>
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -327,10 +361,12 @@ export function FogBugzCases({
       {status.data?.connection?.authenticated && linked.length === 0 ? (
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>Link a project</EmptyTitle>
+            <EmptyTitle>
+              <T>Link a project</T>
+            </EmptyTitle>
             <EmptyDescription>
               <Link to="/settings/projects">
-                Assign a FogBugz project or group in Settings &gt; Projects.
+                <T>Assign a FogBugz project or group in Settings &gt; Projects.</T>
               </Link>
             </EmptyDescription>
           </EmptyHeader>
@@ -339,8 +375,12 @@ export function FogBugzCases({
       {cases.isSuccess && linked.length > 0 && cases.data?.cases.length === 0 ? (
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>No matching cases</EmptyTitle>
-            <EmptyDescription>Change the search or filters, or refresh the list.</EmptyDescription>
+            <EmptyTitle>
+              <T>No matching cases</T>
+            </EmptyTitle>
+            <EmptyDescription>
+              <T>Change the search or filters, or refresh the list.</T>
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : null}
@@ -357,7 +397,7 @@ export function FogBugzCases({
               ),
             );
             const caseDate = item.notifiedAt ?? item.updatedAt;
-            const dateLabel = item.notifiedAt ? "Your latest notification" : "Last modified";
+            const dateLabel = item.notifiedAt ? "Notified" : "Last modified";
             const DateIcon = item.notifiedAt ? BellIcon : HistoryIcon;
             const actionItems = (target?: ProjectId) =>
               fogbugzCaseActions.map(([action, label]) => (
@@ -405,25 +445,25 @@ export function FogBugzCases({
                     <span className="inline-flex max-w-full items-center gap-2">
                       <Tooltip>
                         <TooltipTrigger render={<span />}>{item.priority}</TooltipTrigger>
-                        <TooltipPopup>Priority</TooltipPopup>
+                        <TooltipPopup>
+                          <T>Priority</T>
+                        </TooltipPopup>
                       </Tooltip>
                       <span aria-hidden="true">|</span>
                     </span>
                     <span className="inline-flex max-w-full items-center gap-2">
                       <Tooltip>
                         <TooltipTrigger render={<span />}>{item.assignedToName}</TooltipTrigger>
-                        <TooltipPopup>Assigned to</TooltipPopup>
+                        <TooltipPopup>
+                          <T>Assigned to</T>
+                        </TooltipPopup>
                       </Tooltip>
                       {caseDate && <span aria-hidden="true">|</span>}
                     </span>
                     {caseDate && (
                       <span className="inline-flex max-w-full items-center gap-1">
-                        <Tooltip>
-                          <TooltipTrigger render={<span tabIndex={0} aria-label={dateLabel} />}>
-                            <DateIcon aria-hidden className="size-3.5 shrink-0" />
-                          </TooltipTrigger>
-                          <TooltipPopup>{dateLabel}</TooltipPopup>
-                        </Tooltip>
+                        <DateIcon aria-hidden className="size-3.5 shrink-0" />
+                        <span>{dateLabel}</span>
                         <time dateTime={caseDate}>
                           {formatGermanTimestamp(caseDate, { includeWeekday: false })}
                         </time>
@@ -455,7 +495,7 @@ export function FogBugzCases({
                       <Button
                         variant="outline"
                         size="icon"
-                        aria-label={`Case actions for #${item.id}`}
+                        aria-label={uebersetzen("Case actions for #{wert1}", { wert1: item.id })}
                         disabled={
                           busy ||
                           (scopedProjectId
@@ -489,7 +529,7 @@ export function FogBugzCases({
       </div>
       {cases.data?.truncated ? (
         <p className="px-5 py-2 text-xs text-muted-foreground sm:px-6 sm:text-sm">
-          Showing the first 200 results. Narrow your search.
+          <T>Showing the first 200 results. Narrow your search.</T>
         </p>
       ) : null}
     </div>

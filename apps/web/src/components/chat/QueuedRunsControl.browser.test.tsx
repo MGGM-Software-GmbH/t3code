@@ -1,11 +1,18 @@
 import { RegistryContext } from "@effect/atom-react";
 import type { EnvironmentThreadState } from "@t3tools/client-runtime/state/threads";
-import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  EnvironmentId,
+  MessageId,
+  OrchestrationV2DispatchCommandError,
+  ThreadId,
+} from "@t3tools/contracts";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import {
   formatComposerContextReference,
   toComposerContextId,
 } from "@t3tools/shared/composerContextReferences";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { AsyncResult, type Atom, AtomRegistry } from "effect/reactivity";
@@ -16,6 +23,8 @@ import { page } from "vite-plus/test/browser";
 const state = vi.hoisted(() => ({
   threadState: null as unknown as Atom.Writable<AsyncResult.AsyncResult<EnvironmentThreadState>>,
   workflow: null as unknown,
+  commandResult: undefined as unknown,
+  reorder: vi.fn(),
 }));
 
 vi.mock(import("@t3tools/client-runtime/state/thread-workflows"), async (importOriginal) => ({
@@ -66,7 +75,10 @@ vi.mock(import("../../state/threads"), async (importOriginal) => {
 
 vi.mock(import("../../state/use-atom-command"), async (importOriginal) => ({
   ...(await importOriginal()),
-  useAtomCommand: (() => async () => undefined) as never,
+  useAtomCommand: ((command: unknown) =>
+    command === threadEnvironment.reorderQueuedRun
+      ? state.reorder
+      : async () => state.commandResult) as never,
 }));
 
 vi.mock(import("../../assets/assetUrls"), async (importOriginal) => ({
@@ -80,12 +92,16 @@ import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/th
 
 import { act, render as renderUi } from "../../../test/render";
 import { makeStreamingTimelineFixture, makeThreadProjectionFixture } from "../../test-fixtures";
+import { ToastProvider } from "../ui/toast";
 import { QueuedRunsControl } from "./QueuedRunsControl";
 import { ExpandedImageDialog } from "./ExpandedImageDialog";
+import { threadEnvironment } from "../../state/threads";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 
 function setup() {
   state.workflow = null;
+  state.commandResult = undefined;
+  state.reorder.mockReset().mockResolvedValue(AsyncResult.success(undefined));
 }
 
 const baseProps = {
@@ -104,6 +120,54 @@ const baseProps = {
 async function renderQueue(props: Partial<ComponentProps<typeof QueuedRunsControl>> = {}) {
   return renderUi(<QueuedRunsControl {...baseProps} {...props} />);
 }
+
+it("moves a waiting message before the first row and to the end using its grip", async () => {
+  setup();
+  state.workflow = {
+    activeRun: null,
+    queuedRuns: ["Review the changes", "Run the tests", "Summarize the results"].map(
+      (text, index) => ({
+        run: { id: `run:${index}`, userMessageId: `message:${index}` },
+        text,
+        attachments: [],
+      }),
+    ),
+  };
+  await using screen = await renderQueue();
+  const rows = screen.getByRole("listitem");
+  const grips = screen.getByRole("button", { name: /Reorder queued message/ });
+  expect(grips.elements()).toHaveLength(3);
+  const markerBounds: DOMRect[] = [];
+  screen.container.addEventListener(
+    "drop",
+    () => {
+      const marker = screen.container.querySelector("[data-queue-insertion]");
+      if (marker) markerBounds.push(marker.getBoundingClientRect());
+    },
+    { capture: true },
+  );
+  await rows.nth(2).hover();
+  await grips.nth(2).dropTo(rows.first(), { targetPosition: { x: 10, y: 2 } });
+  expect(markerBounds[0]?.top).toBeCloseTo(rows.first().element().getBoundingClientRect().top);
+  expect(state.reorder).toHaveBeenCalledExactlyOnceWith({
+    environmentId: baseProps.environmentId,
+    input: { threadId: baseProps.threadId, runId: "run:2", beforeRunId: "run:0" },
+  });
+  await rows.first().hover();
+  await grips.first().dropTo(rows.last(), {
+    targetPosition: { x: 10, y: rows.last().element().clientHeight - 2 },
+  });
+  expect(markerBounds[1]?.bottom).toBeCloseTo(rows.last().element().getBoundingClientRect().bottom);
+  expect(state.reorder).toHaveBeenLastCalledWith({
+    environmentId: baseProps.environmentId,
+    input: { threadId: baseProps.threadId, runId: "run:0", beforeRunId: null },
+  });
+  await rows.first().hover();
+  await grips.first().dropTo(rows.first(), { targetPosition: { x: 10, y: 2 } });
+  expect(state.reorder).toHaveBeenCalledTimes(2);
+  expect(markerBounds).toHaveLength(2);
+  expect(screen.container.querySelector("[data-queue-insertion]")).toBeNull();
+});
 
 it.each([false, true])(
   "opens queued images in the existing gallery, pending=%s",
@@ -398,4 +462,38 @@ it("does not re-render while assistant text streams into the thread", async () =
 
   await act(() => registry.set(state.threadState, thread("Hello there", true)));
   expect(renders).toBeGreaterThan(settled);
+});
+
+it("tells the user why Send now was rejected", async () => {
+  setup();
+  const reason = "Target run run:active is stopping and cannot be steered.";
+  state.workflow = {
+    activeRun: { id: "run:active" },
+    canPromoteToSteer: true,
+    queuedRuns: [
+      {
+        run: { id: "run:queued", userMessageId: "message:queued" },
+        text: "Follow up",
+        attachments: [],
+      },
+    ],
+  };
+  state.commandResult = AsyncResult.failure(
+    Cause.fail(
+      new OrchestrationV2DispatchCommandError({
+        commandId: CommandId.make("command:promote"),
+        commandType: "queued-message.promote-to-steer",
+        message: reason,
+        detail: reason,
+      }),
+    ),
+  );
+  await using _screen = await renderUi(
+    <ToastProvider timeout={0}>
+      <QueuedRunsControl {...baseProps} />
+    </ToastProvider>,
+  );
+
+  await page.getByRole("button", { name: "Send now" }).click();
+  await vi.waitFor(() => expect(page.getByText(reason).element()).toBeVisible());
 });

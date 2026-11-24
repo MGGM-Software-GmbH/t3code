@@ -1,3 +1,4 @@
+import { useGT, T } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import { FogBugzError, type ScopedThreadRef } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -28,6 +29,7 @@ export function FogBugzThreadContext({
   threadRef: ScopedThreadRef;
   display?: "context" | "details";
 }) {
+  const uebersetzen = useGT();
   const { environmentId, threadId } = threadRef;
   const status = useEnvironmentQuery(fogbugzEnvironment.status({ environmentId, input: {} }));
   const linked = useEnvironmentQuery(
@@ -53,7 +55,11 @@ export function FogBugzThreadContext({
     if (result._tag === "Failure") {
       const description = formatEnvironmentQueryError(result.cause);
       if (display === "context") {
-        toastManager.add({ type: "error", title: "Unable to open FogBugz case", description });
+        toastManager.add({
+          type: "error",
+          title: uebersetzen("Unable to open FogBugz case"),
+          description,
+        });
       } else {
         setError(description);
       }
@@ -68,7 +74,7 @@ export function FogBugzThreadContext({
       if (isFogBugzError(error) && error.code === "case_git_unavailable") return;
       toastManager.add({
         type: "error",
-        title: "Unable to prepare FogBugz case files",
+        title: uebersetzen("Unable to prepare FogBugz case files"),
         description: formatEnvironmentQueryError(result.cause),
       });
     }
@@ -94,7 +100,9 @@ export function FogBugzThreadContext({
           </p>
           <ThreadDetailsControl disabled={!browserPermission} onClick={() => void openCase()}>
             <ExternalLinkIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
-            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Open FogBugz case</span>
+            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>
+              <T>Open FogBugz case</T>
+            </span>
           </ThreadDetailsControl>
           <ThreadDetailsControl
             disabled={!caseGitPermission || !caseGitAvailable}
@@ -105,7 +113,9 @@ export function FogBugzThreadContext({
             }}
           >
             <FolderGit2Icon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
-            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>FogBugz-Case-Git</span>
+            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>
+              <T>FogBugz-Case-Git</T>
+            </span>
           </ThreadDetailsControl>
           <ThreadDetailsControl
             disabled={!permission || busy}
@@ -120,7 +130,9 @@ export function FogBugzThreadContext({
             }}
           >
             <UnlinkIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
-            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Unlink FogBugz case</span>
+            <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>
+              <T>Unlink FogBugz case</T>
+            </span>
           </ThreadDetailsControl>
         </>
       ) : (
@@ -130,7 +142,9 @@ export function FogBugzThreadContext({
           aria-expanded={editing}
         >
           <LinkIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
-          <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Link FogBugz case</span>
+          <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>
+            <T>Link FogBugz case</T>
+          </span>
         </ThreadDetailsControl>
       )}
       {editing && !linked.data ? (
@@ -153,7 +167,7 @@ export function FogBugzThreadContext({
         >
           <div className="min-w-0 flex-1">
             <Input
-              aria-label="FogBugz case number"
+              aria-label={uebersetzen("FogBugz case number")}
               type="number"
               min={1}
               step={1}
@@ -163,7 +177,7 @@ export function FogBugzThreadContext({
             />
           </div>
           <Button type="submit" size="sm" variant="outline" disabled={busy}>
-            Link case
+            <T>Link case</T>
           </Button>
         </form>
       ) : null}

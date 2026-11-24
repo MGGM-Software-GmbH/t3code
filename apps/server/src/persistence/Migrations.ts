@@ -116,6 +116,12 @@ import Migration0097 from "./Migrations/097_ProviderTurnAttemptIndex.ts";
 import Migration0098 from "./Migrations/098_TurnItemMessageOrdinalIndex.ts";
 import Migration0099 from "./Migrations/099_TurnItemInlineWorkOutput.ts";
 import Migration0100 from "./Migrations/100_RepairStaleTitleRegeneration.ts";
+import Migration0101 from "./Migrations/101_IssueTrackerBindings.ts";
+import Migration0102 from "./Migrations/102_ActiveShellIndexIndexes.ts";
+import Migration0103 from "./Migrations/103_BackgroundRecoveryIndexes.ts";
+import Migration0104 from "./Migrations/104_TurnStartReadIndexes.ts";
+import Migration0105 from "./Migrations/105_DelegatedTaskReadIndexes.ts";
+import Migration0106 from "./Migrations/106_ThreadItemCounts.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -216,6 +222,12 @@ const migrationEntries = [
   [98, "TurnItemMessageOrdinalIndex", Migration0098],
   [99, "TurnItemInlineWorkOutput", Migration0099],
   [100, "RepairStaleTitleRegeneration", Migration0100],
+  [101, "IssueTrackerBindings", Migration0101],
+  [102, "ActiveShellIndexIndexes", Migration0102],
+  [103, "BackgroundRecoveryIndexes", Migration0103],
+  [104, "TurnStartReadIndexes", Migration0104],
+  [105, "DelegatedTaskReadIndexes", Migration0105],
+  [106, "ThreadItemCounts", Migration0106],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -18,7 +18,6 @@ import {
   createEnvironmentCommand,
   createEnvironmentRpcCommand,
   environmentConnectionAtom,
-  mapAtomCommandResult,
 } from "./runtime.ts";
 import { waitForTitleRegenerationOutcome } from "./threadTitleRegeneration.ts";
 import {
@@ -37,9 +36,11 @@ import {
   markThreadUnread,
   mergeThreadBack,
   promoteQueuedRun,
+  reorderQueuedRun,
   resumeThreadQueue,
   retryWorkspacePreparation,
   linkThreadPullRequest,
+  linkThreadIssue,
   respondToThreadApproval,
   respondToThreadUserInput,
   dismissThreadUserInput,
@@ -56,6 +57,7 @@ import {
   stopThreadSession,
   unarchiveThread,
   unlinkThreadPullRequest,
+  unlinkThreadIssue,
   unpinThread,
   unsettleThread,
   unsnoozeThread,
@@ -146,10 +148,11 @@ export function createThreadEnvironmentAtoms<R, E>(
     command: AtomCommand<W, A, E>,
   ): AtomCommand<W, A, E> => ({
     label: command.label,
-    run: (registry, target) => {
-      registry.update(rowActionsAtom(target.environmentId), (count) => count + 1);
-      return command.run(registry, target);
-    },
+    run: (registry, target) =>
+      Effect.suspend(() => {
+        registry.update(rowActionsAtom(target.environmentId), (count) => count + 1);
+        return command.run(registry, target);
+      }),
   });
 
   const sent = {
@@ -293,6 +296,18 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    linkIssue: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:link-issue",
+      execute: linkThreadIssue,
+      scheduler,
+      concurrency,
+    }),
+    unlinkIssue: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:unlink-issue",
+      execute: unlinkThreadIssue,
+      scheduler,
+      concurrency,
+    }),
     setRuntimeMode: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:set-runtime-mode",
       execute: setThreadRuntimeMode,
@@ -393,6 +408,12 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    reorderQueuedRun: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:reorder-queued-run",
+      execute: reorderQueuedRun,
+      scheduler,
+      concurrency,
+    }),
     retryWorkspacePreparation: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:retry-workspace-preparation",
       execute: retryWorkspacePreparation,
@@ -446,24 +467,22 @@ export function createThreadEnvironmentAtoms<R, E>(
   );
   const regenerateTitle = {
     label: commands.armTitleRegeneration.label,
-    run: async (
+    run: (
       registry: AtomRegistry.AtomRegistry,
       target: { readonly environmentId: EnvironmentId; readonly input: { threadId: ThreadId } },
-    ) => {
-      const armed = await commands.armTitleRegeneration.run(registry, target);
-      const outcome =
-        armed._tag === "Success"
-          ? await waitForTitleRegenerationOutcome(
-              registry,
-              {
-                snapshot: snapshotAtom(target.environmentId),
-                disconnected: disconnectedAtom(target.environmentId),
-              },
-              { threadId: target.input.threadId, ...armed.value },
-            )
-          : null;
-      return mapAtomCommandResult(armed, () => outcome);
-    },
+    ) =>
+      commands.armTitleRegeneration.run(registry, target).pipe(
+        Effect.flatMap((armed) =>
+          waitForTitleRegenerationOutcome(
+            registry,
+            {
+              snapshot: snapshotAtom(target.environmentId),
+              disconnected: disconnectedAtom(target.environmentId),
+            },
+            { threadId: target.input.threadId, ...armed },
+          ),
+        ),
+      ),
   };
   return {
     ...commands,

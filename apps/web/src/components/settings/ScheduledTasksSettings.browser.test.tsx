@@ -1,4 +1,5 @@
 import { RegistryContext } from "@effect/atom-react";
+import * as Effect from "effect/Effect";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import {
   DEFAULT_UNIFIED_SETTINGS,
@@ -75,7 +76,7 @@ const permissions = new Map<string, Atom.Writable<boolean>>();
 function setup() {
   state.connected = true;
   state.tasksLoaded = true;
-  state.remove.mockReset().mockResolvedValue({ _tag: "Success", value: { id: task.id } });
+  state.remove.mockReset().mockReturnValue(Effect.succeed({ id: task.id }));
   state.secondary = false;
   state.tasks = [task];
   state.providers = Atom.make<ReadonlyArray<ServerProvider>>([]);
@@ -162,6 +163,18 @@ vi.mock(import("../../state/threads"), async (original) => {
     threadFamilies: { ...actual.threadFamilies, familyAtom: (() => threadFamilyRead) as never },
   };
 });
+vi.mock(import("../../state/queries"), async (original) => ({
+  ...(await original()),
+  usePaginatedBranches: (() => ({
+    data: { refs: [], isRepo: true, hasPrimaryRemote: false, nextCursor: null, totalCount: 0 },
+    refs: [],
+    error: null,
+    isPending: false,
+    isFetchingNextPage: false,
+    refresh: vi.fn(),
+    loadNext: vi.fn(),
+  })) as never,
+}));
 // Mirrors the real query: a null request (disconnected environment) has no data.
 vi.mock(import("../../state/query"), async (original) => ({
   ...(await original()),

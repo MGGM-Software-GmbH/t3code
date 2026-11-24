@@ -67,7 +67,7 @@ const descriptor = {
   // A matching version, since a mismatch adds an update banner a typical user never sees.
   serverVersion: APP_VERSION,
   orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
-  capabilities: { repositoryIdentity: true },
+  capabilities: { repositoryIdentity: true, sideChats: true, freshContext: true },
 };
 const auth = {
   policy: "loopback-browser",
@@ -105,10 +105,14 @@ export const CLAUDE_PROVIDER = {
 const decodeServerConfig = Schema.decodeUnknownSync(ServerConfig);
 const makeServerConfig = (
   providers: ReadonlyArray<unknown>,
+  supportsIssues = false,
   settings: Partial<ServerConfig["settings"]> = {},
 ): ServerConfig => ({
   ...decodeServerConfig({
-    environment: descriptor,
+    environment: {
+      ...descriptor,
+      capabilities: { ...descriptor.capabilities, issues: supportsIssues },
+    },
     auth,
     cwd: "/workspace/render",
     keybindingsConfigPath: "/workspace/.t3/keybindings.json",
@@ -232,6 +236,7 @@ export interface FakeThread {
   readonly modelSelection?: ModelSelection;
   /** The first is the thread's active provider thread. */
   readonly providerThreads?: ReadonlyArray<OrchestrationV2ProviderThread>;
+  readonly issues?: OrchestrationV2ThreadShell["issues"];
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
   readonly runtimeRequests?: OrchestrationV2ThreadProjection["runtimeRequests"];
@@ -327,6 +332,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     branch: thread.branch === undefined ? "main" : thread.branch,
     worktreePath: null,
     activeProviderThreadId: thread.providerThreads?.[0]?.id ?? null,
+    ...(thread.issues === undefined ? {} : { issues: thread.issues }),
     lineage: {
       rootThreadId: thread.sideChatOf ?? thread.id,
       parentThreadId: thread.sideChatOf ?? null,
@@ -453,8 +459,28 @@ const handlers: Record<string, (input: never) => unknown> = {
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command: OrchestrationV2Command) =>
     Effect.suspend(() => {
       dispatched.push(command);
-      if (acceptCommands && !holdCommand(command))
-        return Effect.succeed({ sequence: sequence + 1 });
+      if (acceptCommands && !holdCommand(command)) {
+        if (command.type !== "thread.fork" || !command.sideChat || shellSubscribers.size === 0)
+          return Effect.succeed({ sequence: sequence + 1 });
+        const fork: FakeThread = {
+          id: command.targetThreadId,
+          title: command.title ?? "Side chat",
+          sideChatOf: command.sourceThreadId,
+          runs: [],
+          items: [],
+        };
+        threads = [...threads, fork];
+        sequence += 1;
+        const event: OrchestrationV2ShellStreamItem = {
+          kind: "thread.updated",
+          sequence,
+          location: "active",
+          thread: shellOf(fork),
+        };
+        return Effect.forEach(shellSubscribers, (queue) => Queue.offer(queue, event)).pipe(
+          Effect.as({ sequence }),
+        );
+      }
       const reply = Deferred.makeUnsafe<never, OrchestrationV2DispatchCommandError>();
       pendingDispatches.push({ command, reply });
       return Deferred.await(reply);
@@ -571,6 +597,7 @@ export const fakeDriver = {
         target: entry.target,
       },
       session,
+      refusedRouteIds: [],
     }),
   preflight: () => Effect.succeed(true),
   checkHost: () => Effect.succeed<RouteCheck>("unchecked"),
@@ -597,7 +624,11 @@ export function installFakeEnvironment(
 ): Disposable {
   threads = fixtures;
   baseServerConfig = {
-    ...makeServerConfig(options?.providers ?? [CODEX_PROVIDER], options.settings),
+    ...makeServerConfig(
+      options?.providers ?? [CODEX_PROVIDER],
+      fixtures.some((thread) => (thread.issues?.length ?? 0) > 0),
+      options?.settings,
+    ),
     keybindings: options?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
   };
   dispatched = [];
@@ -614,6 +645,21 @@ export function installFakeEnvironment(
   extraHandlers = Object.fromEntries(
     Object.entries(options).filter(([, value]) => typeof value === "function"),
   ) as Record<string, (input: never) => unknown>;
+  // The runtime retains shell subscriptions between renders; each fixture replaces their data.
+  sequence += 1;
+  for (const queue of shellSubscribers) {
+    Queue.offerUnsafe(queue, {
+      kind: "snapshot",
+      snapshot: {
+        schemaVersion: 1,
+        snapshotSequence: sequence,
+        projects,
+        threads: threads.filter((thread) => !thread.olderSettled).map(shellOf),
+        archivedThreads: [],
+      },
+    });
+    Queue.offerUnsafe(queue, { kind: "synchronized" });
+  }
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);

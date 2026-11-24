@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { useSortable } from "@dnd-kit/sortable";
@@ -184,6 +185,7 @@ export function SidebarIdleProjectHeader(props: {
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const uebersetzen = useGT();
   return (
     <SortableSidebarMarker
       marker={`idle-project:${props.projectKey}`}
@@ -209,7 +211,7 @@ export function SidebarIdleProjectHeader(props: {
               accessory={
                 <span className="flex shrink-0 items-center gap-2 text-xs font-normal tabular-nums text-sidebar-muted-foreground">
                   <span aria-label={`${props.count} threads`}>{props.count}</span>
-                  <span aria-label="Last activity">
+                  <span aria-label={uebersetzen("Last activity")}>
                     <RelativeTimeLabel timestamp={props.latestActivityAt} />
                   </span>
                 </span>

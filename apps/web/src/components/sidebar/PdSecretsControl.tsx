@@ -1,3 +1,4 @@
+import { useGT, T } from "gt-react";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { PdSecretsError } from "@t3tools/contracts";
@@ -109,6 +110,7 @@ const PdSecretsContext = createContext<{
 
 /** Keep connection checks alive even while the mobile sidebar is closed. */
 export function PdSecretsProvider({ children }: { readonly children: ReactNode }) {
+  const uebersetzen = useGT();
   const registry = useContext(RegistryContext);
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const snapshots = useAtomValue(snapshotsAtom);
@@ -175,8 +177,8 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
       if (pending) {
         toastManager.add({
           type: "error",
-          title: `pd-secrets sign-in interrupted on ${target.label}`,
-          description: "The environment disconnected.",
+          title: uebersetzen("pd-secrets sign-in interrupted on {wert1}", { wert1: target.label }),
+          description: uebersetzen("The environment disconnected."),
         });
       }
       // eslint-disable-next-line react/set-state-in-effect -- A server disconnect must clear the in-flight credential form.
@@ -187,7 +189,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
       setSetupFailed(false);
       setBackground(false);
     }
-  }, [presentations, snapshots, target, pending]);
+  }, [presentations, snapshots, target, pending, uebersetzen]);
 
   const open = (next: SignInTarget) => {
     generation.current++;
@@ -239,15 +241,15 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
       else
         toastManager.add({
           type: "error",
-          title: `pd-secrets is disconnected on ${invalid.label}`,
-          description: "This session cannot manage environment credentials.",
+          title: uebersetzen("pd-secrets is disconnected on {wert1}", { wert1: invalid.label }),
+          description: uebersetzen("This session cannot manage environment credentials."),
         });
     } else if (checked.some((item) => Exit.isFailure(item.result))) {
-      toastManager.add({ type: "error", title: "Could not check pd-secrets" });
+      toastManager.add({ type: "error", title: uebersetzen("Could not check pd-secrets") });
     } else if (
       checked.some((item) => Exit.isSuccess(item.result) && item.result.value.state === "connected")
     ) {
-      toastManager.add({ type: "success", title: "pd-secrets is connected" });
+      toastManager.add({ type: "success", title: uebersetzen("pd-secrets is connected") });
     }
   });
   const completeSignIn = useStableCallback(
@@ -259,7 +261,9 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
         } else {
           toastManager.add({
             type: "success",
-            title: `pd-secrets is connected on ${requestTarget.label}`,
+            title: uebersetzen("pd-secrets is connected on {wert1}", {
+              wert1: requestTarget.label,
+            }),
           });
           setTarget(undefined);
           setFlowId(undefined);
@@ -275,8 +279,10 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
           toastManager.add({
             type: "error",
             title: isSetupFailure
-              ? `pd-secrets setup failed on ${requestTarget.label}`
-              : `Could not sign in to pd-secrets on ${requestTarget.label}`,
+              ? uebersetzen("pd-secrets setup failed on {wert1}", { wert1: requestTarget.label })
+              : uebersetzen("Could not sign in to pd-secrets on {wert1}", {
+                  wert1: requestTarget.label,
+                }),
             description: message,
           });
         }
@@ -296,7 +302,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
     if (!target || pending || !value) return;
     const requestGeneration = generation.current;
     const secret = Redacted.make(value, {
-      label: flowId ? "pd-secrets TOTP" : "pd-secrets password",
+      label: flowId ? uebersetzen("pd-secrets TOTP") : uebersetzen("pd-secrets password"),
     });
     // Remove the credential field and commit progress before the RPC starts.
     flushSync(() => {
@@ -354,10 +360,10 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
           <DialogHeader>
             <DialogTitle>
               {pending
-                ? "Signing in to pd-secrets"
+                ? uebersetzen("Signing in to pd-secrets")
                 : setupFailed
-                  ? "pd-secrets is connected"
-                  : "Sign in to pd-secrets"}
+                  ? uebersetzen("pd-secrets is connected")
+                  : uebersetzen("Sign in to pd-secrets")}
             </DialogTitle>
             <DialogDescription>{target?.label}</DialogDescription>
           </DialogHeader>
@@ -369,14 +375,16 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
                 className="flex items-center gap-3 px-6 pb-6 text-sm text-muted-foreground"
               >
                 <Spinner size="lg" motion="progress" aria-hidden="true" role="presentation" />
-                <span>Signing in and completing setup…</span>
+                <span>
+                  <T>Signing in and completing setup…</T>
+                </span>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={dismiss}>
-                  Cancel
+                  <T>Cancel</T>
                 </Button>
                 <Button type="button" onClick={() => setBackground(true)}>
-                  Continue in background
+                  <T>Continue in background</T>
                 </Button>
               </DialogFooter>
             </>
@@ -387,7 +395,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
               </p>
               <DialogFooter>
                 <Button type="button" onClick={dismiss}>
-                  Close
+                  <T>Close</T>
                 </Button>
               </DialogFooter>
             </>
@@ -402,7 +410,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
             >
               <div className="grid gap-3 px-6 pb-6">
                 <Label htmlFor="pd-secrets-credential">
-                  {flowId ? "TOTP code" : "Password Depot password"}
+                  {flowId ? uebersetzen("TOTP code") : uebersetzen("Password Depot password")}
                 </Label>
                 {/* Password-capture listeners can ignore the page marker and track type changes.
                   Mount a separate text input for TOTP instead of reusing a password input. */}
@@ -430,17 +438,17 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
                 {!allowed ? (
                   <p role="alert" className="text-sm text-destructive">
                     {targetConnected
-                      ? "This session cannot manage environment credentials."
-                      : "Waiting for the environment to reconnect."}
+                      ? uebersetzen("This session cannot manage environment credentials.")
+                      : uebersetzen("Waiting for the environment to reconnect.")}
                   </p>
                 ) : null}
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={dismiss}>
-                  Cancel
+                  <T>Cancel</T>
                 </Button>
                 <Button type="submit" disabled={pending || !allowed || !value}>
-                  {flowId ? "Verify code" : "Sign in"}
+                  {flowId ? uebersetzen("Verify code") : uebersetzen("Sign in")}
                 </Button>
               </DialogFooter>
             </form>
@@ -453,6 +461,7 @@ export function PdSecretsProvider({ children }: { readonly children: ReactNode }
 
 /** The footer contains only the status control; sign-in also works outside the sidebar. */
 export function PdSecretsControl() {
+  const uebersetzen = useGT();
   const context = useContext(PdSecretsContext);
   if (!context) throw new Error("PdSecretsControl requires PdSecretsProvider");
   const { installed, pending, background, label, check } = context;
@@ -484,7 +493,7 @@ export function PdSecretsControl() {
           <div>{label}</div>
           {installed.map((snapshot) => (
             <div key={snapshot.environmentId}>
-              {snapshot.label}: {snapshot.failed ? "check failed" : snapshot.status}
+              {snapshot.label}: {snapshot.failed ? uebersetzen("check failed") : snapshot.status}
             </div>
           ))}
         </TooltipPopup>

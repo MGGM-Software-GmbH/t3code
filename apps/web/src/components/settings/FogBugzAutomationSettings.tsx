@@ -1,7 +1,8 @@
+import { useGT, T } from "gt-react";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import {
   useScopedSettings,
   useUpdateScopedSettings,
@@ -9,6 +10,8 @@ import {
 } from "./useScopedSettings";
 
 export function FogBugzAutomationSettings() {
+  const uebersetzen = useGT();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const update = useUpdateScopedSettings();
   const mixedSettle = useScopedSettingsMixed(["fogbugzAutoSettle"]);
@@ -20,7 +23,7 @@ export function FogBugzAutomationSettings() {
     <>
       <SettingsRow
         {...searchableSetting("fogbugz-auto-settle")}
-        title="Auto-Settle on"
+        title={uebersetzen("Auto-Settle on")}
         serverScoped
         settingKeys={["fogbugzAutoSettle"]}
         mixed={mixedSettle}
@@ -32,9 +35,9 @@ export function FogBugzAutomationSettings() {
                 update({ fogbugzAutoSettle: value });
             }}
           >
-            <SelectTrigger aria-label="Auto-Settle on">
+            <SelectTrigger aria-label={uebersetzen("Auto-Settle on")}>
               <SelectValue>
-                {mixedSettle ? "Mixed" : settle[settings.fogbugzAutoSettle]}
+                {mixedSettle ? uebersetzen("Mixed") : settle[settings.fogbugzAutoSettle]}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
@@ -49,13 +52,13 @@ export function FogBugzAutomationSettings() {
       />
       <SettingsRow
         {...searchableSetting("fogbugz-auto-unsettle")}
-        title="Auto-Unsettle On reactivate"
+        title={uebersetzen("Auto-Unsettle On reactivate")}
         serverScoped
         settingKeys={["fogbugzAutoUnsettle"]}
         mixed={mixedUnsettle}
         control={
           <Switch
-            aria-label="Auto-Unsettle On reactivate"
+            aria-label={uebersetzen("Auto-Unsettle On reactivate")}
             checked={settings.fogbugzAutoUnsettle}
             onCheckedChange={(value) => update({ fogbugzAutoUnsettle: value })}
           />
@@ -63,11 +66,13 @@ export function FogBugzAutomationSettings() {
       />
       <SettingsRow
         {...searchableSetting("fogbugz-auto-analyze")}
-        title="Auto-Analyze New Cases"
+        title={uebersetzen("Auto-Analyze New Cases")}
         serverScoped
         settingKeys={["fogbugzAutoAnalyze"]}
         mixed={mixedAnalyze}
-        description="Starts an analysis-only agent run for newly created cases assigned to you, or also after a later assignment. Uses the project's default model and may incur costs."
+        description={uebersetzen(
+          "Starts an analysis-only agent run for newly created cases assigned to you, or also after a later assignment. Uses the project's default model and may incur costs.",
+        )}
         control={
           <Select
             value={mixedAnalyze ? null : settings.fogbugzAutoAnalyze}
@@ -76,9 +81,9 @@ export function FogBugzAutomationSettings() {
                 update({ fogbugzAutoAnalyze: value });
             }}
           >
-            <SelectTrigger aria-label="Auto-Analyze New Cases">
+            <SelectTrigger aria-label={uebersetzen("Auto-Analyze New Cases")}>
               <SelectValue>
-                {mixedAnalyze ? "Mixed" : analyze[settings.fogbugzAutoAnalyze]}
+                {mixedAnalyze ? uebersetzen("Mixed") : analyze[settings.fogbugzAutoAnalyze]}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
@@ -93,7 +98,7 @@ export function FogBugzAutomationSettings() {
       />
       {settings.fogbugzAutoAnalyze !== "never" && settings.defaultModelSelection === null ? (
         <p role="alert" className="px-4 py-2 text-sm text-destructive">
-          Select a default model for this scope to run automatic case analysis.
+          <T>Select a default model for this scope to run automatic case analysis.</T>
         </p>
       ) : null}
     </>

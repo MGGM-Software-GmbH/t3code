@@ -2,6 +2,7 @@ import {
   RuntimeRequestId,
   NodeId,
   type OrchestrationV2ProjectedTurnItem,
+  type OrchestrationV2Subagent,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
@@ -9,6 +10,7 @@ import * as DateTime from "effect/DateTime";
 import { v2Projection, v2ThreadId } from "./orchestrationV2TestFixtures.ts";
 import {
   mergeOlderHistoryIntoProjection,
+  mergeOlderSubagentsIntoProjection,
   oldestPendingQuestion,
   retainPendingQuestionHistory,
 } from "./threadHistoryMerge.ts";
@@ -204,6 +206,22 @@ describe("threadHistoryMerge", () => {
       "item-0",
       "item-1",
     ]);
+  });
+
+  it("adds older subagent records and keeps the newer record of one already held", () => {
+    const subagent = (id: string, model: string) =>
+      ({ id, model, status: "completed" }) as unknown as OrchestrationV2Subagent;
+    const live = subagent("agent-live", "claude-sonnet-live");
+    const projection = { ...v2Projection, subagents: [live] };
+    const merged = mergeOlderSubagentsIntoProjection(projection, [
+      subagent("agent-old", "claude-haiku-4-5-20251001"),
+      subagent("agent-live", "claude-sonnet-stale"),
+    ]);
+    expect(merged.subagents.map((agent) => [agent.id, agent.model])).toEqual([
+      ["agent-old", "claude-haiku-4-5-20251001"],
+      ["agent-live", "claude-sonnet-live"],
+    ]);
+    expect(mergeOlderSubagentsIntoProjection(projection, undefined)).toBe(projection);
   });
 
   it("fills inherited activity without confusing identical item IDs from different source threads", () => {

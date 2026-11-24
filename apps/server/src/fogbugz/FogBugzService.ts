@@ -271,6 +271,12 @@ export const layer = Layer.effect(
           .href,
       }));
     });
+    const accessibleCase = Effect.fn("FogBugz.accessibleCase")(function* (caseId: number) {
+      const cases = yield* call((api, token) => api.cases(token, String(caseId)));
+      const item = cases.find((candidate) => candidate.id === caseId);
+      if (!item) return yield* new FogBugzError({ code: "access" });
+      return item;
+    });
     const caseForProject = Effect.fn("FogBugz.caseForProject")(function* (
       projectId: ProjectId,
       caseId: number,
@@ -279,22 +285,19 @@ export const layer = Layer.effect(
         (yield* projectLinks()).filter((item) => item.projectId === projectId),
       );
       if (links.length === 0) return yield* new FogBugzError({ code: "project" });
-      const cases = yield* call((api, token) => api.cases(token, String(caseId)));
-      const item = cases.find((candidate) => candidate.id === caseId);
-      if (!item) return yield* new FogBugzError({ code: "access" });
+      const item = yield* accessibleCase(caseId);
       if (!links.some((link) => item.projectId === link.fogbugzProjectId))
         return yield* new FogBugzError({ code: "project" });
       if (!links.some((link) => matchesCase(link, item)))
         return yield* new FogBugzError({ code: "case_area" });
       return item;
     });
-    const writeThreadLink = Effect.fn("FogBugz.writeThreadLink")(function* (input: {
-      threadId: ThreadId;
-      projectId: ProjectId;
-      caseId: number;
-    }) {
-      const item = yield* caseForProject(input.projectId, input.caseId);
-      yield* sql`INSERT INTO fogbugz_threads (thread_id, project_id, case_id, title) VALUES (${input.threadId}, ${input.projectId}, ${item.id}, ${item.title}) ON CONFLICT(thread_id) DO UPDATE SET project_id = excluded.project_id, case_id = excluded.case_id, title = excluded.title`.pipe(
+    const writeThreadLink = Effect.fn("FogBugz.writeThreadLink")(function* (
+      threadId: ThreadId,
+      projectId: ProjectId,
+      item: FogBugzCase,
+    ) {
+      yield* sql`INSERT INTO fogbugz_threads (thread_id, project_id, case_id, title) VALUES (${threadId}, ${projectId}, ${item.id}, ${item.title}) ON CONFLICT(thread_id) DO UPDATE SET project_id = excluded.project_id, case_id = excluded.case_id, title = excluded.title`.pipe(
         Effect.mapError(storageError),
       );
       return item;
@@ -316,7 +319,8 @@ export const layer = Layer.effect(
             );
           if (existing.length && !reservation.length)
             return yield* new FogBugzError({ code: "thread" });
-          return yield* writeThreadLink(input);
+          const item = yield* caseForProject(input.projectId, input.caseId);
+          return yield* writeThreadLink(input.threadId, input.projectId, item);
         }),
       );
     });
@@ -332,7 +336,6 @@ export const layer = Layer.effect(
       threadCases: Effect.fn("FogBugz.threadCases")(function* () {
         const threads = yield* threadLinks();
         if (!threads.length) return [];
-        const links = yield* resolveProjectLinks(yield* projectLinks());
         const caseIds = [...new Set(threads.map((thread) => thread.caseId))];
         const result: Array<typeof FogBugzThreadCase.Type> = [];
         for (let offset = 0; offset < caseIds.length; offset += 100) {
@@ -343,10 +346,7 @@ export const layer = Layer.effect(
           const cases = yield* call((api, token) => api.cases(token, `(${query})`));
           for (const item of cases) {
             for (const thread of threads) {
-              if (
-                thread.caseId === item.id &&
-                links.some((link) => link.projectId === thread.projectId && matchesCase(link, item))
-              ) {
+              if (thread.caseId === item.id) {
                 result.push({ threadId: thread.threadId, case: item });
               }
             }
@@ -414,19 +414,25 @@ export const layer = Layer.effect(
         return yield* call((api, token) => api.assignmentEvents(token, caseId));
       }),
       caseContext: Effect.fn("FogBugz.caseContext")(function* (input) {
-        let projectId: ProjectId;
+        let item: FogBugzCase;
         if ("threadId" in input) {
           const rows = yield* sql<{
             projectId: ProjectId;
-          }>`SELECT project_id AS "projectId" FROM orchestration_v2_projection_threads WHERE thread_id = ${input.threadId} AND deleted_at IS NULL`.pipe(
+            caseId: number | null;
+          }>`SELECT thread.project_id AS "projectId", link.case_id AS "caseId"
+             FROM orchestration_v2_projection_threads thread
+             LEFT JOIN fogbugz_threads link ON link.thread_id = thread.thread_id
+             WHERE thread.thread_id = ${input.threadId} AND thread.deleted_at IS NULL`.pipe(
             Effect.mapError(storageError),
           );
           if (!rows[0]) return yield* new FogBugzError({ code: "thread" });
-          projectId = rows[0].projectId;
+          item =
+            rows[0].caseId === input.caseId
+              ? yield* accessibleCase(input.caseId)
+              : yield* caseForProject(rows[0].projectId, input.caseId);
         } else {
-          projectId = input.projectId;
+          item = yield* caseForProject(input.projectId, input.caseId);
         }
-        const item = yield* caseForProject(projectId, input.caseId);
         const current = yield* authenticated();
         const events = yield* call((api, token) => api.caseEvents(token, item.id));
         return {
@@ -617,12 +623,6 @@ export const layer = Layer.effect(
               .withTransaction(
                 Effect.gen(function* () {
                   yield* sql`DELETE FROM fogbugz_automation WHERE project_id = ${input.projectId}`;
-                  // Area changes filter cases without removing existing thread associations.
-                  if (
-                    previous?.fogbugzProjectId !== input.fogbugzProjectId ||
-                    previous?.fogbugzProjectGroupId !== groupId
-                  )
-                    yield* sql`DELETE FROM fogbugz_threads WHERE project_id = ${input.projectId}`;
                   yield* sql`DELETE FROM fogbugz_project_groups WHERE project_id = ${input.projectId}`;
                   if (input.fogbugzProjectId === null)
                     yield* sql`DELETE FROM fogbugz_projects WHERE project_id = ${input.projectId}`;
@@ -648,18 +648,24 @@ export const layer = Layer.effect(
         }
         const current = yield* authenticated();
         const scope = `(${projectScope(links)})`;
-        const query = /^\d+$/.test(input.query.trim())
-          ? input.query.trim()
-          : [
-              scope,
-              input.state === "all" ? "" : `status:${input.state}`,
-              input.assignedToMe ? "assignedto:me" : "",
-              input.query ? `(${input.query})` : "",
-              'orderby:"-notified,-lastedited"',
-            ]
-              .filter(Boolean)
-              .join(" ");
-        const cases = yield* call((api, token) => api.cases(token, query));
+        const query = [
+          scope,
+          input.state === "all" ? "" : `status:${input.state}`,
+          input.assignedToMe ? "assignedto:me" : "",
+          input.query ? `(${input.query})` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        // FogBugz limits each search before the combined sort by the displayed date.
+        const cases = yield* call((api, token) =>
+          /^\d+$/.test(input.query.trim())
+            ? api.cases(token, input.query.trim())
+            : api.cases(
+                token,
+                `${query} notified:* orderby:"-notified,lastedited"`,
+                `${query} -notified:* orderby:"lastedited"`,
+              ),
+        );
         const visible = cases.filter(
           (item) =>
             links.some((link) => matchesCase(link, item)) &&
@@ -700,7 +706,7 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const linked = (yield* threadLinks()).find((item) => item.threadId === threadId);
             if (!linked) return yield* new FogBugzError({ code: "thread" });
-            yield* caseForProject(linked.projectId, linked.caseId);
+            yield* accessibleCase(linked.caseId);
             return yield* call(async (api, token, current) => ({
               ...(await api.caseGitRepository(token, linked.caseId)),
               connectionId: current.id,
@@ -717,7 +723,7 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const linked = (yield* threadLinks()).find((item) => item.threadId === threadId);
             if (!linked) return yield* new FogBugzError({ code: "thread" });
-            yield* caseForProject(linked.projectId, linked.caseId);
+            yield* accessibleCase(linked.caseId);
             return yield* call(async (api, token, current) => ({
               url: linked.url,
               baseUrl: current.baseUrl,
@@ -741,11 +747,8 @@ export const layer = Layer.effect(
               Effect.mapError(storageError),
             );
             if (!rows[0]) return yield* new FogBugzError({ code: "thread" });
-            yield* writeThreadLink({
-              ...input,
-              caseId: input.caseId,
-              projectId: rows[0].projectId,
-            });
+            const item = yield* accessibleCase(input.caseId);
+            yield* writeThreadLink(input.threadId, rows[0].projectId, item);
           }),
         );
       }),

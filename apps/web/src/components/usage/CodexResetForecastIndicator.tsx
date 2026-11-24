@@ -1,3 +1,4 @@
+import { useGT, T, Var } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import type { CodexResetForecast } from "@t3tools/contracts";
 import * as Option from "effect/Option";
@@ -37,6 +38,7 @@ const forecastAtom = Atom.make(
 
 /** A static gauge for a third-party forecast, never an account's scheduled reset. */
 export function CodexResetForecastIndicator() {
+  const uebersetzen = useGT();
   const { forecast, loading } = useAtomValue(forecastAtom);
   const [openedAt, setOpenedAt] = useState(() => Date.now());
   const minute = useNowMinute();
@@ -54,8 +56,8 @@ export function CodexResetForecastIndicator() {
       <UsageIndicatorDetails
         label={label}
         render={<SidebarMenuButton size="icon" />}
-        actionLabel="Open Codex Forecast"
-        desktopHint="Click to open Codex Forecast."
+        actionLabel={uebersetzen("Open Codex Forecast")}
+        desktopHint={uebersetzen("Click to open Codex Forecast.")}
         onOpen={() => setOpenedAt(Date.now())}
         onActivate={() => void ensureLocalApi().shell.openExternal(FORECAST_SITE)}
         glyph={
@@ -102,20 +104,32 @@ export function CodexResetForecastIndicator() {
         }
       >
         <div className="flex flex-col gap-2 text-left">
-          <div className="font-medium">Codex reset forecast</div>
-          <div>Statistical estimate, not a guaranteed reset.</div>
+          <div className="font-medium">
+            <T>Codex reset forecast</T>
+          </div>
+          <div>
+            <T>Statistical estimate, not a guaranteed reset.</T>
+          </div>
           {forecast ? (
             <>
               <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 tabular-nums">
-                <dt>Chance within 24 hours</dt>
+                <dt>
+                  <T>Chance within 24 hours</T>
+                </dt>
                 <dd className="text-right">
                   {probabilityFormat.format(forecast.next24Hours.probability)}
                 </dd>
-                <dt>Chance within {forecast.nearTerm.hours} hours</dt>
+                <dt>
+                  <T>
+                    Chance within <Var>{forecast.nearTerm.hours}</Var> hours
+                  </T>
+                </dt>
                 <dd className="text-right">
                   {probabilityFormat.format(forecast.nearTerm.probability)}
                 </dd>
-                <dt>24-hour uncertainty range</dt>
+                <dt>
+                  <T>24-hour uncertainty range</T>
+                </dt>
                 <dd className="text-right">
                   {probabilityFormat.format(forecast.next24Hours.low)} to{" "}
                   {probabilityFormat.format(forecast.next24Hours.high)}
@@ -124,38 +138,52 @@ export function CodexResetForecastIndicator() {
               {forecast.lastResetAt && resetMinutes !== null ? (
                 <div className={recentReset ? "text-success-foreground" : "text-muted-foreground"}>
                   <div>
-                    Last reset:{" "}
-                    <time dateTime={forecast.lastResetAt}>
-                      {formatGermanTimestamp(forecast.lastResetAt)}
-                    </time>
+                    <T>
+                      Last reset:<Var> </Var>
+                      <time dateTime={forecast.lastResetAt}>
+                        <Var>{formatGermanTimestamp(forecast.lastResetAt)}</Var>
+                      </time>
+                    </T>
                   </div>
                   <div>
-                    Time since last reset:{" "}
-                    {resetMinutes < 1
-                      ? "just now"
-                      : `${resetMinutes >= 60 ? `${Math.floor(resetMinutes / 60)}h ` : ""}${resetMinutes % 60}m`}
+                    <T>
+                      Time since last reset:<Var> </Var>
+                      <Var>
+                        {resetMinutes < 1
+                          ? uebersetzen("just now")
+                          : `${resetMinutes >= 60 ? `${Math.floor(resetMinutes / 60)}h ` : ""}${resetMinutes % 60}m`}
+                      </Var>
+                    </T>
                   </div>
                 </div>
               ) : (
-                <div className="text-muted-foreground">Last reset: not reported</div>
+                <div className="text-muted-foreground">
+                  <T>Last reset: not reported</T>
+                </div>
               )}
               <div className="text-muted-foreground">
-                Forecast from{" "}
-                <time dateTime={forecast.generatedAt}>
-                  {formatGermanTimestamp(forecast.generatedAt)}
-                </time>{" "}
-                (local time). Updated every 60 minutes.
+                <T>
+                  Forecast from<Var> </Var>
+                  <time dateTime={forecast.generatedAt}>
+                    <Var>{formatGermanTimestamp(forecast.generatedAt)}</Var>
+                  </time>
+                  <Var> </Var>
+                  (local time). Updated every 60 minutes.
+                </T>
               </div>
             </>
           ) : (
             <div>
               {loading
-                ? "Loading forecast…"
-                : "Forecast unavailable. A current estimate could not be read."}
+                ? uebersetzen("Loading forecast…")
+                : uebersetzen("Forecast unavailable. A current estimate could not be read.")}
             </div>
           )}
           <div className="text-muted-foreground">
-            LunarWerx forecast of additional Codex resets. Separate from your regular account reset.
+            <T>
+              LunarWerx forecast of additional Codex resets. Separate from your regular account
+              reset.
+            </T>
           </div>
         </div>
       </UsageIndicatorDetails>

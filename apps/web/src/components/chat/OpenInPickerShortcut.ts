@@ -8,11 +8,13 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { msg } from "gt-react";
 import { useEffect } from "react";
 
 import { usePreferredEditor } from "../../editorPreferences";
 import { editorLabelForPlatform } from "../../editorLabels";
 import { isOpenFavoriteEditorShortcut } from "../../keybindings";
+import { m } from "../../i18n/messages";
 import { announce } from "../../lib/announce";
 import { openRemoteEditorUrl, useRemoteCapableEditors, useRemoteOpenState } from "../../remoteOpen";
 import { registerCommands } from "../../shortcuts/dispatcher";
@@ -88,7 +90,7 @@ export function useOpenFavoriteEditorShortcut({
         });
         if (url === undefined) return;
         void openRemoteEditorUrl(url).then((opened) => {
-          if (opened) announce(`Opened in ${label}`);
+          if (opened) announce(m(msg("Opened in {editor}", { editor: label })));
         });
         return;
       }
@@ -99,15 +101,15 @@ export function useOpenFavoriteEditorShortcut({
           editor: preferredEditor,
         },
       }).then((result) => {
-        if (result._tag === "Success") announce(`Opened in ${label}`);
+        if (result._tag === "Success") announce(m(msg("Opened in {editor}", { editor: label })));
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const fehler = squashAtomCommandFailure(result);
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Editor konnte nicht geöffnet werden",
+              title: m(msg("Failed to open editor")),
               description:
-                fehler instanceof Error ? fehler.message : "Der Editoraufruf ist fehlgeschlagen.",
+                fehler instanceof Error ? fehler.message : m(msg("The editor command failed.")),
             }),
           );
         }

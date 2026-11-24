@@ -58,6 +58,9 @@ function installFakeEnvironment(...args: Parameters<typeof installEnvironment>) 
   const fixture = installEnvironment(...args);
   // The shared registry outlives a render; each fixture owns its connection state.
   appAtomRegistry.refresh(fogbugzEnvironment.status({ environmentId: ENVIRONMENT_ID, input: {} }));
+  appAtomRegistry.refresh(
+    fogbugzEnvironment.threadCases({ environmentId: ENVIRONMENT_ID, input: {} }),
+  );
   return fixture;
 }
 
@@ -240,7 +243,7 @@ it("shows case metadata and acknowledges reactivated threads on wide and narrow 
   );
 });
 
-it("links, opens and unlinks a case from thread details on wide and narrow screens", async () => {
+it("links, opens and unlinks a case without a project mapping on wide and narrow screens", async () => {
   const thread = threadWithHistory("case-details-actions", 1);
   let linked: typeof FogBugzThreadLink.Type | null = null;
   const opened: Array<PreviewOpenInput["url"]> = [];
@@ -256,13 +259,7 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
           personName: "Test User",
           authenticated: true,
         },
-        projects: [
-          {
-            projectId: ProjectId.make("project-render"),
-            fogbugzProjectId: 12,
-            fogbugzProjectGroupId: null,
-          },
-        ],
+        projects: [],
       }),
     [WS_METHODS.fogbugzThread]: (input: { threadId: ThreadId }) =>
       Effect.succeed(input.threadId === thread.id ? linked : null),
@@ -339,7 +336,8 @@ it("links, opens and unlinks a case from thread details on wide and narrow scree
   expect(opened).toEqual([]);
   useRightPanelStore.getState().toggleVisibility(threadRef);
   await userEvent.click(page.getByRole("button", { name: "Add panel surface" }));
-  await expect.element(page.getByRole("menuitem", { name: /Fogbugz-Cases/ })).toBeEnabled();
+  await expect.element(page.getByRole("menuitem", { name: /Fogbugz-Cases/ })).toBeDisabled();
+  await expect.element(page.getByRole("menuitem", { name: /FogBugz-Case-Git/ })).toBeEnabled();
   await userEvent.keyboard("{Escape}");
   await userEvent.click(page.getByRole("button", { name: "Toggle thread details panel" }));
   await expect
@@ -900,8 +898,8 @@ it.each([
   },
 );
 
-it.each(["saved", "draft"])("gates sidepanel cases in a %s thread", async (kind) => {
-  const thread = threadWithHistory("fogbugz-actions", 1);
+it.each(["linked", "unlinked", "draft"])("gates the case list (%s)", async (kind) => {
+  const thread = threadWithHistory(`fogbugz-actions-${kind}`, 1);
   const projectId = ProjectId.make("project-render");
   const draftId = DraftId.make("fogbugz-new-draft");
   const activeThreadId = kind === "draft" ? ThreadId.make("fogbugz-new") : thread.id;
@@ -953,11 +951,13 @@ it.each(["saved", "draft"])("gates sidepanel cases in a %s thread", async (kind)
           personName: "Test User",
           authenticated: true,
         },
-        projects: [{ projectId, fogbugzProjectId: 12, fogbugzProjectGroupId: null }],
+        projects: [
+          { projectId, fogbugzProjectId: 12, fogbugzProjectGroupId: null, fogbugzAreaId: 1 },
+        ],
       }),
     [WS_METHODS.fogbugzThread]: () =>
       Effect.succeed(
-        kind === "draft"
+        kind !== "linked"
           ? null
           : {
               threadId: thread.id,
@@ -1035,6 +1035,15 @@ it.each(["saved", "draft"])("gates sidepanel cases in a %s thread", async (kind)
       .toHaveAttribute("aria-disabled", "true");
     expect(messages).toEqual([]);
     expect(launches).toEqual([]);
+    return;
+  }
+  if (kind === "unlinked") {
+    await userEvent.click(page.getByRole("button", { name: "Add panel surface" }));
+    await expect.element(page.getByRole("menuitem", { name: /FogBugz-Case-Git/ })).toBeDisabled();
+    const casesMenuItem = page.getByRole("menuitem", { name: /Fogbugz-Cases/ });
+    await expect.element(casesMenuItem).toBeEnabled();
+    await userEvent.click(casesMenuItem);
+    await expect.element(page.getByRole("button", { name: "Case actions for #42" })).toBeVisible();
     return;
   }
   await userEvent.click(page.getByRole("button", { name: /Fogbugz-Cases/ }));

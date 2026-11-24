@@ -96,7 +96,7 @@ function setup() {
   };
 }
 
-it("disables the FogBugz surface and its shortcut until the thread is linked", async () => {
+it("disables the FogBugz surface and its shortcut when case browsing is unavailable", async () => {
   setup();
   const open = vi.fn();
   const ignore = () => {};
@@ -268,10 +268,12 @@ it.each([390, 700])("shows case dates and actions at %i px", async (width) => {
       expect(time.textContent).toMatch(/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/);
     }
     await expect.element(screen.getByText("No notification")).not.toBeInTheDocument();
-    await expect.element(screen.getByLabelText("Your latest notification")).toBeVisible();
-    await expect.element(screen.getByLabelText("Last modified")).toBeVisible();
-    await userEvent.hover(screen.getByLabelText("Last modified"));
-    await expect.element(page.getByText("Last modified", { exact: true })).toBeVisible();
+    const [notifiedCase, modifiedCase] = screen.getByRole("article").all();
+    await expect.element(notifiedCase!.getByText("Notified", { exact: true })).toBeVisible();
+    await expect.element(modifiedCase!.getByText("Last modified", { exact: true })).toBeVisible();
+    await expect
+      .element(modifiedCase!.getByText("Notified", { exact: true }))
+      .not.toBeInTheDocument();
     expect(screen.container.scrollWidth).toBeLessThanOrEqual(width);
     for (const [label, action] of [
       ["Add to Context", "context"],

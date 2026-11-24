@@ -187,3 +187,88 @@ it("does not substitute a model-specific limit for the account's weekly allowanc
     .toBeVisible();
   await expect.element(screen.getByText("+2", { exact: true })).toBeVisible();
 });
+
+it("shows Antigravity Gemini weekly limits instead of a placeholder and excludes non-Gemini windows", async () => {
+  const antigravity = ProviderDriverKind.make("antigravity");
+  const makeAntigravityEntry = (
+    id: string,
+    displayName: string,
+    usageLimits?: ServerProviderUsageLimits,
+  ) => {
+    const base = entry(id, usageLimits);
+    return {
+      ...base,
+      displayName,
+      driverKind: antigravity,
+      snapshot: { ...base.snapshot, displayName, driver: antigravity },
+    };
+  };
+  const withGemini = makeAntigravityEntry("antigravity", "Antigravity", {
+    checkedAt: "2026-11-06T12:00:00Z",
+    windows: [
+      {
+        id: "gemini-weekly",
+        kind: "weekly",
+        label: "Gemini · Weekly",
+        usedPercent: 4,
+        windowDurationMins: 10080,
+      },
+      {
+        id: "gemini-neon-wtu-weekly",
+        kind: "weekly",
+        label: "Gemini 4 Neon · Weekly",
+        usedPercent: 30,
+        windowDurationMins: 10080,
+      },
+      {
+        id: "3p-weekly",
+        kind: "weekly",
+        label: "Claude & GPT (shared) · Weekly",
+        usedPercent: 100,
+        windowDurationMins: 10080,
+      },
+    ],
+  });
+  const argonOnly = makeAntigravityEntry("antigravity-argon", "Antigravity Argon", {
+    checkedAt: "2026-11-06T12:00:00Z",
+    windows: [
+      {
+        id: "gemini-argon-wtu-weekly",
+        kind: "weekly",
+        label: "Gemini 4 Argon · Weekly",
+        usedPercent: 14,
+        windowDurationMins: 10080,
+      },
+    ],
+  });
+  const thirdPartyOnly = makeAntigravityEntry("antigravity-3p", "Antigravity 3P", {
+    checkedAt: "2026-11-06T12:00:00Z",
+    windows: [
+      {
+        id: "3p-weekly",
+        kind: "weekly",
+        label: "Claude & GPT (shared) · Weekly",
+        usedPercent: 50,
+        windowDurationMins: 10080,
+      },
+    ],
+  });
+
+  await using screen = await render(
+    <ModelPickerSidebar
+      selectedInstanceId={withGemini.instanceId}
+      onSelectInstance={() => undefined}
+      onFocusSearch={() => undefined}
+      instanceEntries={[withGemini, argonOnly, thirdPartyOnly]}
+    />,
+  );
+  await expect
+    .element(screen.getByRole("meter", { name: "Antigravity: 96% remaining" }))
+    .toHaveAttribute("aria-valuenow", "96");
+  await expect
+    .element(screen.getByRole("meter", { name: "Antigravity Argon: 86% remaining" }))
+    .toHaveAttribute("aria-valuenow", "86");
+  await expect
+    .element(screen.getByRole("img", { name: "Antigravity 3P: Weekly limit unavailable" }))
+    .toBeVisible();
+});

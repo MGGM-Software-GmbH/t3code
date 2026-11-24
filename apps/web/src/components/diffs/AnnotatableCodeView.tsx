@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import type {
   AnnotationSide,
   CodeViewDiffItem,
@@ -266,7 +267,9 @@ export function AnnotatableCodeView({
       {detachedDraft && draft ? (
         <div>
           <p className="px-3 text-xs text-muted-foreground">
-            Source changed. This comment refers to the selected snapshot, not the current lines.
+            <T>
+              Source changed. This comment refers to the selected snapshot, not the current lines.
+            </T>
           </p>
           <DiffCommentAnnotation
             environmentId={environmentId}

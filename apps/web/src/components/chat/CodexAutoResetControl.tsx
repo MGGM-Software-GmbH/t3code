@@ -1,3 +1,4 @@
+import { useGT, T } from "gt-react";
 import {
   AuthSettingsWriteScope,
   isManagedSettingPath,
@@ -10,6 +11,7 @@ import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function CodexAutoResetControl({ environmentId }: { environmentId: EnvironmentId }) {
+  const uebersetzen = useGT();
   const enabled = useEnvironmentSettings(
     environmentId,
     (settings) => settings.mggmCodexAutoRedeemAtWeeklyLimit,
@@ -25,7 +27,9 @@ export function CodexAutoResetControl({ environmentId }: { environmentId: Enviro
         <TooltipTrigger
           render={
             <label className="flex cursor-pointer items-center justify-between gap-2 text-xs">
-              <span>Auto-redeem at 0%</span>
+              <span>
+                <T>Auto-redeem at 0%</T>
+              </span>
               <Switch
                 size="sm"
                 checked={enabled}
@@ -33,14 +37,16 @@ export function CodexAutoResetControl({ environmentId }: { environmentId: Enviro
                 onCheckedChange={(checked) =>
                   updateSettings({ mggmCodexAutoRedeemAtWeeklyLimit: checked })
                 }
-                aria-label="Auto-redeem banked reset at 0% weekly limit"
+                aria-label={uebersetzen("Auto-redeem banked reset at 0% weekly limit")}
               />
             </label>
           }
         />
         <TooltipPopup>
-          Redeem a banked reset when a Codex account has no weekly allowance left. Applies to all
-          Codex accounts on this environment, even when the picker is closed.
+          <T>
+            Redeem a banked reset when a Codex account has no weekly allowance left. Applies to all
+            Codex accounts on this environment, even when the picker is closed.
+          </T>
         </TooltipPopup>
       </Tooltip>
     </div>
