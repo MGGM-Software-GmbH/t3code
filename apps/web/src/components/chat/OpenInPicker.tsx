@@ -1,8 +1,5 @@
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+
 import {
   AuthOrchestrationOperateScope,
   buildRemoteOpenUrl,
@@ -10,7 +7,7 @@ import {
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { msg, T, useGT, useMessages, Var } from "gt-react";
+import { T, useGT, useMessages, Var } from "gt-react";
 import { memo, use, useRef } from "react";
 import { BackgroundThreadContext } from "./backgroundThread";
 import { shortcutLabelForCommand } from "../../keybindings";
@@ -69,8 +66,7 @@ import {
 } from "../JetBrainsIcons";
 import { announce } from "~/lib/announce";
 import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
-import { shellEnvironment } from "~/state/shell";
-import { useAtomCommand } from "~/state/use-atom-command";
+import { useOpenEditorWithFeedback } from "./useOpenEditorWithFeedback";
 import {
   THREAD_DETAILS_PANEL_CHEVRON_CLASS,
   THREAD_DETAILS_PANEL_ICON_CLASS,
@@ -80,7 +76,6 @@ import {
 } from "./threadDetailsPanelStyles";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useComposerMenuState } from "./useComposerMenuState";
-import { stackedThreadToast, toastManager } from "../ui/toast";
 
 type OpenInOption = {
   label: string;
@@ -246,7 +241,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   const isPanel = displayMode === "panel";
   const ActionGroup = isPanel ? "div" : Group;
   const panelAnchorRef = useRef<HTMLDivElement | null>(null);
-  const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
+  const openInEditorMutation = useOpenEditorWithFeedback();
   const remote = useRemoteOpenState(environmentId);
   const canOperateHost = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const isHostEditorDenied = remote.mode === "local-exec" && !canOperateHost;
@@ -290,19 +285,7 @@ export const OpenInPicker = memo(function OpenInPicker({
       },
     });
     setPreferredEditor(editor);
-    const ergebnis = await result;
-    if (ergebnis._tag === "Failure" && !isAtomCommandInterrupted(ergebnis)) {
-      const fehler = squashAtomCommandFailure(ergebnis);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: messages(msg("Failed to open editor")),
-          description:
-            fehler instanceof Error ? fehler.message : messages(msg("The editor command failed.")),
-        }),
-      );
-    }
-    return ergebnis._tag === "Success";
+    return (await result)._tag === "Success";
   };
 
   const openFavoriteEditorShortcutLabel = shortcutLabelForCommand(

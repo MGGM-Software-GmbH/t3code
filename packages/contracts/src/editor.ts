@@ -341,7 +341,7 @@ export class ExternalLauncherEditorExitError extends Schema.TaggedError<External
   { editor: EditorId, exitCode: Schema.Int },
 ) {
   override get message(): string {
-    return `VS Code konnte nicht geöffnet werden (Fehlercode ${this.exitCode}). Bitte die Verbindung zu einem geöffneten VS-Code-Fenster prüfen.`;
+    return `The VS Code command failed with exit code ${this.exitCode}.`;
   }
 }
 
@@ -350,11 +350,21 @@ export class ExternalLauncherEditorTimeoutError extends Schema.TaggedError<Exter
   { editor: EditorId },
 ) {
   override get message(): string {
-    return "VS Code hat den Aufruf nicht bestätigt. Bitte die Verbindung zum geöffneten VS-Code-Fenster prüfen.";
+    return "VS Code did not acknowledge the open request.";
+  }
+}
+
+export class ExternalLauncherEditorConfigError extends Schema.TaggedError<ExternalLauncherEditorConfigError>()(
+  "ExternalLauncherEditorConfigError",
+  {},
+) {
+  override get message(): string {
+    return "Invalid T3CODE_VSCODE_REMOTE_CLI setting.";
   }
 }
 
 export const ExternalLauncherError = Schema.Union([
+  ExternalLauncherEditorConfigError,
   ExternalLauncherUnknownEditorError,
   ExternalLauncherUnsupportedEditorError,
   ExternalLauncherCommandNotFoundError,

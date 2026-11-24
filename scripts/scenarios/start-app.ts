@@ -70,9 +70,12 @@ export const prepareHome = Effect.fn("startApp.prepareHome")(function* (home: st
     `#!/bin/sh\nprintf '%s\\n' "$@" > "$(dirname "$0")/../editor-args.txt"\n`,
   );
   yield* fs.chmod(editor, 0o755);
-  // Die Remote-CLI meldet eine fehlende VS-Code-Verbindung ohne einen echten Editor zu öffnen.
+  // Let the scenario hold the CLI open while it inspects progress, then report it unavailable.
   const remoteEditor = path.join(home, "bin", "code");
-  yield* fs.writeFileString(remoteEditor, "#!/bin/sh\nexit 69\n");
+  yield* fs.writeFileString(
+    remoteEditor,
+    '#!/bin/sh\nwhile test -f "$0.wait"; do sleep 0.1; done\nexit 69\n',
+  );
   yield* fs.chmod(remoteEditor, 0o755);
   const noModel = path.join(home, "bin/no-model");
   yield* fs.writeFileString(noModel, "#!/bin/sh\necho 'scenarios run no model' >&2\nexit 1\n");

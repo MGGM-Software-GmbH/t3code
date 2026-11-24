@@ -6,6 +6,7 @@ import {
   ExternalLauncherBrowserSpawnError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherEditorSpawnError,
+  ExternalLauncherEditorConfigError,
   ExternalLauncherEditorExitError,
   ExternalLauncherEditorTimeoutError,
   ExternalLauncherUnknownEditorError,
@@ -934,18 +935,22 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
   if (spawnCommand.shell && launch.args.some((arg) => WINDOWS_SHIM_UNSAFE_ARG_PATTERN.test(arg))) {
     return yield* new ExternalLauncherUnsupportedTargetError({ editor: launch.editor });
   }
-  const remoteCli = yield* Config.Boolean("T3CODE_VSCODE_REMOTE_CLI").pipe(
-    Config.withDefault(false),
-    Effect.orDie,
-  );
-  if (remoteCli && (launch.editor === "vscode" || launch.editor === "vscode-insiders")) {
-    // Die Remote-CLI bestätigt die Dateiübergabe; ihr Ende ist kein Ende des Editorfensters.
+  if (
+    (launch.editor === "vscode" || launch.editor === "vscode-insiders") &&
+    (yield* Config.Boolean("T3CODE_VSCODE_REMOTE_CLI").pipe(
+      Config.withDefault(false),
+      Effect.mapError(() => new ExternalLauncherEditorConfigError()),
+    ))
+  ) {
+    // The remote CLI exits once VS Code acknowledges the request.
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const { ELECTRON_RUN_AS_NODE: _runAsNode, ...umgebung } = yield* HostProcess.Environment;
     const rueckgabecode = yield* spawner
       .spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
           detached: false,
+          // A stalled CLI can ignore SIGTERM. Bound scoped cleanup after the request times out.
+          forceKillAfter: "1 second",
           shell: spawnCommand.shell,
           env: umgebung,
           extendEnv: false,

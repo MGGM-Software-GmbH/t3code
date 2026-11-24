@@ -1,35 +1,54 @@
 /// <reference lib="dom" />
-// Die DOM-Typen gelten für die im Browser geprüften Meldungsgrenzen.
+// Check the toast's position once its entry transition brings it inside the viewport.
 import { expect } from "e2e";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 
-import { test, WEB } from "./t3.ts";
+import { T3_HOME } from "../e2e.config.ts";
+import { runPromise, test, WEB } from "./t3.ts";
 
 test(
-  "Eine fehlende VS-Code-Verbindung wird beim Öffnen des Editors angezeigt",
+  "Opening VS Code shows progress and explains a missing connection in the user's language",
   WEB,
   async ({ t3, app, screen, browser }) => {
-    const projekt = await t3.project("Editorprüfung");
-    const thread = await t3.thread({ project: projekt, title: "Editor öffnen", messages: [] });
-    await t3.open(thread);
+    const toastFits = () =>
+      browser.evaluate(() => {
+        const title = document.querySelector('[data-slot="toast-title"]');
+        const rect = title?.closest("[data-position]")?.getBoundingClientRect();
+        return !!rect && rect.left >= 0 && rect.right <= window.innerWidth && rect.top >= 0;
+      });
+    const project = await t3.project("Editor");
+    const thread = await t3.thread({ project, title: "Editor", messages: [] });
+    await t3.open("/settings/general");
+    await screen.getByLabel("Language", { exact: true }).tap();
+    await screen.getByText("Deutsch", { exact: true }).tap();
+    await screen.getByLabel("Sprache", { exact: true }).waitFor();
 
-    await screen.getByRole("button", "Toggle thread details panel").tap();
-    await screen.getByRole("button", "Choose editor").tap();
+    await t3.open(thread);
+    await screen.getByRole("button", "Thread-Detailpanel umschalten").tap();
+    await screen.getByRole("button", "Editor wählen").tap();
     await screen.getByRole("menuitem", "VS Code", { exact: true }).tap();
-    await screen.getByRole("button", "Open in VS Code", { exact: true }).tap();
+    const gate = `${T3_HOME}/bin/code.wait`;
+    await runPromise(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.writeFileString(gate, "")));
+    const progress = screen.getByText("Warten auf VS Code…", { exact: true });
+    try {
+      await screen.getByRole("button", "In VS Code öffnen", { exact: true }).tap();
+      await expect(progress).toBeVisible();
+      await expect.poll(toastFits).toBe(true);
+      await app.screenshot("waiting-for-vscode");
+    } finally {
+      await runPromise(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(gate)));
+    }
     await expect(
       screen.getByText(
-        "VS Code konnte nicht geöffnet werden (Fehlercode 69). Bitte die Verbindung zu einem geöffneten VS-Code-Fenster prüfen.",
+        "VS Code ist nicht verfügbar (Code 69). Öffne ein Fenster mit Verbindung zu dieser Umgebung und versuche es erneut.",
       ),
     ).toBeVisible();
-    await expect
-      .poll(() =>
-        browser.evaluate(() => {
-          const meldung = document.querySelector('[data-slot="toast-description"]');
-          const grenzen = meldung?.getBoundingClientRect();
-          return grenzen !== undefined && grenzen.right <= window.innerWidth;
-        }),
-      )
-      .toBe(true);
-    await app.screenshot("vscode-verbindungsfehler");
+    await expect(progress).not.toBeVisible();
+    await expect.poll(toastFits).toBe(true);
+    await app.screenshot("vscode-unavailable");
+    await browser.setViewport({ width: 390, height: 844 });
+    await expect.poll(toastFits).toBe(true);
+    await app.screenshot("vscode-unavailable-narrow");
   },
 );

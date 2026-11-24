@@ -4,10 +4,7 @@ import {
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+
 import { msg } from "gt-react";
 import { useEffect } from "react";
 
@@ -18,9 +15,7 @@ import { m } from "../../i18n/messages";
 import { announce } from "../../lib/announce";
 import { openRemoteEditorUrl, useRemoteCapableEditors, useRemoteOpenState } from "../../remoteOpen";
 import { registerCommands } from "../../shortcuts/dispatcher";
-import { shellEnvironment } from "../../state/shell";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { stackedThreadToast, toastManager } from "../ui/toast";
+import { useOpenEditorWithFeedback } from "./useOpenEditorWithFeedback";
 
 /** Marks an OpenInPicker's primary button as the target of `editor.openFavorite`. */
 export const OPEN_FAVORITE_EDITOR_ATTRIBUTE = "data-open-favorite-editor";
@@ -60,7 +55,7 @@ export function useOpenFavoriteEditorShortcut({
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
 }) {
-  const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
+  const openInEditorMutation = useOpenEditorWithFeedback();
   const remote = useRemoteOpenState(environmentId);
   const remoteCapableEditors = useRemoteCapableEditors();
   // Matches the picker: remote editors run on the viewing machine.
@@ -102,17 +97,6 @@ export function useOpenFavoriteEditorShortcut({
         },
       }).then((result) => {
         if (result._tag === "Success") announce(m(msg("Opened in {editor}", { editor: label })));
-        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-          const fehler = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: m(msg("Failed to open editor")),
-              description:
-                fehler instanceof Error ? fehler.message : m(msg("The editor command failed.")),
-            }),
-          );
-        }
       });
     };
     window.addEventListener("keydown", handler);
