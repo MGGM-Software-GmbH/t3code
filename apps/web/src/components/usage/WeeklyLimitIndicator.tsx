@@ -102,7 +102,11 @@ function filterPresentationsByDriver(
       serverConfig: serverConfig
         ? {
             ...serverConfig,
-            providers: serverConfig.providers.filter((provider) => predicate(provider.driver)),
+            providers: serverConfig.providers.filter(
+              (provider) =>
+                predicate(provider.driver) &&
+                (provider.driver !== "antigravity" || provider.auth.status === "authenticated"),
+            ),
             ...(serverConfig.usageLimitSources
               ? {
                   usageLimitSources: serverConfig.usageLimitSources.flatMap((source) => {
@@ -159,9 +163,7 @@ function WeeklyLimitIndicator({
       ? antigravityGeminiWeeklyWindows(singleMember.account.limits).filter(
           (window) => window.id !== singleMember.window.id,
         )
-      : summary.members.length === 0 && isAntigravityOnly
-        ? accounts.flatMap((account) => antigravityGeminiWeeklyWindows(account.limits))
-        : [];
+      : [];
   const label = `${title}: ${percent === null ? "unavailable" : `${percent}% remaining`}`;
   const time = formatGermanTimestamp;
   const navigate = useNavigate();
@@ -272,7 +274,7 @@ function WeeklyLimitIndicator({
             : percent === null
               ? uebersetzen("No account-wide seven-day limit reported.")
               : uebersetzen("{wert1}% remaining", { wert1: percent })}
-          {summary.members.length > 1 && !summary.capacityUnavailable
+          {summary.members.length > 1 && !summary.capacityUnavailable && !isAntigravityOnly
             ? uebersetzen(" · {wert1} accounts, weighted by plan allowance", {
                 wert1: summary.members.length,
               })
@@ -363,10 +365,16 @@ function WeeklyLimitIndicator({
                 </span>
               </span>
               <span className="text-muted-foreground">
-                {account.plan ? `${account.plan} · ` : ""}
-                {capacity === null
-                  ? uebersetzen("Plan capacity unknown")
-                  : uebersetzen("{wert1}× Plus allowance", { wert1: capacity })}
+                {account.driver === "antigravity" ? (
+                  window.label
+                ) : (
+                  <>
+                    {account.plan ? `${account.plan} · ` : ""}
+                    {capacity === null
+                      ? uebersetzen("Plan capacity unknown")
+                      : uebersetzen("{wert1}× Plus allowance", { wert1: capacity })}
+                  </>
+                )}
               </span>
               <span className="text-muted-foreground">
                 {window.resetsAt
@@ -447,7 +455,7 @@ export function SidebarWeeklyLimit() {
   const primaryNotices = collectLimitNotices(primaryPresentations, resolve);
   const antigravityAccounts = collectLimitAccounts(antigravityPresentations);
   const antigravityNotices = collectLimitNotices(antigravityPresentations, resolve);
-  const showAntigravity = antigravityAccounts.length > 0 || antigravityNotices.length > 0;
+  const showAntigravity = summarizeWeeklyLimits(antigravityAccounts).remainingPercent !== null;
   const showPrimary = primaryAccounts.length > 0 || primaryNotices.length > 0 || !showAntigravity;
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
@@ -511,15 +519,22 @@ export function ComposerWeeklyLimit({
         )
       : [];
   const notice = provider?.usageLimits ? limitsNotice(provider.usageLimits, resolve) : null;
-  if (provider && !shouldShowWeeklyLimit(provider, model)) return null;
+  if (
+    !provider ||
+    !shouldShowWeeklyLimit(provider, model) ||
+    (provider.driver === "antigravity" &&
+      (provider.auth.status !== "authenticated" || accounts.length === 0))
+  ) {
+    return null;
+  }
   return (
     <WeeklyLimitIndicator
       accounts={accounts}
       model={model}
-      autoRedeemAtWeeklyLimit={provider?.driver === "codex" && autoRedeemAtWeeklyLimit}
+      autoRedeemAtWeeklyLimit={provider.driver === "codex" && autoRedeemAtWeeklyLimit}
       notices={notice ? [notice] : []}
       title={uebersetzen("Weekly limit, {wert1}", {
-        wert1: provider?.displayName ?? providerClients.get(provider?.driver)?.label ?? instanceId,
+        wert1: provider.displayName ?? providerClients.get(provider.driver)?.label ?? instanceId,
       })}
       render={<ComposerControl size={size} className="px-1" data-composer-weekly-limit />}
     />

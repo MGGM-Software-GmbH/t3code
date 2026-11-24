@@ -166,7 +166,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
             const limits = entry.snapshot.usageLimits;
-            const showLimit = shouldShowWeeklyLimit(entry.snapshot);
+            const showLimit =
+              shouldShowWeeklyLimit(entry.snapshot) &&
+              (entry.snapshot.driver !== "antigravity" ||
+                (!isUnavailable && entry.snapshot.auth.status === "authenticated"));
             const weekly = limits
               ? weeklyLimitWindow(limits, { driver: entry.snapshot.driver })
               : null;

@@ -52,7 +52,7 @@ export function CodexResetForecastIndicator() {
   const label = `Codex reset forecast: ${percent === null ? (loading ? "loading" : "unavailable") : `${percent}% chance in 24 hours`}`;
 
   return (
-    <SidebarMenuItem className="shrink-0">
+    <SidebarMenuItem className="shrink-0" data-sidebar-forecast>
       <UsageIndicatorDetails
         label={label}
         render={<SidebarMenuButton size="icon" />}

@@ -270,5 +270,6 @@ it("shows Antigravity Gemini weekly limits instead of a placeholder and excludes
     .toHaveAttribute("aria-valuenow", "86");
   await expect
     .element(screen.getByRole("img", { name: "Antigravity 3P: Weekly limit unavailable" }))
-    .toBeVisible();
+    .not.toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Antigravity 3P" })).toBeEnabled();
 });
