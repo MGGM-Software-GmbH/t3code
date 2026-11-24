@@ -1,3 +1,4 @@
+import { editorFailure } from "~/editorFailure";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { ProcessSignalActions } from "./ProcessSignalActions";
@@ -867,11 +868,7 @@ function DiagnosticsSettingsBody() {
       setIsOpeningLogsDirectory(false);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        setOpenLogsDirectoryError(
-          error instanceof Error
-            ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
-            : gt("Unable to open logs folder."),
-        );
+        setOpenLogsDirectoryError(editorFailure(error));
       }
     })();
   };

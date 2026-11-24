@@ -7,6 +7,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -298,7 +299,8 @@ it.effect.skipIf(windowsHost)(
             Effect.provide(
               layerTest({
                 platform: "linux",
-                env: { PATH: binDir },
+                // A VS Code configuration error must not disable other editors.
+                env: { PATH: binDir, T3CODE_VSCODE_REMOTE_CLI: "invalid" },
                 onSpawn: (command) => spawned.push(command),
                 spawnResult: (command) =>
                   command.command === "busctl" ? sessionManager : undefined,
@@ -409,6 +411,105 @@ it.effect.skipIf(windowsHost)(
       assert.equal(Exit.isFailure(headless.opened), true);
       assert.equal(headless.open, undefined);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+for (const [setting, exitCode] of [
+  ["true", 0],
+  ["true", 69],
+  ["true", 1],
+  ["invalid", 0],
+] as const) {
+  it.effect.skipIf(windowsHost)(
+    `reports the VS Code remote CLI result for setting ${setting} and exit code ${exitCode}`,
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editor-cli-" });
+        yield* fileSystem.writeFileString(path.join(binDir, "code"), "#!/bin/sh\n");
+        yield* fileSystem.chmod(path.join(binDir, "code"), 0o755);
+        const result = yield* Effect.gen(function* () {
+          const launcher = yield* ExternalLauncher.ExternalLauncher;
+          return yield* launcher.launchEditor({
+            editor: "vscode",
+            cwd: "/workspace/file with spaces.ts",
+          });
+        }).pipe(
+          Effect.provide(
+            layerTest({
+              platform: "linux",
+              env: { PATH: binDir, T3CODE_VSCODE_REMOTE_CLI: setting },
+              spawnResult: () => ({ exitCode }),
+            }),
+          ),
+          Effect.exit,
+        );
+        if (setting === "invalid") {
+          assert.isTrue(Exit.isFailure(result));
+          if (Exit.isFailure(result)) {
+            assert.propertyVal(
+              Cause.squash(result.cause),
+              "_tag",
+              "ExternalLauncherEditorConfigError",
+            );
+          }
+        } else if (exitCode === 0) {
+          assert.isTrue(Exit.isSuccess(result));
+        } else {
+          assert.isTrue(Exit.isFailure(result));
+          if (Exit.isFailure(result)) {
+            const error = Cause.squash(result.cause);
+            assert.propertyVal(error, "_tag", "ExternalLauncherEditorExitError");
+            assert.propertyVal(error, "exitCode", exitCode);
+            assert.match(String(error), /VS.Code/);
+          }
+        }
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+}
+
+it.effect.skipIf(windowsHost)("bounds cleanup when the VS Code remote CLI stalls", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editor-timeout-" });
+    yield* fileSystem.writeFileString(path.join(binDir, "code"), "#!/bin/sh\n");
+    yield* fileSystem.chmod(path.join(binDir, "code"), 0o755);
+    const started = yield* Deferred.make<void>();
+    const request = yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      return yield* launcher.launchEditor({ editor: "vscode", cwd: "/workspace" });
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          platform: "linux",
+          env: { PATH: binDir, T3CODE_VSCODE_REMOTE_CLI: "true" },
+          onSpawn: (command) => {
+            if (command.command.endsWith("code")) {
+              assert.notEqual(
+                command.options.detached,
+                false,
+                "CLI wrappers need their own process group",
+              );
+              assert.equal(command.options.forceKillAfter, "1 second");
+              Deferred.doneUnsafe(started, Effect.void);
+            }
+          },
+          spawnResult: (command) =>
+            command.command.endsWith("code") ? { stall: true } : undefined,
+        }),
+      ),
+      Effect.exit,
+      Effect.forkChild,
+    );
+    yield* Deferred.await(started);
+    yield* TestClock.adjust("15 seconds");
+    const result = yield* Fiber.join(request);
+    assert.isTrue(Exit.isFailure(result));
+    if (Exit.isFailure(result)) {
+      assert.propertyVal(Cause.squash(result.cause), "_tag", "ExternalLauncherEditorTimeoutError");
+    }
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect("launches an installed editor with platform-safe arguments", () =>

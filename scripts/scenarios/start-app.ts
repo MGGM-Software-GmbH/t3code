@@ -70,6 +70,13 @@ export const prepareHome = Effect.fn("startApp.prepareHome")(function* (home: st
     `#!/bin/sh\nprintf '%s\\n' "$@" > "$(dirname "$0")/../editor-args.txt"\n`,
   );
   yield* fs.chmod(editor, 0o755);
+  // Let the scenario hold the CLI open while it inspects progress, then report it unavailable.
+  const remoteEditor = path.join(home, "bin", "code");
+  yield* fs.writeFileString(
+    remoteEditor,
+    '#!/bin/sh\nwhile test -f "$0.wait"; do sleep 0.1; done\nexit 69\n',
+  );
+  yield* fs.chmod(remoteEditor, 0o755);
   const noModel = path.join(home, "bin/no-model");
   yield* fs.writeFileString(noModel, "#!/bin/sh\necho 'scenarios run no model' >&2\nexit 1\n");
   yield* fs.chmod(noModel, 0o755);
@@ -137,6 +144,7 @@ const startApp = Effect.fn("startApp")(function* (input: {
     ...hostEnvironment,
     PATH: `${path.join(input.home, "bin")}:${hostEnvironment.PATH ?? ""}`,
     T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
+    T3CODE_VSCODE_REMOTE_CLI: "true",
   };
   const devRunner = (mode: string, args: ReadonlyArray<string>) => [
     "scripts/dev-runner.ts",
