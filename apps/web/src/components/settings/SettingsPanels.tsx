@@ -500,6 +500,10 @@ export function useSettingsRestore(onRestored?: () => void) {
   const isBackgroundActivityDirty = hasChangedBackgroundActivitySettings(settings);
 
   const changedSettingLabels = [
+    ...(settings.pdSecretsBrowserSignInEnabled !==
+    DEFAULT_UNIFIED_SETTINGS.pdSecretsBrowserSignInEnabled
+      ? ["Allow browser sign-in via pd-secrets"]
+      : []),
     ...(settings.mggmCodexAutoRedeemExpiringResets !==
     DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemExpiringResets
       ? ["Redeem expiring banked resets"]
@@ -769,6 +773,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       mggmCodexAutoRedeemExpiringResets: DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemExpiringResets,
+      pdSecretsBrowserSignInEnabled: DEFAULT_UNIFIED_SETTINGS.pdSecretsBrowserSignInEnabled,
       mggmCodexAutoRedeemAtWeeklyLimit: DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemAtWeeklyLimit,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       keepAwakeWhileAgentsWork: DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork,

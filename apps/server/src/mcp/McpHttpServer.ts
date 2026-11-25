@@ -35,6 +35,7 @@ import { parseBearerToken } from "../auth/EnvironmentAuth.ts";
 import * as SessionStore from "../auth/SessionStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as PdSecrets from "../environment/PdSecrets.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as HtmlRender from "../htmlRender/HtmlRender.ts";
 import * as MilestoneEvents from "../milestones/MilestoneEvents.ts";
@@ -293,6 +294,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
   const clients = yield* Effect.serviceOption(McpClientAuthenticator);
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const pdSecrets = yield* Effect.serviceOption(PdSecrets.PdSecrets);
   const runtimeModeCeiling = serverSettings.managedPolicy?.limits?.maxRuntimeMode;
   const settingsFlags = serverSettings.getSettings.pipe(
     Effect.map((settings) => ({
@@ -386,11 +388,15 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         ? undefined
         : yield* Cache.get(forgeOfThread, limited.thread.threadId);
     const toolExposure = parseMcpToolExposureMode(request.headers[MCP_TOOL_EXPOSURE_HEADER]);
+    const pdSecretsBrowserSignIn = Option.isSome(pdSecrets)
+      ? yield* pdSecrets.value.browserSignInAvailable()
+      : false;
     return {
       ...limited,
       linkedEnvironments,
       agentFeedback,
       workflows,
+      pdSecretsBrowserSignIn,
       origin,
       ...(forge === undefined ? {} : { forge }),
       ...(toolExposure === undefined ? {} : { toolExposure }),

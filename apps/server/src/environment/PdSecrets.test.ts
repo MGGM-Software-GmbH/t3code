@@ -25,11 +25,15 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
   const fs = yield* FileSystem.FileSystem;
   const realSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pd-secrets-" });
+  yield* fs.makeDirectory(`${home}/.claude`);
+  yield* fs.writeFileString(
+    `${home}/.claude/.env`,
+    "OPS_LOKAL_USERNAME=pd://Synthetic/OPS/username\nOPS_LOKAL_PASSWORD=pd://Synthetic/OPS/password\nOPS_LOKAL_BROWSER_ORIGIN=https://login.test\n",
+  );
   yield* fs.symlink("/bin/bash", `${home}/bash`);
   const settingsContext = yield* Layer.build(ServerSettings.layerTest());
   const settings = Context.get(settingsContext, ServerSettings.ServerSettingsService);
   if (installed) yield* fs.symlink("/bin/true", `${home}/pd-secrets`);
-  yield* fs.symlink("/usr/bin/python3", `${home}/python3`);
   const ready = yield* Queue.unbounded<void>();
   const statusReady = yield* Queue.unbounded<void>();
   const writes: string[] = [];
@@ -44,7 +48,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
   let hangingScript = false;
   let interruptedScript = false;
   let realScript = false;
-  let credentialOutput = '{"username":"synthetic-user","password":"synthetic-password"}';
+  let credentialOutput: string | undefined;
   const spawner = ChildProcessSpawner.make((command) =>
     Effect.suspend(() => {
       checks.push(command);
@@ -74,8 +78,15 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
           unref: Effect.succeed(Effect.void),
           stdin: Sink.drain,
           stdout:
-            ChildProcess.isStandardCommand(command) && command.args[0] === "run"
-              ? Stream.make(new TextEncoder().encode(credentialOutput))
+            ChildProcess.isStandardCommand(command) && command.args[0] === "read"
+              ? Stream.make(
+                  new TextEncoder().encode(
+                    credentialOutput ??
+                      (typeof command.args[1] === "string" && command.args[1].endsWith("/username")
+                        ? "synthetic-user\n"
+                        : "synthetic-password\n"),
+                  ),
+                )
               : Stream.empty,
           stderr: Stream.empty,
           all: Stream.empty,
@@ -129,6 +140,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
   return {
     service: Context.get(context, PdSecrets.PdSecrets),
     home,
+    configureMappings: (text: string) => fs.writeFileString(`${home}/.claude/.env`, text),
     writes,
     spawns,
     checks,
@@ -172,19 +184,25 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PdSecrets", (it)
       const harness = yield* makeHarness();
       for (const enabled of [false, true, false]) {
         yield* harness.configureBrowser(enabled);
+        expect(yield* harness.service.browserSignInAvailable()).toBe(enabled);
         if (enabled) {
-          const credentials = yield* harness.service.browserCredentials("OPS_LOKAL");
+          const credentials = yield* harness.service.browserCredentials(
+            "OPS_LOKAL",
+            "https://login.test",
+          );
           expect(Redacted.value(credentials)).toEqual({
             username: "synthetic-user",
             password: "synthetic-password",
           });
           expect(String(credentials)).not.toContain("synthetic-password");
         } else {
-          const error = yield* Effect.flip(harness.service.browserCredentials("OPS_LOKAL"));
+          const error = yield* Effect.flip(
+            harness.service.browserCredentials("OPS_LOKAL", "https://login.test"),
+          );
           expect(error.reason).toBe("browser_disabled");
         }
       }
-      expect(harness.checks).toHaveLength(1);
+      expect(harness.checks).toHaveLength(2);
     }).pipe(Effect.scoped),
   );
 
@@ -193,26 +211,78 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PdSecrets", (it)
       const harness = yield* makeHarness();
       yield* harness.configureBrowser(true);
       for (const credential of ["OPS_LOKAL;echo", "../OPS", "ops", ""]) {
-        const error = yield* Effect.flip(harness.service.browserCredentials(credential));
+        const error = yield* Effect.flip(
+          harness.service.browserCredentials(credential, "https://login.test"),
+        );
         expect(error.reason).toBe("credential_failed");
       }
       expect(harness.checks).toHaveLength(0);
-      for (const output of [
-        "synthetic-password",
-        '{"username":"u","password":""}',
-        "x".repeat(32769),
-      ]) {
+      for (const output of ["", "x".repeat(8193), "x".repeat(32769)]) {
         harness.credentialOutput(output);
-        const error = yield* Effect.flip(harness.service.browserCredentials("OPS_LOKAL"));
+        const error = yield* Effect.flip(
+          harness.service.browserCredentials("OPS_LOKAL", "https://login.test"),
+        );
         expect(error.message).not.toContain("synthetic-password");
         expect(error.reason).toBe("credential_failed");
       }
       expect(JSON.stringify(harness.checks)).not.toContain("synthetic-password");
+      const before = harness.checks.length;
+      for (const mapping of [
+        "OPS_LOKAL_USERNAME=plain-user\nOPS_LOKAL_PASSWORD=plain-password",
+        "OPS_LOKAL_USERNAME=pd://Synthetic/OPS/username\nOPS_LOKAL_PASSWORD=pd://Synthetic/Database/password",
+        "OPS_LOKAL_USERNAME=pd://Synthetic/OPS/username",
+      ]) {
+        yield* harness.configureMappings(`${mapping}\nOPS_LOKAL_BROWSER_ORIGIN=https://login.test`);
+        expect(
+          (yield* harness.service
+            .browserCredentials("OPS_LOKAL", "https://login.test")
+            .pipe(Effect.flip)).reason,
+        ).toBe("credential_failed");
+      }
+      expect(harness.checks).toHaveLength(before);
+    }).pipe(Effect.scoped),
+  );
+  it.effect("requires a credential-specific canonical origin before any secret read", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* harness.configureBrowser(true);
+      for (const origin of [
+        "https://other.test",
+        "http://localhost",
+        "http://login.test",
+        "https://login.test/",
+        "invalid",
+      ]) {
+        const error = yield* harness.service
+          .browserCredentials("OPS_LOKAL", origin)
+          .pipe(Effect.flip);
+        expect(error.reason).toBe("browser_origin_denied");
+      }
+      expect(
+        (yield* harness.service
+          .browserCredentials("DATABASE", "https://login.test")
+          .pipe(Effect.flip)).reason,
+      ).toBe("browser_origin_denied");
+      expect(harness.checks).toHaveLength(0);
+      const valid = yield* harness.service.browserCredentials("OPS_LOKAL", "https://login.test");
+      expect(Redacted.value(valid).username).toBe("synthetic-user");
+      expect(harness.checks).toHaveLength(2);
+      yield* harness.configureMappings(
+        "OPS_LOKAL_USERNAME=pd://Synthetic/OPS/username\nOPS_LOKAL_PASSWORD=pd://Synthetic/OPS/password",
+      );
+      expect(
+        (yield* harness.service
+          .browserCredentials("OPS_LOKAL", "https://login.test")
+          .pipe(Effect.flip)).reason,
+      ).toBe("browser_origin_denied");
+      expect(harness.checks).toHaveLength(2);
     }).pipe(Effect.scoped),
   );
   it.effect("hides an absent CLI without starting authentication", () =>
     Effect.gen(function* () {
       const h = yield* makeHarness(false);
+      yield* h.configureBrowser(true);
+      expect(yield* h.service.browserSignInAvailable()).toBe(false);
       expect(yield* h.service.status()).toEqual({ state: "not-installed" });
       expect((yield* h.service.login(password(), "owner").pipe(Effect.flip)).reason).toBe(
         "not_installed",

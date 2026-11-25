@@ -6,6 +6,7 @@ import "~/index.css";
 
 const state = vi.hoisted(() => ({
   svnCheckout: true,
+  pdSecrets: true,
   settings: null as UnifiedSettings | null,
   update: vi.fn(),
   confirm: vi.fn(),
@@ -40,7 +41,9 @@ vi.mock(import("./SettingsScopeContext"), async (original) => ({
     connectedEnvironments: [
       {
         serverConfig: {
-          environment: { capabilities: { mggmClaudeSvnCheckout: state.svnCheckout } },
+          environment: {
+            capabilities: { mggmClaudeSvnCheckout: state.svnCheckout, pdSecrets: state.pdSecrets },
+          },
         },
       },
     ],
@@ -81,12 +84,30 @@ async function renderRestore() {
 }
 function setup() {
   state.svnCheckout = true;
+  state.pdSecrets = true;
   vi.clearAllMocks();
   state.settings = { ...DEFAULT_UNIFIED_SETTINGS };
   state.confirm.mockResolvedValue(true);
 }
 
 describe("restoring V2 settings", () => {
+  it("requires pd-secrets support and restores browser sign-in to off", async () => {
+    setup();
+    state.pdSecrets = false;
+    await using screen = await render(<MggmSettingsPanel />);
+    const toggle = screen.getByRole("switch", { name: "Allow browser sign-in via pd-secrets" });
+    await expect.element(toggle).toBeDisabled();
+    state.pdSecrets = true;
+    await screen.rerender(<MggmSettingsPanel />);
+    await expect.element(toggle).toBeEnabled();
+    await expect.element(toggle).not.toBeChecked();
+    await toggle.click();
+    expect(state.update).toHaveBeenLastCalledWith({ pdSecretsBrowserSignInEnabled: true });
+    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, pdSecretsBrowserSignInEnabled: true };
+    await screen.rerender(<MggmSettingsPanel />);
+    await screen.getByRole("button", { name: "Reset to default" }).click();
+    expect(state.update).toHaveBeenLastCalledWith({ pdSecretsBrowserSignInEnabled: false });
+  });
   it("allows SVN updates only when the selected environment reports a checkout", async () => {
     setup();
     state.svnCheckout = false;
@@ -155,6 +176,7 @@ describe("restoring V2 settings", () => {
 
   it.each([
     ["mggmCodexAutoRedeemExpiringResets", "Redeem expiring banked resets"],
+    ["pdSecretsBrowserSignInEnabled", "Allow browser sign-in via pd-secrets"],
     ["mggmCodexAutoRedeemAtWeeklyLimit", "Auto-redeem banked reset at 0% weekly limit"],
     ["persistComposerContextStrip", "Composer context"],
     ["autoResumeLimitedThreads", "Resume after usage limits"],

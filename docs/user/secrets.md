@@ -61,8 +61,21 @@ Der Zugang benötigt die vorhandenen Zuordnungen `OPS_LOKAL_USERNAME` und
 `OPS_LOKAL_PASSWORD` in `~/.claude/.env`. Weitere Zugangsdialoge oder gespeicherte
 Kennwörter in T3 sind nicht erforderlich.
 
+Zusätzlich bindet `OPS_LOKAL_BROWSER_ORIGIN=https://ops.mggm.de` diesen Zugang
+ausdrücklich an diese Origin. Ohne diesen Eintrag oder bei einer abweichenden
+Origin verweigert der Server den Zugriff, bevor er Zugangsdaten abruft.
+Die Origin enthält nur Protokoll, Host und gegebenenfalls Port, keinen Pfad
+oder abschließenden Schrägstrich. Die beiden Zugangszuordnungen müssen auf
+Benutzername und Kennwort desselben Password-Depot-Eintrags verweisen.
+Klartextzuordnungen und lediglich geerbte Umgebungsvariablen werden abgewiesen.
+
 Kennwörter werden intern über einen Prozesskanal übertragen und
 nicht als Toolargument, Gesprächsnachricht oder temporäre Datei abgelegt.
+Die Befüllung setzt Vertrauen in den beauftragten Agenten und die Loginseite
+voraus. Beide können die ausgefüllten Werte lesen. Das gilt auch für zuvor auf
+der Seite installierte Ereignisbehandler und für spätere Browseraktionen wie
+`preview_evaluate`. Die Funktion schützt vor einer versehentlichen Übergabe im
+Toolaufruf, isoliert Kennwörter aber nicht gegenüber dem Agenten oder der Seite.
 Die Aktion ist für den Serverbrowser verfügbar, berücksichtigt die Tabsteuerung
 und verweigert fremde Domains sowie unverschlüsseltes HTTP außerhalb von Loopback.
 

@@ -55,6 +55,7 @@ import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerHttp from "../http.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as PdSecrets from "../environment/PdSecrets.ts";
 import { advertisedJsonSchema } from "./advertisedJsonSchema.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
@@ -1629,6 +1630,13 @@ it.effect("hides tools for links and refuses another environment while the beta 
           failure: OrchestratorMcpFailure,
           failureMode: "return",
         }).annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenWhileLinksOff),
+        Tool.make("browser_sign_in", {
+          description: "Checks browser sign-in discovery.",
+          dependencies: [McpInvocationContext.McpInvocationContext],
+          success: Schema.Struct({ links: Schema.Number }),
+          failure: OrchestratorMcpFailure,
+          failureMode: "return",
+        }).annotate(McpSchema.EnabledWhen, McpInvocationContext.browserCredentialsEnabled),
         Tool.make("where", {
           description: "Says where it ran.",
           parameters: Schema.Struct({ environmentId: OrchestratorMcpEnvironmentTarget }),
@@ -1639,16 +1647,27 @@ it.effect("hides tools for links and refuses another environment while the beta 
       );
       const settingsContext = yield* Layer.build(ServerSettings.layerTest());
       const settings = Context.get(settingsContext, ServerSettings.ServerSettingsService);
+      let installed = true;
       const serverLayer = McpHttpServer.layerMcpTransport(
         McpHttpServer.toolkitRegistration(
           LinksToolkit,
           McpToolAccess.toLayer(LinksToolkit, {
             links: McpToolAccess.reads(() => Effect.succeed({ links: 0 })),
+            browser_sign_in: McpToolAccess.readsAsCaller(() => Effect.succeed({ links: 0 })),
             where: McpToolAccess.reads(() => Effect.succeed({ ranIn: "here" })),
           }),
         ),
       ).pipe(
         Layer.provide(Layer.succeedContext(settingsContext)),
+        Layer.provide(
+          Layer.mock(PdSecrets.PdSecrets)({
+            browserSignInAvailable: () =>
+              settings.getSettings.pipe(
+                Effect.map((current) => installed && current.pdSecretsBrowserSignInEnabled),
+                Effect.orElseSucceed(() => false),
+              ),
+          }),
+        ),
         Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(
           Layer.mock(McpSessionRegistry.McpSessionRegistry)({
@@ -1716,6 +1735,17 @@ it.effect("hides tools for links and refuses another environment while the beta 
         content: [{ text: expect.stringContaining("Linked environments is off on this machine") }],
       });
       expect((yield* ranIn(environmentId)).structuredContent).toEqual({ ranIn: "here" });
+
+      for (const [available, enabled] of [
+        [true, false],
+        [true, true],
+        [false, true],
+        [true, false],
+      ] as const) {
+        installed = available;
+        yield* settings.updateSettings({ pdSecretsBrowserSignInEnabled: enabled });
+        expect((yield* listed()).includes("browser_sign_in")).toBe(available && enabled);
+      }
 
       yield* settings.updateSettings({ linkedEnvironmentsEnabled: true });
       expect(yield* listed()).toEqual(["links", "where"]);

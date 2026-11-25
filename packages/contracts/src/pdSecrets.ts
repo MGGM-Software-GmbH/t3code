@@ -42,6 +42,8 @@ const FAILURE_MESSAGES = {
   expired: "This pd-secrets sign-in expired. Start sign-in again.",
   cancelled: "pd-secrets sign-in was cancelled.",
   browser_disabled: "Browser sign-in via pd-secrets is disabled in Settings → MGGM.",
+  browser_origin_denied:
+    "This browser credential is not allowed at the requested origin. Check its BROWSER_ORIGIN mapping.",
   credential_failed:
     "Could not read the requested browser credentials from pd-secrets. Check its connection and the USERNAME/PASSWORD mappings.",
 } as const;

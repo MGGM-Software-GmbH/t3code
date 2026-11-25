@@ -37,8 +37,10 @@ export class PdSecrets extends Context.Service<
       ownerSessionId: string,
     ) => Effect.Effect<PdSecretsLoginResult, PdSecretsError>;
     readonly cancel: (ownerSessionId: string) => Effect.Effect<void>;
+    readonly browserSignInAvailable: () => Effect.Effect<boolean>;
     readonly browserCredentials: (
       credential: string,
+      expectedOrigin: string,
     ) => Effect.Effect<
       Redacted.Redacted<{ readonly username: string; readonly password: string }>,
       PdSecretsError
@@ -58,12 +60,10 @@ interface LoginFlow {
 }
 
 const decodeBrowserCredentials = Schema.decodeEffect(
-  Schema.fromJsonString(
-    Schema.Struct({
-      username: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192)),
-      password: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192)),
-    }),
-  ),
+  Schema.Struct({
+    username: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192)),
+    password: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192)),
+  }),
 );
 
 const make = Effect.gen(function* () {
@@ -110,6 +110,7 @@ const make = Effect.gen(function* () {
 
   const browserCredentials = Effect.fn("PdSecrets.browserCredentials")(function* (
     credential: string,
+    expectedOrigin: string,
   ) {
     const currentSettings = yield* settings.getSettings.pipe(
       Effect.mapError(() => new PdSecretsError({ reason: "credential_failed" })),
@@ -120,38 +121,59 @@ const make = Effect.gen(function* () {
       return yield* new PdSecretsError({ reason: "credential_failed" });
     const executable = yield* command();
     if (executable === null) return yield* new PdSecretsError({ reason: "not_installed" });
-    const python = yield* resolveCommandPath("python3", { env }).pipe(
-      Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(Path.Path, path),
+    const mappings = yield* fileSystem.readFileString(path.join(home, ".claude", ".env")).pipe(
+      Effect.flatMap((text) =>
+        Effect.try({
+          try: () => NodeUtil.parseEnv(text),
+          catch: () => new PdSecretsError({ reason: "credential_failed" }),
+        }),
+      ),
+      Effect.mapError(() => new PdSecretsError({ reason: "credential_failed" })),
     );
-    if (python === null) return yield* new PdSecretsError({ reason: "credential_failed" });
-    const username = `${credential}_USERNAME`;
-    const password = `${credential}_PASSWORD`;
+    const usernameReference = mappings[`${credential}_USERNAME`];
+    const passwordReference = mappings[`${credential}_PASSWORD`];
+    const allowedOrigin = mappings[`${credential}_BROWSER_ORIGIN`];
+    const validOrigin = yield* Effect.try({
+      try: () => {
+        const origin = new URL(expectedOrigin);
+        return (
+          expectedOrigin === allowedOrigin &&
+          origin.origin === expectedOrigin &&
+          (origin.protocol === "https:" ||
+            (origin.protocol === "http:" &&
+              ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname)))
+        );
+      },
+      catch: () => new PdSecretsError({ reason: "browser_origin_denied" }),
+    }).pipe(Effect.orElseSucceed(() => false));
+    if (!validOrigin) return yield* new PdSecretsError({ reason: "browser_origin_denied" });
+    if (
+      usernameReference === undefined ||
+      passwordReference === undefined ||
+      !/^pd:\/\/.+\/(?:username|login)$/.test(usernameReference) ||
+      !/^pd:\/\/.+\/password$/.test(passwordReference) ||
+      usernameReference.replace(/\/(?:username|login)$/, "") !==
+        passwordReference.replace(/\/password$/, "")
+    )
+      return yield* new PdSecretsError({ reason: "credential_failed" });
     // Der private Prozesskanal transportiert Werte ohne Datei, Shell oder Ausgabe an den Agenten.
-    const read = Effect.gen(function* () {
+    const readValue = Effect.fn("PdSecrets.readBrowserValue")(function* (variable: string) {
       const handle = yield* spawner.spawn(
         ChildProcess.make(
           executable,
-          [
-            "run",
-            "--values",
-            `${username},${password}`,
-            "--env-file",
-            path.join(home, ".claude", ".env"),
-            "--",
-            python,
-            "-c",
-            "import json,os,sys; print(json.dumps({'username':os.environ[sys.argv[1]],'password':os.environ[sys.argv[2]]}))",
-            username,
-            password,
-          ],
+          ["read", variable, "--env-file", path.join(home, ".claude", ".env")],
           { cwd: home, env, stdin: "ignore", stdout: "pipe", stderr: "ignore" },
         ),
       );
       const output = yield* collectUint8StreamText({ stream: handle.stdout, maxBytes: 32768 });
       if ((yield* handle.exitCode) !== 0 || output.truncated || output.invalidUtf8)
         return yield* new PdSecretsError({ reason: "credential_failed" });
-      const value = yield* decodeBrowserCredentials(output.text);
+      return output.text.replace(/\r?\n$/, "");
+    });
+    const read = Effect.gen(function* () {
+      const username = yield* readValue(usernameReference);
+      const password = yield* readValue(passwordReference);
+      const value = yield* decodeBrowserCredentials({ username, password });
       return Redacted.make(value);
     }).pipe(
       Effect.scoped,
@@ -366,7 +388,22 @@ const make = Effect.gen(function* () {
     );
     return yield* awaitResult(flow);
   });
-  return PdSecrets.of({ status, login, respond, cancel, browserCredentials });
+  const browserSignInAvailable = Effect.fn("PdSecrets.browserSignInAvailable")(
+    function* () {
+      const current = yield* settings.getSettings;
+      return current.pdSecretsBrowserSignInEnabled && (yield* command()) !== null;
+    },
+    Effect.orElseSucceed(() => false),
+  );
+
+  return PdSecrets.of({
+    status,
+    login,
+    respond,
+    cancel,
+    browserCredentials,
+    browserSignInAvailable,
+  });
 });
 
 export const layer = Layer.effect(PdSecrets, make);

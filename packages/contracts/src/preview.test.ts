@@ -4,6 +4,10 @@ import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ThreadId } from "./baseSchemas.ts";
 import {
   PreviewAutomationHost,
+  PreviewAutomationFillCredentialsInput,
+  PreviewAutomationError,
+  PreviewCredentialOriginError,
+  PreviewCredentialFillError,
   PreviewAutomationInvalidSelectorError,
   PreviewAutomationStatus,
 } from "./previewAutomation.ts";
@@ -11,6 +15,34 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 
 const decodeAutomationHost = Schema.decodeUnknownSync(PreviewAutomationHost);
 const decodeAutomationStatus = Schema.decodeUnknownSync(PreviewAutomationStatus);
+const isAutomationError = Schema.is(PreviewAutomationError);
+
+describe("PreviewAutomationFillCredentialsInput", () => {
+  it("bounds optional locators and accepts credential error responses", () => {
+    const decode = Schema.decodeUnknownSync(PreviewAutomationFillCredentialsInput);
+    const input = { credential: "OPS_LOKAL", expectedOrigin: "https://login.test" };
+    expect(decode(input)).toEqual(input);
+    for (const field of ["usernameLocator", "passwordLocator"]) {
+      expect(() => decode({ ...input, [field]: "x".repeat(4096) })).not.toThrow();
+      expect(() => decode({ ...input, [field]: "x".repeat(4097) })).toThrow();
+    }
+    const context = {
+      threadId: ThreadId.make("thread-1"),
+      clientId: "server",
+      requestId: "request-1",
+      connectionId: "connection-1",
+      timeoutMs: 15_000,
+      environmentId: EnvironmentId.make("environment-1"),
+      providerSessionId: "provider-session-1",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      operation: "fillCredentials" as const,
+    };
+    for (const ErrorType of [PreviewCredentialOriginError, PreviewCredentialFillError]) {
+      const error = new ErrorType(context);
+      expect(isAutomationError(error)).toBe(true);
+    }
+  });
+});
 
 describe("PreviewAutomationHost", () => {
   it("accepts legacy hosts and current operation advertisements", () => {

@@ -1,4 +1,6 @@
 import {
+  PreviewCredentialOriginError,
+  PreviewCredentialFillError,
   PREVIEW_AUTOMATION_V1_OPERATIONS,
   PreviewAutomationClientDisconnectedError,
   PreviewAutomationControlInterruptedError,
@@ -248,6 +250,10 @@ const classifyResponseError = (
         threadId: context.threadId,
         cause: error,
       });
+    case "PreviewCredentialOriginError":
+      return new PreviewCredentialOriginError(context);
+    case "PreviewCredentialFillError":
+      return new PreviewCredentialFillError(context);
     case "PreviewAutomationNoAvailableHostError":
       return new PreviewAutomationNoAvailableHostError({
         ...context,

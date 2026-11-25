@@ -1,6 +1,7 @@
 import { useGT } from "gt-react";
 import { DEFAULT_CLIENT_SETTINGS, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts/settings";
 import { Switch } from "../ui/switch";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useSearchableSetting } from "./settingsSearch";
 import {
   SettingResetButton,
@@ -8,7 +9,11 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
-import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import {
+  useScopedSettings,
+  useScopedSettingsMixed,
+  useUpdateScopedSettings,
+} from "./useScopedSettings";
 import { FogBugzSettings } from "./FogBugzSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ScopedSwitch } from "./ScopedSwitch";
@@ -24,6 +29,12 @@ export function MggmSettingsPanel() {
         environment.serverConfig?.environment.capabilities.mggmClaudeSvnCheckout === true,
     );
   const settings = useScopedSettings();
+  const browserSignInMixed = useScopedSettingsMixed(["pdSecretsBrowserSignInEnabled"]);
+  const pdSecretsAvailable =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (environment) => environment.serverConfig?.environment.capabilities.pdSecrets === true,
+    );
   const enabled = settings.mggmThreadSidebarEnabled;
   const updateSettings = useUpdateScopedSettings();
 
@@ -37,15 +48,35 @@ export function MggmSettingsPanel() {
           {...searchableSetting("mggm-pd-secrets-browser-sign-in")}
           serverScoped
           settingKeys={["pdSecretsBrowserSignInEnabled"]}
+          resetAction={
+            browserSignInMixed || settings.pdSecretsBrowserSignInEnabled ? (
+              <SettingResetButton
+                ariaLabel={uebersetzen("Reset to default")}
+                onClick={() => updateSettings({ pdSecretsBrowserSignInEnabled: false })}
+              />
+            ) : null
+          }
           control={
-            <ScopedSwitch
-              settingKeys={["pdSecretsBrowserSignInEnabled"]}
-              checked={settings.pdSecretsBrowserSignInEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ pdSecretsBrowserSignInEnabled: checked })
-              }
-              aria-label={uebersetzen("Allow browser sign-in via pd-secrets")}
-            />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <ScopedSwitch
+                    settingKeys={["pdSecretsBrowserSignInEnabled"]}
+                    disabled={!pdSecretsAvailable}
+                    checked={settings.pdSecretsBrowserSignInEnabled}
+                    onCheckedChange={(checked) =>
+                      updateSettings({ pdSecretsBrowserSignInEnabled: checked })
+                    }
+                    aria-label={uebersetzen("Allow browser sign-in via pd-secrets")}
+                  />
+                }
+              />
+              <TooltipPopup>
+                {uebersetzen(
+                  "Only use with a trusted agent and login page. Filled credentials can be read by both. Applies to the selected environments.",
+                )}
+              </TooltipPopup>
+            </Tooltip>
           }
         />
       </SettingsSection>

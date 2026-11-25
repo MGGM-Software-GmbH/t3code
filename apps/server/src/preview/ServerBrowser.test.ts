@@ -461,6 +461,7 @@ const asSession = (providerSessionId: string) => ({
 const dependencies = Layer.mergeAll(
   Layer.mock(PdSecrets.PdSecrets)({
     browserCredentials: () => Effect.fail(new PdSecretsError({ reason: "browser_disabled" })),
+    browserSignInAvailable: () => Effect.succeed(false),
   }),
   Broker.layer,
   Manager.layer,
@@ -4711,13 +4712,15 @@ it.effect("checks credential origin and tab ownership before reading pd-secrets"
     expect(read).toHaveBeenCalledTimes(1);
     {
       using now = vi.spyOn(performance, "now").mockReturnValue(0);
+      const expired = Redacted.make({ username: "synthetic-user", password: "synthetic-password" });
       read.mockImplementationOnce(() =>
         Effect.sync(() => {
           now.mockReturnValue(1_000_000);
-          return Redacted.make({ username: "synthetic-user", password: "synthetic-password" });
+          return expired;
         }),
       );
       expect((yield* invoke("https://login.test"))._tag).toBe("PreviewAutomationTimeoutError");
+      expect(() => Redacted.value(expired)).toThrow();
     }
     const requested = yield* Deferred.make<void>();
     const credentials =

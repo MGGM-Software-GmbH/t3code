@@ -1000,7 +1000,7 @@ const typeKeys = async (page: Page, text: string, timeoutMs: number, deadline: n
   }
 };
 
-export const assertCredentialOrigin = (page: Page, expectedOrigin: string) => {
+export const assertCredentialOrigin = (page: Pick<Page, "url">, expectedOrigin: string) => {
   let valid = false;
   try {
     const origin = new URL(expectedOrigin);
@@ -1025,27 +1025,62 @@ export const fillCredentials = async (
   page: Page,
   input: PreviewAutomationFillCredentialsInput,
   credentials: Redacted.Redacted<{ readonly username: string; readonly password: string }>,
+  assertActive?: () => number,
 ) => {
-  assertCredentialOrigin(page, input.expectedOrigin);
-  try {
-    const username = targetLocator(page, {
-      locator:
-        input.usernameLocator ??
-        'input[autocomplete="username"]:visible, input[name="username"]:visible, input[type="email"]:visible',
-    })!;
-    const password = targetLocator(page, {
-      locator: input.passwordLocator ?? 'input[type="password"]:visible',
-    })!;
-    if ((await username.count()) !== 1 || (await password.count()) !== 1)
-      throw new Error("Ambiguous login fields");
-    const usernameElement = await username.elementHandle({
-      timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    });
-    const passwordElement = await password.elementHandle({
-      timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    });
+  const deadline = performance.now() + (input.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const remaining = () => {
+    const budget = assertActive?.() ?? deadline - performance.now();
+    if (budget <= 0)
+      throw new DOMException("This browser credential request expired.", "TimeoutError");
+    return budget;
+  };
+  const withinBudget = async <Value>(operation: Promise<Value>): Promise<Value> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await page.evaluate(
+      return await Promise.race([
+        operation,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(new DOMException("This browser credential request expired.", "TimeoutError")),
+            remaining(),
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  remaining();
+  assertCredentialOrigin(page, input.expectedOrigin);
+  const username = targetLocator(page, {
+    locator:
+      input.usernameLocator ??
+      'input[autocomplete="username"]:visible, input[name="username"]:visible, input[type="email"]:visible',
+  })!;
+  const password = targetLocator(page, {
+    locator: input.passwordLocator ?? 'input[type="password"]:visible',
+  })!;
+  if ((await withinBudget(username.count())) !== 1 || (await withinBudget(password.count())) !== 1)
+    throw new ServerBrowserOperationError({
+      tag: "PreviewCredentialFillError",
+      message: "Could not identify unique visible login fields.",
+    });
+  const usernameElement = await username.elementHandle({ timeout: remaining() });
+  let passwordElement: Awaited<ReturnType<typeof password.elementHandle>> | undefined;
+  try {
+    passwordElement = await password.elementHandle({ timeout: remaining() });
+    const frame = await withinBudget(usernameElement!.ownerFrame());
+    if (frame === null || frame !== (await withinBudget(passwordElement!.ownerFrame())))
+      throw new ServerBrowserOperationError({
+        tag: "PreviewCredentialFillError",
+        message: "Login fields must belong to the same frame.",
+      });
+    assertCredentialOrigin(frame, input.expectedOrigin);
+    assertCredentialOrigin(page, input.expectedOrigin);
+    remaining();
+    try {
+      await frame.evaluate(
         ({ expectedOrigin, usernameElement, passwordElement, values }) => {
           interface LoginField {
             readonly type: string;
@@ -1107,17 +1142,16 @@ export const fillCredentials = async (
           values: Redacted.value(credentials),
         },
       );
-    } finally {
-      await usernameElement?.dispose();
-      await passwordElement?.dispose();
+    } catch {
+      // Erst dieser Aufruf überträgt Werte; seine Fehler dürfen keine Eingaben weiterreichen.
+      throw new ServerBrowserOperationError({
+        tag: "PreviewCredentialFillError",
+        message: "Could not fill the visible login fields at the expected origin.",
+      });
     }
-  } catch {
-    // Browserfehler können Eingabewerte enthalten und dürfen nicht weitergereicht werden.
-    throw new ServerBrowserOperationError({
-      tag: "PreviewCredentialFillError",
-      message:
-        "Could not fill unique visible login fields. Specify usernameLocator/passwordLocator and verify the expected origin.",
-    });
+  } finally {
+    await usernameElement?.dispose();
+    await passwordElement?.dispose();
   }
 };
 

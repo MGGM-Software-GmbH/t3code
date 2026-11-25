@@ -71,6 +71,7 @@ import type * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
+import * as Redacted from "effect/Redacted";
 import * as Semaphore from "effect/Semaphore";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
@@ -2960,16 +2961,20 @@ const make = Effect.gen(function* () {
         ServerBrowserPage.assertCredentialOrigin(tab.page, credentialInput.expectedOrigin);
         const generation = tab.control.generation;
         const credentials = await runPromise(
-          pdSecrets.browserCredentials(credentialInput.credential),
+          pdSecrets.browserCredentials(credentialInput.credential, credentialInput.expectedOrigin),
         );
-        if (
-          generation !== tab.control.generation ||
-          !tab.control.agentCanActNow(request.agentSessionId!)
-        )
-          throw new BrowserControlInterrupted();
-        if (performance.now() >= deadlineMs)
-          throw new DOMException("This browser credential request expired.", "TimeoutError");
-        await ServerBrowserPage.fillCredentials(tab.page, credentialInput, credentials);
+        try {
+          await ServerBrowserPage.fillCredentials(tab.page, credentialInput, credentials, () => {
+            if (
+              generation !== tab.control.generation ||
+              !tab.control.agentCanActNow(request.agentSessionId!)
+            )
+              throw new BrowserControlInterrupted();
+            return deadlineMs - performance.now();
+          });
+        } finally {
+          Redacted.wipeUnsafe(credentials);
+        }
         return {};
       }
       case "navigate": {
