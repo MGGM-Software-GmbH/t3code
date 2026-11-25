@@ -137,6 +137,17 @@ describe("slow request warnings", () => {
 });
 
 describe("pd-secrets post-login script", () => {
+  it("requires an explicit browser sign-in grant and preserves revocation", () => {
+    expect(decodeServerSettings({}).pdSecretsBrowserSignInEnabled).toBe(false);
+    for (const enabled of [true, false]) {
+      const patch = decodeServerSettingsPatch({ pdSecretsBrowserSignInEnabled: enabled });
+      expect(
+        decodeServerSettings({ ...encodeServerSettings(DEFAULT_SERVER_SETTINGS), ...patch })
+          .pdSecretsBrowserSignInEnabled,
+      ).toBe(enabled);
+    }
+    expect(() => decodeServerSettingsPatch({ pdSecretsBrowserSignInEnabled: "true" })).toThrow();
+  });
   it("defaults to no script and preserves a host-local path through settings patches", () => {
     expect(decodeServerSettings({}).pdSecretsPostLoginScript).toBe("");
     const patch = decodeServerSettingsPatch({

@@ -215,6 +215,9 @@ const handlers = {
   preview_navigate: McpToolAccess.actsAsCaller((input) =>
     invokeTargeted<PreviewAutomationStatus>("navigate", input, input.timeoutMs),
   ),
+  preview_fill_credentials: McpToolAccess.actsAsCaller((input) =>
+    invokeTargeted<object>("fillCredentials", input, input.timeoutMs),
+  ),
   preview_resize: McpToolAccess.actsAsCaller((input) =>
     invokeTargeted<PreviewAutomationResizeResult>("resize", input, input.timeoutMs),
   ),

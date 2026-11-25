@@ -1451,6 +1451,9 @@ export const ServerSettings = Schema.Struct({
   ),
   /** Optional Bash script run on this environment after pd-secrets signs in. */
   pdSecretsPostLoginScript: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  pdSecretsBrowserSignInEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   // Null means no client has migrated this preference yet; an empty value is
   // authoritative so another device cannot resurrect cleared preferences.
   favorites: Schema.NullOr(ModelFavorites).pipe(
@@ -1950,6 +1953,7 @@ export const ServerSettingsPatch = Schema.Struct({
   mggmCodexAutoRedeemExpiringResets: Schema.optionalKey(Schema.Boolean),
   mggmCodexAutoRedeemAtWeeklyLimit: Schema.optionalKey(Schema.Boolean),
   pdSecretsPostLoginScript: Schema.optionalKey(TrimmedString),
+  pdSecretsBrowserSignInEnabled: Schema.optionalKey(Schema.Boolean),
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
   ),

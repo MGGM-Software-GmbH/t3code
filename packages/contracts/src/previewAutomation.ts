@@ -51,6 +51,7 @@ export const PREVIEW_AUTOMATION_SERVER_OPERATIONS = [
   "hover",
   "select",
   "drag",
+  "fillCredentials",
 ] as const;
 export const PreviewAutomationOperation = Schema.Literals(PREVIEW_AUTOMATION_SERVER_OPERATIONS);
 export type PreviewAutomationOperation = typeof PreviewAutomationOperation.Type;
@@ -401,6 +402,17 @@ export const PreviewAutomationTypeInput = Schema.Struct({
   ),
 );
 export type PreviewAutomationTypeInput = typeof PreviewAutomationTypeInput.Type;
+
+export const PreviewAutomationFillCredentialsInput = Schema.Struct({
+  ...PreviewAutomationTabTargetFields,
+  credential: Schema.String.check(Schema.isPattern(/^[A-Z][A-Z0-9_]{0,95}$/)),
+  expectedOrigin: BoundedUrl,
+  usernameLocator: Schema.optional(TrimmedNonEmptyString),
+  passwordLocator: Schema.optional(TrimmedNonEmptyString),
+  timeoutMs: OptionalTimeoutMs,
+});
+export type PreviewAutomationFillCredentialsInput =
+  typeof PreviewAutomationFillCredentialsInput.Type;
 
 export const PreviewAutomationPressInput = Schema.Struct({
   ...PreviewAutomationTabTargetFields,

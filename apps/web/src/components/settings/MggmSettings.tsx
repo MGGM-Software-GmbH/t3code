@@ -32,6 +32,23 @@ export function MggmSettingsPanel() {
       {target ? (
         <FogBugzSettings key={target.environmentId} environmentId={target.environmentId} />
       ) : null}
+      <SettingsSection title="pd-secrets">
+        <SettingsRow
+          {...searchableSetting("mggm-pd-secrets-browser-sign-in")}
+          serverScoped
+          settingKeys={["pdSecretsBrowserSignInEnabled"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["pdSecretsBrowserSignInEnabled"]}
+              checked={settings.pdSecretsBrowserSignInEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ pdSecretsBrowserSignInEnabled: checked })
+              }
+              aria-label={uebersetzen("Allow browser sign-in via pd-secrets")}
+            />
+          }
+        />
+      </SettingsSection>
       <SettingsSection title={uebersetzen("Subversion")}>
         <SettingsRow
           {...searchableSetting("mggm-auto-svn-update")}

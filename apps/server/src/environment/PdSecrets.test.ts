@@ -29,6 +29,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
   const settingsContext = yield* Layer.build(ServerSettings.layerTest());
   const settings = Context.get(settingsContext, ServerSettings.ServerSettingsService);
   if (installed) yield* fs.symlink("/bin/true", `${home}/pd-secrets`);
+  yield* fs.symlink("/usr/bin/python3", `${home}/python3`);
   const ready = yield* Queue.unbounded<void>();
   const statusReady = yield* Queue.unbounded<void>();
   const writes: string[] = [];
@@ -43,6 +44,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
   let hangingScript = false;
   let interruptedScript = false;
   let realScript = false;
+  let credentialOutput = '{"username":"synthetic-user","password":"synthetic-password"}';
   const spawner = ChildProcessSpawner.make((command) =>
     Effect.suspend(() => {
       checks.push(command);
@@ -71,7 +73,10 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
           kill: () => Effect.void,
           unref: Effect.succeed(Effect.void),
           stdin: Sink.drain,
-          stdout: Stream.empty,
+          stdout:
+            ChildProcess.isStandardCommand(command) && command.args[0] === "run"
+              ? Stream.make(new TextEncoder().encode(credentialOutput))
+              : Stream.empty,
           stderr: Stream.empty,
           all: Stream.empty,
           getInputFd: () => Sink.drain,
@@ -132,6 +137,11 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
     scriptReady: Queue.take(scriptReady),
     configureScript: (value: string) =>
       settings.updateSettings({ pdSecretsPostLoginScript: value }),
+    configureBrowser: (value: boolean) =>
+      settings.updateSettings({ pdSecretsBrowserSignInEnabled: value }),
+    credentialOutput: (value: string) => {
+      credentialOutput = value;
+    },
     hangScript: () => {
       hangingScript = true;
     },
@@ -157,6 +167,49 @@ const makeHarness = Effect.fn("makeHarness")(function* (installed = true) {
 });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PdSecrets", (it) => {
+  it.effect("blocks credential reads by default and after the grant is revoked", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      for (const enabled of [false, true, false]) {
+        yield* harness.configureBrowser(enabled);
+        if (enabled) {
+          const credentials = yield* harness.service.browserCredentials("OPS_LOKAL");
+          expect(Redacted.value(credentials)).toEqual({
+            username: "synthetic-user",
+            password: "synthetic-password",
+          });
+          expect(String(credentials)).not.toContain("synthetic-password");
+        } else {
+          const error = yield* Effect.flip(harness.service.browserCredentials("OPS_LOKAL"));
+          expect(error.reason).toBe("browser_disabled");
+        }
+      }
+      expect(harness.checks).toHaveLength(1);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("does not expose invalid output or accept injected mapping names", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* harness.configureBrowser(true);
+      for (const credential of ["OPS_LOKAL;echo", "../OPS", "ops", ""]) {
+        const error = yield* Effect.flip(harness.service.browserCredentials(credential));
+        expect(error.reason).toBe("credential_failed");
+      }
+      expect(harness.checks).toHaveLength(0);
+      for (const output of [
+        "synthetic-password",
+        '{"username":"u","password":""}',
+        "x".repeat(32769),
+      ]) {
+        harness.credentialOutput(output);
+        const error = yield* Effect.flip(harness.service.browserCredentials("OPS_LOKAL"));
+        expect(error.message).not.toContain("synthetic-password");
+        expect(error.reason).toBe("credential_failed");
+      }
+      expect(JSON.stringify(harness.checks)).not.toContain("synthetic-password");
+    }).pipe(Effect.scoped),
+  );
   it.effect("hides an absent CLI without starting authentication", () =>
     Effect.gen(function* () {
       const h = yield* makeHarness(false);

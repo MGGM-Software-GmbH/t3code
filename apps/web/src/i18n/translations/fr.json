@@ -9363,6 +9363,7 @@
   "06ed78c51947fdb7": "T3 Code va redémarrer et exécuter à nouveau un serveur sur cet ordinateur.",
   "5741e027bc5d5e4c": "Redémarrer et désactiver",
   "e09686bd65886c10": "Redémarrer et activer",
+  "b1cc98c299246314": "Autoriser la connexion dans le navigateur via pd-secrets",
   "56c73bee6e191fe0": "Subversion",
   "df6aeac841c232e6": "Runs svn update in ~/.claude/ daily at 06:00 and 13:00, in the environment’s local time.",
   "1acc15b13820f8bf": "Requires a T3 environment with a ~/.claude/.svn/ directory. Select an environment with an SVN working copy.",

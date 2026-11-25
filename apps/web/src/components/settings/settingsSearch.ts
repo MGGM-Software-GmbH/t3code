@@ -497,6 +497,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["svn subversion update working copy checkout claude 06:00 13:00"],
   },
   {
+    id: "mggm-pd-secrets-browser-sign-in",
+    title: msg("Allow browser sign-in via pd-secrets"),
+    to: "/settings/mggm",
+    scope: "environment",
+    searchTerms: ["pd-secrets password depot browser login credentials sign-in"],
+  },
+  {
     id: "mggm-codex-expiring-resets",
     title: msg("Redeem expiring banked resets"),
     to: "/settings/mggm",

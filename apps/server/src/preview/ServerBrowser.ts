@@ -37,6 +37,7 @@ import {
   type PreviewAutomationSnapshotInput,
   type PreviewAutomationStatus,
   type PreviewAutomationTypeInput,
+  type PreviewAutomationFillCredentialsInput,
   type PreviewAutomationUploadInput,
   type PreviewAutomationWaitForInput,
   PreviewClearProfileError,
@@ -89,6 +90,7 @@ import { PENDING_ATTACHMENT_THREAD_SEGMENT } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import { resolveRootCliCommand } from "../cli/invocation.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as PdSecrets from "../environment/PdSecrets.ts";
 import * as PreviewAutomationBroker from "../mcp/PreviewAutomationBroker.ts";
 import * as DesktopBrowserChannel from "./DesktopBrowserChannel.ts";
 import * as PreviewAgentActivity from "./PreviewAgentActivity.ts";
@@ -694,6 +696,7 @@ const make = Effect.gen(function* () {
   const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const previewBrowser = yield* PreviewBrowser.PreviewBrowser;
+  const pdSecrets = yield* PdSecrets.PdSecrets;
   const desktopChannel = yield* DesktopBrowserChannel.DesktopBrowserChannel;
   const agentTurns = yield* (yield* PreviewAgentActivity.PreviewAgentActivity).changes;
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
@@ -2952,6 +2955,23 @@ const make = Effect.gen(function* () {
   ) => {
     const input = request.input;
     switch (request.operation) {
+      case "fillCredentials": {
+        const credentialInput = input as PreviewAutomationFillCredentialsInput;
+        ServerBrowserPage.assertCredentialOrigin(tab.page, credentialInput.expectedOrigin);
+        const generation = tab.control.generation;
+        const credentials = await runPromise(
+          pdSecrets.browserCredentials(credentialInput.credential),
+        );
+        if (
+          generation !== tab.control.generation ||
+          !tab.control.agentCanActNow(request.agentSessionId!)
+        )
+          throw new BrowserControlInterrupted();
+        if (performance.now() >= deadlineMs)
+          throw new DOMException("This browser credential request expired.", "TimeoutError");
+        await ServerBrowserPage.fillCredentials(tab.page, credentialInput, credentials);
+        return {};
+      }
       case "navigate": {
         const navigateInput = input as PreviewAutomationNavigateInput;
         await recordAction(tab, "navigate", () =>

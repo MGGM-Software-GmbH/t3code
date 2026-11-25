@@ -17,11 +17,13 @@ import {
   type PreviewAutomationSnapshotMetadata,
   type PreviewAutomationSnapshotStage,
   type PreviewAutomationTypeInput,
+  type PreviewAutomationFillCredentialsInput,
   type PreviewAutomationUploadInput,
   type PreviewAutomationWaitForInput,
 } from "@t3tools/contracts";
 import { constVoid } from "effect/Function";
 import * as Schema from "effect/Schema";
+import * as Redacted from "effect/Redacted";
 import type { CDPSession, ConsoleMessage, Frame, Locator, Page } from "playwright-core";
 import * as NodeCrypto from "node:crypto";
 import * as NodeUtil from "node:util";
@@ -995,6 +997,127 @@ const typeKeys = async (page: Page, text: string, timeoutMs: number, deadline: n
       else await page.keyboard.type(piece);
       typed += piece.length;
     }
+  }
+};
+
+export const assertCredentialOrigin = (page: Page, expectedOrigin: string) => {
+  let valid = false;
+  try {
+    const origin = new URL(expectedOrigin);
+    valid =
+      origin.origin === expectedOrigin &&
+      (origin.protocol === "https:" ||
+        (origin.protocol === "http:" &&
+          ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname))) &&
+      new URL(page.url()).origin === expectedOrigin;
+  } catch {
+    valid = false;
+  }
+  if (!valid)
+    throw new ServerBrowserOperationError({
+      tag: "PreviewCredentialOriginError",
+      message: "The browser is not at the expected secure login origin.",
+    });
+};
+
+/** Die Werte verlassen nur über den Browserkanal den Speicher des Servers. */
+export const fillCredentials = async (
+  page: Page,
+  input: PreviewAutomationFillCredentialsInput,
+  credentials: Redacted.Redacted<{ readonly username: string; readonly password: string }>,
+) => {
+  assertCredentialOrigin(page, input.expectedOrigin);
+  try {
+    const username = targetLocator(page, {
+      locator:
+        input.usernameLocator ??
+        'input[autocomplete="username"]:visible, input[name="username"]:visible, input[type="email"]:visible',
+    })!;
+    const password = targetLocator(page, {
+      locator: input.passwordLocator ?? 'input[type="password"]:visible',
+    })!;
+    if ((await username.count()) !== 1 || (await password.count()) !== 1)
+      throw new Error("Ambiguous login fields");
+    const usernameElement = await username.elementHandle({
+      timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    });
+    const passwordElement = await password.elementHandle({
+      timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    });
+    try {
+      await page.evaluate(
+        ({ expectedOrigin, usernameElement, passwordElement, values }) => {
+          interface LoginField {
+            readonly type: string;
+            readonly isConnected: boolean;
+            readonly disabled: boolean;
+            readonly readOnly: boolean;
+            readonly form: { readonly action: string } | null;
+            getClientRects(): { readonly length: number };
+            dispatchEvent(event: Event): boolean;
+          }
+          const browser = globalThis as unknown as {
+            readonly location: { readonly origin: string; readonly href: string };
+            readonly HTMLInputElement: { new (): LoginField };
+            getComputedStyle(element: LoginField): { readonly visibility: string };
+          };
+          const usernameField = usernameElement as unknown;
+          const passwordField = passwordElement as unknown;
+          if (
+            browser.location.origin !== expectedOrigin ||
+            !(usernameField instanceof browser.HTMLInputElement) ||
+            !(passwordField instanceof browser.HTMLInputElement) ||
+            passwordField.type !== "password" ||
+            usernameField === passwordField ||
+            !["text", "email"].includes(usernameField.type) ||
+            [usernameField, passwordField].some(
+              (element) =>
+                !element.isConnected ||
+                element.disabled ||
+                element.readOnly ||
+                !element.getClientRects().length ||
+                browser.getComputedStyle(element).visibility !== "visible",
+            )
+          )
+            throw new Error("Invalid login fields");
+          const form = passwordField.form;
+          if (
+            form &&
+            (usernameField.form !== form ||
+              new URL(form.action, browser.location.href).origin !== expectedOrigin)
+          )
+            throw new Error("Unexpected login form target");
+          const setter = Object.getOwnPropertyDescriptor(
+            browser.HTMLInputElement.prototype,
+            "value",
+          )!.set!;
+          for (const [element, value] of [
+            [usernameField, values.username],
+            [passwordField, values.password],
+          ] as const) {
+            setter.call(element, value);
+            element.dispatchEvent(new Event("input", { bubbles: true }));
+            element.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        },
+        {
+          expectedOrigin: input.expectedOrigin,
+          usernameElement,
+          passwordElement,
+          values: Redacted.value(credentials),
+        },
+      );
+    } finally {
+      await usernameElement?.dispose();
+      await passwordElement?.dispose();
+    }
+  } catch {
+    // Browserfehler können Eingabewerte enthalten und dürfen nicht weitergereicht werden.
+    throw new ServerBrowserOperationError({
+      tag: "PreviewCredentialFillError",
+      message:
+        "Could not fill unique visible login fields. Specify usernameLocator/passwordLocator and verify the expected origin.",
+    });
   }
 };
 

@@ -1,5 +1,6 @@
 import { PreviewAutomationEvaluateInput } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import * as Redacted from "effect/Redacted";
 import {
   chromium,
   type Browser,
@@ -246,6 +247,92 @@ describe("server browser element refs", () => {
   });
   afterEach(async () => {
     await context.close();
+  });
+
+  it("fills only an unambiguous login on the expected origin without submitting", async () => {
+    await context.route("https://login.test/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: '<form action="/login"><input name="username"><input type="password"><button>Login</button></form><input name="username" hidden>',
+      }),
+    );
+    await page.goto("https://login.test/");
+    const input = { credential: "OPS_LOKAL", expectedOrigin: "https://login.test" };
+    const credentials = Redacted.make({
+      username: "synthetic-user",
+      password: "synthetic-password",
+    });
+    await ServerBrowserPage.fillCredentials(page, input, credentials);
+    await expect(page.locator('input[name="username"]:visible').inputValue()).resolves.toBe(
+      "synthetic-user",
+    );
+    await expect(page.locator('input[type="password"]').inputValue()).resolves.toBe(
+      "synthetic-password",
+    );
+    expect(page.url()).toBe("https://login.test/");
+    await expect(
+      ServerBrowserPage.fillCredentials(
+        page,
+        { ...input, expectedOrigin: "https://other.test" },
+        credentials,
+      ),
+    ).rejects.toMatchObject({ tag: "PreviewCredentialOriginError" });
+    await page
+      .locator("form")
+      .evaluate((form) => form.setAttribute("action", "https://other.test/login"));
+    await expect(ServerBrowserPage.fillCredentials(page, input, credentials)).rejects.toMatchObject(
+      { tag: "PreviewCredentialFillError" },
+    );
+    await page.locator("form").evaluate((form) => form.setAttribute("action", "/login"));
+    await page.evaluate(`(() => {
+      const additional = document.createElement("input");
+      additional.type = "password";
+      document.body.append(additional);
+    })()`);
+    await expect(ServerBrowserPage.fillCredentials(page, input, credentials)).rejects.toMatchObject(
+      { tag: "PreviewCredentialFillError" },
+    );
+    await ServerBrowserPage.fillCredentials(
+      page,
+      { ...input, passwordLocator: 'form input[type="password"]' },
+      credentials,
+    );
+    await page
+      .locator('form input[type="password"]')
+      .evaluate((element) => element.setAttribute("readonly", ""));
+    await expect(
+      ServerBrowserPage.fillCredentials(
+        page,
+        { ...input, passwordLocator: 'form input[type="password"]' },
+        credentials,
+      ),
+    ).rejects.toMatchObject({ tag: "PreviewCredentialFillError" });
+  });
+
+  it("sanitizes failures that contain credential values", async () => {
+    const failure = new Error("Playwright failure: synthetic-password");
+    const failing = {
+      url: () => "https://login.test/",
+      locator: () => {
+        throw failure;
+      },
+    } as unknown as Page;
+    await expect(
+      ServerBrowserPage.fillCredentials(
+        failing,
+        { credential: "OPS_LOKAL", expectedOrigin: "https://login.test" },
+        Redacted.make({ username: "u", password: "synthetic-password" }),
+      ),
+    ).rejects.not.toThrow("synthetic-password");
+    for (const origin of [
+      "http://login.test",
+      "https://login.test/path",
+      "https://login.test?query",
+      "file://",
+      "invalid",
+    ]) {
+      expect(() => ServerBrowserPage.assertCredentialOrigin(failing, origin)).toThrow();
+    }
   });
 
   const takeSnapshot = () =>

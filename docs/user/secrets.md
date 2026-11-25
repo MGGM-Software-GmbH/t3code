@@ -48,6 +48,24 @@ When you remove a secret provider in **Settings → Secrets**, T3 Code lists the
 from it. Removing it clears those fields, so set them again before you need them. The secrets in
 1Password are not touched.
 
+## Browseranmeldung mit pd-secrets im MGGM-Fork
+
+Unter **Einstellungen → MGGM → pd-secrets** erlaubt der Schalter
+**Browseranmeldung über pd-secrets erlauben** dem Agenten, Loginfelder mit einem
+vorhandenen Zugang zu befüllen. Die Freigabe gilt für die gewählte Umgebung und
+ist standardmäßig ausgeschaltet. Die Anmeldung bei pd-secrets erfolgt weiterhin
+über das Schlüsselsymbol.
+
+Ein Auftrag wie „Melde Dich unter https://ops.mggm.de mit OPS_LOKAL an“ genügt.
+Der Zugang benötigt die vorhandenen Zuordnungen `OPS_LOKAL_USERNAME` und
+`OPS_LOKAL_PASSWORD` in `~/.claude/.env`. Weitere Zugangsdialoge oder gespeicherte
+Kennwörter in T3 sind nicht erforderlich.
+
+Kennwörter werden intern über einen Prozesskanal übertragen und
+nicht als Toolargument, Gesprächsnachricht oder temporäre Datei abgelegt.
+Die Aktion ist für den Serverbrowser verfügbar, berücksichtigt die Tabsteuerung
+und verweigert fremde Domains sowie unverschlüsseltes HTTP außerhalb von Loopback.
+
 ## When an agent asks for a secret
 
 An agent that needs a token or password shows a secret request card in the thread instead of asking

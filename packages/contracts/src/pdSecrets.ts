@@ -41,6 +41,9 @@ const FAILURE_MESSAGES = {
   configuration: "pd-secrets did not request a password. Configure pd-secrets in a terminal first.",
   expired: "This pd-secrets sign-in expired. Start sign-in again.",
   cancelled: "pd-secrets sign-in was cancelled.",
+  browser_disabled: "Browser sign-in via pd-secrets is disabled in Settings → MGGM.",
+  credential_failed:
+    "Could not read the requested browser credentials from pd-secrets. Check its connection and the USERNAME/PASSWORD mappings.",
 } as const;
 
 /** CLI output can contain credentials and must never become an RPC error. */

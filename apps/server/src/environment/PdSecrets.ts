@@ -8,6 +8,7 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { PtyAdapter, type PtyProcess } from "@t3tools/shared/PtyAdapter";
 import { resolveCommandPath } from "@t3tools/shared/shell";
+import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
@@ -17,6 +18,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Scope from "effect/Scope";
+import * as Schema from "effect/Schema";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as NodeUtil from "node:util";
@@ -35,6 +37,12 @@ export class PdSecrets extends Context.Service<
       ownerSessionId: string,
     ) => Effect.Effect<PdSecretsLoginResult, PdSecretsError>;
     readonly cancel: (ownerSessionId: string) => Effect.Effect<void>;
+    readonly browserCredentials: (
+      credential: string,
+    ) => Effect.Effect<
+      Redacted.Redacted<{ readonly username: string; readonly password: string }>,
+      PdSecretsError
+    >;
   }
 >()("t3/environment/PdSecrets") {}
 
@@ -48,6 +56,15 @@ interface LoginFlow {
   exited: boolean;
   dispose: Array<() => void>;
 }
+
+const decodeBrowserCredentials = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      username: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192)),
+      password: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192)),
+    }),
+  ),
+);
 
 const make = Effect.gen(function* () {
   const pty = yield* PtyAdapter;
@@ -89,6 +106,59 @@ const make = Effect.gen(function* () {
     if (exitCode !== 0 && exitCode !== 1)
       return yield* new PdSecretsError({ reason: "check_failed" });
     return { state: exitCode === 0 ? "connected" : "disconnected" } as const;
+  });
+
+  const browserCredentials = Effect.fn("PdSecrets.browserCredentials")(function* (
+    credential: string,
+  ) {
+    const currentSettings = yield* settings.getSettings.pipe(
+      Effect.mapError(() => new PdSecretsError({ reason: "credential_failed" })),
+    );
+    if (!currentSettings.pdSecretsBrowserSignInEnabled)
+      return yield* new PdSecretsError({ reason: "browser_disabled" });
+    if (!/^[A-Z][A-Z0-9_]{0,95}$/.test(credential))
+      return yield* new PdSecretsError({ reason: "credential_failed" });
+    const executable = yield* command();
+    if (executable === null) return yield* new PdSecretsError({ reason: "not_installed" });
+    const python = yield* resolveCommandPath("python3", { env }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+    if (python === null) return yield* new PdSecretsError({ reason: "credential_failed" });
+    const username = `${credential}_USERNAME`;
+    const password = `${credential}_PASSWORD`;
+    // Der private Prozesskanal transportiert Werte ohne Datei, Shell oder Ausgabe an den Agenten.
+    const read = Effect.gen(function* () {
+      const handle = yield* spawner.spawn(
+        ChildProcess.make(
+          executable,
+          [
+            "run",
+            "--values",
+            `${username},${password}`,
+            "--env-file",
+            path.join(home, ".claude", ".env"),
+            "--",
+            python,
+            "-c",
+            "import json,os,sys; print(json.dumps({'username':os.environ[sys.argv[1]],'password':os.environ[sys.argv[2]]}))",
+            username,
+            password,
+          ],
+          { cwd: home, env, stdin: "ignore", stdout: "pipe", stderr: "ignore" },
+        ),
+      );
+      const output = yield* collectUint8StreamText({ stream: handle.stdout, maxBytes: 32768 });
+      if ((yield* handle.exitCode) !== 0 || output.truncated || output.invalidUtf8)
+        return yield* new PdSecretsError({ reason: "credential_failed" });
+      const value = yield* decodeBrowserCredentials(output.text);
+      return Redacted.make(value);
+    }).pipe(
+      Effect.scoped,
+      Effect.timeout("10 seconds"),
+      Effect.mapError(() => new PdSecretsError({ reason: "credential_failed" })),
+    );
+    return yield* read;
   });
 
   const stop = (flow: LoginFlow) => {
@@ -296,7 +366,7 @@ const make = Effect.gen(function* () {
     );
     return yield* awaitResult(flow);
   });
-  return PdSecrets.of({ status, login, respond, cancel });
+  return PdSecrets.of({ status, login, respond, cancel, browserCredentials });
 });
 
 export const layer = Layer.effect(PdSecrets, make);
