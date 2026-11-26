@@ -899,6 +899,10 @@ it.each([
 );
 
 it.each(["linked", "unlinked", "draft"])("gates the case list (%s)", async (kind) => {
+  const initialDrafts = useComposerDraftStore.getState();
+  using _drafts = {
+    [Symbol.dispose]: () => useComposerDraftStore.setState(initialDrafts, true),
+  };
   const thread = threadWithHistory(`fogbugz-actions-${kind}`, 1);
   const projectId = ProjectId.make("project-render");
   const draftId = DraftId.make("fogbugz-new-draft");
