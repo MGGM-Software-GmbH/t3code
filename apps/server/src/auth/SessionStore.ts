@@ -417,6 +417,12 @@ export class SessionStore extends Context.Service<
       /** Keeps the session alive this long past each renewal; `ttl` then bounds only the token. */
       readonly renewalWindow?: Duration.Duration;
     }) => Effect.Effect<IssuedSession, SessionCredentialInternalError>;
+    readonly renewPairedBrowserCookie: (
+      token: string,
+    ) => Effect.Effect<
+      { readonly token: string; readonly expiresAt: DateTime.Utc },
+      SessionCredentialError
+    >;
     /** Trades a renewable token, even an expired one, for a fresh token on the same session. */
     readonly renew: (
       token: string,
@@ -490,6 +496,7 @@ export class SessionStore extends Context.Service<
 
 const SIGNING_SECRET_NAME = "server-signing-key";
 const DEFAULT_SESSION_TTL = Duration.days(30);
+export const PAIRING_LINK_SUBJECT = "one-time-token";
 const DEFAULT_WEBSOCKET_TOKEN_TTL = Duration.minutes(5);
 
 const SessionClaims = Schema.Struct({
@@ -823,6 +830,17 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const readSignedClaims = Effect.fnUntraced(function* (token: string) {
+    const [encodedPayload, signature] = token.split(".");
+    if (!encodedPayload || !signature) return yield* new MalformedSessionTokenError({});
+    if (!(yield* signer.verify(encodedPayload, signature))) {
+      return yield* new InvalidSessionTokenSignatureError({});
+    }
+    return yield* decodeSessionClaims(base64UrlDecodeUtf8(encodedPayload)).pipe(
+      Effect.mapError((cause) => new InvalidSessionTokenPayloadError({ cause })),
+    );
+  });
+
   const verify: SessionStore["Service"]["verify"] = Effect.fn("SessionStore.verify")(
     function* (token) {
       if (devAuth?.matches(token)) {
@@ -861,18 +879,7 @@ const make = Effect.gen(function* () {
           scopes: row.value.scopes,
         } satisfies VerifiedSession;
       }
-      const [encodedPayload, signature] = token.split(".");
-      if (!encodedPayload || !signature) {
-        return yield* new MalformedSessionTokenError({});
-      }
-
-      if (!(yield* signer.verify(encodedPayload, signature))) {
-        return yield* new InvalidSessionTokenSignatureError({});
-      }
-
-      const claims = yield* decodeSessionClaims(base64UrlDecodeUtf8(encodedPayload)).pipe(
-        Effect.mapError((cause) => new InvalidSessionTokenPayloadError({ cause })),
-      );
+      const claims = yield* readSignedClaims(token);
 
       const observedAt = yield* DateTime.now;
       const expiresAt = DateTime.make(claims.exp);
@@ -965,18 +972,36 @@ const make = Effect.gen(function* () {
       ),
   );
 
+  const renewPairedBrowserCookie = Effect.fn("SessionStore.renewPairedBrowserCookie")(function* (
+    token: string,
+  ) {
+    const claims = yield* readSignedClaims(token);
+    const now = yield* DateTime.now;
+    if (
+      claims.method !== "browser-session-cookie" ||
+      claims.sub !== PAIRING_LINK_SUBJECT ||
+      claims.exp <= now.epochMilliseconds
+    ) {
+      return yield* new SessionTokenNotRenewableError({ sessionId: claims.sid });
+    }
+    // Extend the live row atomically. A late request from another tab must not move it backwards.
+    const deadline = yield* extend(
+      claims.sid,
+      DateTime.add(now, {
+        milliseconds: Duration.toMillis(DEFAULT_SESSION_TTL),
+      }),
+      Duration.zero,
+    );
+    if (Option.isNone(deadline)) {
+      return yield* new SessionTokenNotRenewableError({ sessionId: claims.sid });
+    }
+    const expiresAt = deadline.value;
+    return { expiresAt, token: yield* signClaims({ ...claims, exp: expiresAt.epochMilliseconds }) };
+  });
+
   const renew: SessionStore["Service"]["renew"] = Effect.fn("SessionStore.renew")(
     function* (token, input) {
-      const [encodedPayload, signature] = token.split(".");
-      if (!encodedPayload || !signature) {
-        return yield* new MalformedSessionTokenError({});
-      }
-      if (!(yield* signer.verify(encodedPayload, signature))) {
-        return yield* new InvalidSessionTokenSignatureError({});
-      }
-      const claims = yield* decodeSessionClaims(base64UrlDecodeUtf8(encodedPayload)).pipe(
-        Effect.mapError((cause) => new InvalidSessionTokenPayloadError({ cause })),
-      );
+      const claims = yield* readSignedClaims(token);
       // The token's own expiry is ignored here: the session row's expiry is the renewal window.
       if (claims.rnw !== 1 || claims.jkt !== input.proofKeyThumbprint) {
         return yield* new SessionTokenNotRenewableError({ sessionId: claims.sid });
@@ -1342,6 +1367,7 @@ const make = Effect.gen(function* () {
     cookieName,
     legacyCookieName,
     issue,
+    renewPairedBrowserCookie,
     renew,
     extend,
     verify,

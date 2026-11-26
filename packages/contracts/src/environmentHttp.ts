@@ -608,6 +608,12 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
     }),
   )
   .add(
+    HttpApiEndpoint.post("browserActivity", "/api/auth/browser-activity", {
+      success: HttpApiSchema.NoContent,
+      error: [EnvironmentInternalError, EnvironmentAuthInvalidError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
     HttpApiEndpoint.post("token", "/oauth/token", {
       headers: OptionalDpopProofHeaders,
       payload: AuthTokenExchangeRequest,

@@ -51,6 +51,7 @@ import {
 import { useUiStateStore } from "../uiStateStore";
 import { configureClientTracing } from "../observability/clientTracing";
 import { resolveInitialServerAuthGateState } from "../environments/primary";
+import { trackBrowserSessionActivity } from "../environments/primary/browserActivity";
 import { GUEST_PAGE_PATH } from "../guestPage";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
@@ -153,6 +154,10 @@ function RootRouteBranch() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- bind activity listeners only while the primary browser session is authenticated
+  useEffect(() => {
+    if (primaryEnvironmentAuthenticated && !isElectron) return trackBrowserSessionActivity();
+  }, [primaryEnvironmentAuthenticated]);
   // A sync IPC read; the setting only changes across a relaunch.
   const [localEnvironmentDisabled] = useState(isLocalEnvironmentDisabled);
   // Once true, stays true: a visit to /welcome means the bootstrap already chose a route.
