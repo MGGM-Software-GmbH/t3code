@@ -109,6 +109,7 @@ const browserTestProject = {
       "vite-plus/test/browser",
       "@base-ui/react/autocomplete",
       "@effect/vitest",
+      "effect/reactivity/Atom",
       "@pierre/diffs/ssr",
       "effect/testing",
       "saxes",

@@ -412,7 +412,7 @@ it("a question that opens while a stashed file is checked keeps a machine stash"
   usePromptStashStore.getState().takeEntry("stash-late-question");
 });
 
-it("main keeps the compact sidebar row while other branches get a metadata line", async () => {
+it("main keeps a compact row while scratch machines and other branches get metadata", async () => {
   await page.viewport(1400, 900);
   const activityAt = DateTime.makeUnsafe("2099-03-18T09:00:00.000Z");
   const threads = ["main", null, "feat/sidebar-branch", "master"].map((branch) => ({
@@ -445,7 +445,7 @@ it("main keeps the compact sidebar row while other branches get a metadata line"
     }
     heights.push(row.element().getBoundingClientRect().height);
   }
-  expect(heights[0]).toBe(heights[1]);
+  expect(heights[1]).toBeGreaterThan(heights[0]!);
   expect(heights[2]).toBeGreaterThan(heights[0]!);
   expect(heights[3]).toBeGreaterThan(heights[0]!);
 });
@@ -637,7 +637,7 @@ it("a file picked after the phone composer collapses still attaches", async () =
   using _uploads = acceptAttachmentUploads();
   const editor = page.getByTestId("composer-editor");
   await expect.element(page.getByText(`Answer 0 for ${thread.id}.`)).toBeVisible();
-  await userEvent.click(editor);
+  await userEvent.click(page.getByRole("button", { name: "Expand composer" }));
   await expect.element(page.getByRole("button", { name: "Attach files" })).toBeVisible();
   const input = document.querySelector<HTMLInputElement>(
     'form[data-chat-composer-form] input[type="file"]',
@@ -652,6 +652,8 @@ it("a file picked after the phone composer collapses still attaches", async () =
   input!.files = files.files;
   input!.dispatchEvent(new Event("change", { bubbles: true }));
 
+  await expect.element(page.getByRole("button", { name: "Preview picked.png" })).toBeVisible();
+  await userEvent.click(page.getByRole("button", { name: "Expand composer" }));
   await expect.element(page.getByRole("img", { name: "picked.png" })).toBeVisible();
 });
 
@@ -779,6 +781,7 @@ it("a stashed prompt ending in a file chip restores with the chip", async () => 
 });
 
 it("a rejected send leaves the timeline when a new draft was typed meanwhile", async () => {
+  await page.viewport(1400, 900);
   const thread = threadWithHistory("rejected-send", 1);
   using _environment = installFakeEnvironment([thread], {
     acceptCommands: true,
@@ -815,6 +818,7 @@ it("a rejected send leaves the timeline when a new draft was typed meanwhile", a
 });
 
 it("Enter on an empty prompt resumes an interrupted thread", async () => {
+  await page.viewport(1400, 900);
   const history = threadWithHistory("interrupted", 1);
   const interruptedRun = { ...history.runs[0]!, status: "interrupted" as const };
   const thread = { ...history, runs: [interruptedRun] };
