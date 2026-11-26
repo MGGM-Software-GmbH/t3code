@@ -43,8 +43,10 @@ const WorkspaceConfig = Schema.Struct({
   overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  minimumReleaseAge: Schema.optional(Schema.Number),
+  minimumReleaseAgeExclude: Schema.optional(Schema.Array(Schema.String)),
 });
-const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
+export const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
 const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const StageWorkspaceConfig = Schema.Struct({
   supportedArchitectures: Schema.Struct({
@@ -56,8 +58,10 @@ const StageWorkspaceConfig = Schema.Struct({
   patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   nodeLinker: Schema.optional(Schema.Literals(["hoisted"])),
+  minimumReleaseAge: Schema.optional(Schema.Number),
+  minimumReleaseAgeExclude: Schema.optional(Schema.Array(Schema.String)),
 });
-const encodeStageWorkspaceConfig = Schema.encodeEffect(fromYaml(StageWorkspaceConfig));
+export const encodeStageWorkspaceConfig = Schema.encodeEffect(fromYaml(StageWorkspaceConfig));
 
 const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
@@ -187,6 +191,13 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
         overrides: resolveCatalogDependencies(workspace.overrides ?? {}, catalog, "apps/server"),
       }),
       nodeLinker: "hoisted",
+      // The stage resolves without the root lockfile, so retain its exact release-age approvals.
+      ...(workspace.minimumReleaseAge === undefined
+        ? {}
+        : { minimumReleaseAge: workspace.minimumReleaseAge }),
+      ...(workspace.minimumReleaseAgeExclude === undefined
+        ? {}
+        : { minimumReleaseAgeExclude: workspace.minimumReleaseAgeExclude }),
     }),
   );
   if (Object.keys(patchedDependencies).length > 0) {
