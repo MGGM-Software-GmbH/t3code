@@ -17,10 +17,10 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import WorkflowsMigration from "../persistence/Migrations/110_Workflows.ts";
-import WorkflowSkippedRunsMigration from "../persistence/Migrations/113_WorkflowSkippedRuns.ts";
-import WorkflowRunTagsMigration from "../persistence/Migrations/115_WorkflowRunTags.ts";
-import WorkflowMailSenderMigration from "../persistence/Migrations/117_WorkflowMailSender.ts";
+import WorkflowsMigration from "../persistence/Migrations/114_Workflows.ts";
+import WorkflowSkippedRunsMigration from "../persistence/Migrations/117_WorkflowSkippedRuns.ts";
+import WorkflowRunTagsMigration from "../persistence/Migrations/119_WorkflowRunTags.ts";
+import WorkflowMailSenderMigration from "../persistence/Migrations/121_WorkflowMailSender.ts";
 import { type AgentResult, WorkflowAgents } from "./WorkflowAgents.ts";
 import * as WorkflowEngine from "./WorkflowEngine.ts";
 import * as WorkflowRuntime from "./WorkflowRuntime.ts";
