@@ -61,6 +61,10 @@ Der Zugang benötigt die vorhandenen Zuordnungen `OPS_LOKAL_USERNAME` und
 `OPS_LOKAL_PASSWORD` in `~/.claude/.env`. Weitere Zugangsdialoge oder gespeicherte
 Kennwörter in T3 sind nicht erforderlich.
 
+Zuordnungen dürfen `${VAR}` und `${VAR:-Standardwert}` verwenden. T3 löst diese
+Verweise ausschließlich aus derselben Mappingdatei auf, auch bei verschachtelten
+Variablenverweisen. Fehlende und zyklische Verweise werden abgewiesen.
+
 Die erlaubte Origin wird aus dem URL-Feld desselben Password-Depot-Eintrags
 abgeleitet. Eine dort gespeicherte Login-URL darf einen Pfad enthalten; verglichen
 werden Protokoll, Host und Port. Der Werkzeugparameter `expectedOrigin` enthält
@@ -71,6 +75,8 @@ verweisen. Eine zusätzliche Origin-Zuordnung in der Mappingdatei ist nicht nöt
 `pd-secrets` muss auch dessen URL-Feld im Cache haben. Fehlt es, beim vorhandenen
 `pd-secrets config` die Attribute `username,password,url` auswählen und den Cache
 erneuern. T3 meldet diesen fehlenden Zugriff ausdrücklich.
+Ein getrennter oder abgelaufener Cache und eine Zeitüberschreitung werden gesondert
+gemeldet; sie gelten nicht als fehlendes URL-Feld.
 Klartextzuordnungen und lediglich geerbte Umgebungsvariablen werden abgewiesen.
 
 Kennwörter werden intern über einen Prozesskanal übertragen und

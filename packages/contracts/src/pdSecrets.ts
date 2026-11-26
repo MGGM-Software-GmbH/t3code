@@ -46,6 +46,10 @@ const FAILURE_MESSAGES = {
     "This browser credential is not allowed at the requested origin. Check the URL field of its Password Depot entry.",
   browser_url_unavailable:
     "Could not read the Password Depot URL field. Include url in pd-secrets config and refresh its cache.",
+  browser_cache_disconnected:
+    "The pd-secrets cache is disconnected or expired. Sign in to pd-secrets again before filling browser credentials.",
+  browser_timeout:
+    "Reading browser credentials from pd-secrets timed out. Check its connection and try again.",
   credential_failed:
     "Could not read the requested browser credentials from pd-secrets. Check its connection and the USERNAME/PASSWORD mappings.",
 } as const;

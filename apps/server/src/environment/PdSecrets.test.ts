@@ -323,13 +323,111 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PdSecrets", (it)
         ]);
       }
       harness.loginUrl("private cache error", 1);
+      harness.setCode(0);
       const before = harness.checks.length;
       const error = yield* harness.service
         .browserCredentials("OPS_LOKAL", "https://login.test")
         .pipe(Effect.flip);
       expect(error.reason).toBe("browser_url_unavailable");
       expect(error.message).not.toContain("private cache error");
+      expect(harness.checks).toHaveLength(before + 2);
+    }).pipe(Effect.scoped),
+  );
+  it.effect("expands only file-local mapping variables before reading Depot references", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* harness.configureBrowser(true);
+      for (const [folder, expected] of [
+        ["PD_PERSONAL_FOLDER=${FOLDER}\nFOLDER=Prüfung", "Prüfung"],
+        ["PD_PERSONAL_FOLDER=${MISSING:-Standard}", "Standard"],
+        ["PD_PERSONAL_FOLDER=$$Ordner", "$Ordner"],
+      ]) {
+        yield* harness.configureMappings(
+          'OPS_LOKAL_USERNAME="${ENTRY}/username"\nOPS_LOKAL_PASSWORD="${ENTRY}/password"\n' +
+            'ENTRY="pd://Persönliche Ordner/${PD_PERSONAL_FOLDER:-Andere}/OPS"\n' +
+            folder,
+        );
+        const before = harness.checks.length;
+        const value = yield* harness.service.browserCredentials("OPS_LOKAL", "https://login.test");
+        expect(Redacted.value(value).username).toBe("synthetic-user");
+        expect(harness.checks.slice(before)).toEqual(
+          ["url", "username", "password"].map((field) =>
+            expect.objectContaining({
+              args: [
+                "read",
+                `pd://Persönliche Ordner/${expected}/OPS/${field}`,
+                "--env-file",
+                `${harness.home}/.claude/.env`,
+              ],
+            }),
+          ),
+        );
+        Redacted.wipeUnsafe(value);
+      }
+      const before = harness.checks.length;
+      for (const folder of [
+        "PD_PERSONAL_FOLDER=${PATH}",
+        "PD_PERSONAL_FOLDER=${MISSING}",
+        "PD_PERSONAL_FOLDER=${OTHER}\nOTHER=${PD_PERSONAL_FOLDER}",
+      ]) {
+        yield* harness.configureMappings(
+          'OPS_LOKAL_USERNAME="pd://Synthetic/${PD_PERSONAL_FOLDER}/username"\n' +
+            'OPS_LOKAL_PASSWORD="pd://Synthetic/${PD_PERSONAL_FOLDER}/password"\n' +
+            folder,
+        );
+        expect(
+          (yield* harness.service
+            .browserCredentials("OPS_LOKAL", "https://login.test")
+            .pipe(Effect.flip)).reason,
+        ).toBe("credential_failed");
+      }
+      expect(harness.checks).toHaveLength(before);
+    }).pipe(Effect.scoped),
+  );
+  it.effect("distinguishes a disconnected cache and status failures from a missing URL", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* harness.configureBrowser(true);
+      harness.loginUrl("private cache error", 1);
+      for (const [code, reason] of [
+        [1, "browser_cache_disconnected"],
+        [2, "check_failed"],
+        [0, "browser_url_unavailable"],
+      ] as const) {
+        harness.setCode(code);
+        const error = yield* harness.service
+          .browserCredentials("OPS_LOKAL", "https://login.test")
+          .pipe(Effect.flip);
+        expect(error.reason).toBe(reason);
+        expect(JSON.stringify(error)).not.toContain("private cache error");
+      }
+      const before = harness.checks.length;
+      harness.loginUrl("private process failure", 2);
+      expect(
+        (yield* harness.service
+          .browserCredentials("OPS_LOKAL", "https://login.test")
+          .pipe(Effect.flip)).reason,
+      ).toBe("credential_failed");
       expect(harness.checks).toHaveLength(before + 1);
+    }).pipe(Effect.scoped),
+  );
+  it.effect("bounds URL reads and their status diagnosis by one browser deadline", () =>
+    Effect.gen(function* () {
+      for (const statusHangs of [false, true]) {
+        const harness = yield* makeHarness();
+        yield* harness.configureBrowser(true);
+        if (statusHangs) {
+          harness.loginUrl("", 1);
+          harness.hang();
+        } else harness.hangScript();
+        const call = yield* harness.service
+          .browserCredentials("OPS_LOKAL", "https://login.test")
+          .pipe(Effect.flip, Effect.forkScoped);
+        if (statusHangs) yield* harness.statusReady;
+        else yield* harness.scriptReady;
+        yield* TestClock.adjust("10 seconds");
+        expect((yield* Fiber.join(call)).reason).toBe("browser_timeout");
+      }
     }).pipe(Effect.scoped),
   );
   it.effect("hides an absent CLI without starting authentication", () =>

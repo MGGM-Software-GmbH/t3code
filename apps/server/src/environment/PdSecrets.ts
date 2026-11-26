@@ -67,6 +67,36 @@ const decodeBrowserCredentials = Schema.decodeEffect(
   }),
 );
 
+// pd-secrets expandiert Direktreferenzen nicht; ausschließlich Einträge derselben Datei auflösen.
+const expandMapping = (
+  mappings: Record<string, string | undefined>,
+  name: string,
+  resolving = new Set<string>(),
+): string => {
+  const value = Object.hasOwn(mappings, name) ? mappings[name] : undefined;
+  if (value === undefined || resolving.has(name) || resolving.size >= 128)
+    throw new PdSecretsError({ reason: "credential_failed" });
+  resolving.add(name);
+  try {
+    const expanded = value.replace(
+      /\$\$|\$\{([^}]+)\}/g,
+      (match, expression: string | undefined) => {
+        if (match === "$$" || expression === undefined) return "$";
+        const separator = expression.indexOf(":-");
+        const variable = (separator < 0 ? expression : expression.slice(0, separator)).trim();
+        if (variable === "") throw new PdSecretsError({ reason: "credential_failed" });
+        if (Object.hasOwn(mappings, variable)) return expandMapping(mappings, variable, resolving);
+        if (separator >= 0) return expression.slice(separator + 2);
+        throw new PdSecretsError({ reason: "credential_failed" });
+      },
+    );
+    if (expanded.length > 32768) throw new PdSecretsError({ reason: "credential_failed" });
+    return expanded;
+  } finally {
+    resolving.delete(name);
+  }
+};
+
 const make = Effect.gen(function* () {
   const pty = yield* PtyAdapter;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -84,9 +114,7 @@ const make = Effect.gen(function* () {
       Effect.provideService(Path.Path, path),
     );
 
-  const status = Effect.fn("PdSecrets.status")(function* () {
-    const executable = yield* command();
-    if (executable === null) return { state: "not-installed" } as const;
+  const readStatus = Effect.fn("PdSecrets.readStatus")(function* (executable: string) {
     // The CLI owns expiry, including Monday 05:00 in the host timezone.
     const exitCode = yield* spawner
       .spawn(
@@ -101,12 +129,20 @@ const make = Effect.gen(function* () {
       .pipe(
         Effect.flatMap((handle) => handle.exitCode),
         Effect.scoped,
-        Effect.timeout("10 seconds"),
         Effect.mapError(() => new PdSecretsError({ reason: "check_failed" })),
       );
     if (exitCode !== 0 && exitCode !== 1)
       return yield* new PdSecretsError({ reason: "check_failed" });
     return { state: exitCode === 0 ? "connected" : "disconnected" } as const;
+  });
+
+  const status = Effect.fn("PdSecrets.status")(function* () {
+    const executable = yield* command();
+    if (executable === null) return { state: "not-installed" } as const;
+    return yield* readStatus(executable).pipe(
+      Effect.timeout("10 seconds"),
+      Effect.mapError(() => new PdSecretsError({ reason: "check_failed" })),
+    );
   });
 
   const browserCredentials = Effect.fn("PdSecrets.browserCredentials")(function* (
@@ -131,8 +167,13 @@ const make = Effect.gen(function* () {
       ),
       Effect.mapError(() => new PdSecretsError({ reason: "credential_failed" })),
     );
-    const usernameReference = mappings[`${credential}_USERNAME`];
-    const passwordReference = mappings[`${credential}_PASSWORD`];
+    const [usernameReference, passwordReference] = yield* Effect.try({
+      try: () => [
+        expandMapping(mappings, `${credential}_USERNAME`),
+        expandMapping(mappings, `${credential}_PASSWORD`),
+      ],
+      catch: () => new PdSecretsError({ reason: "credential_failed" }),
+    });
     if (
       usernameReference === undefined ||
       passwordReference === undefined ||
@@ -143,7 +184,10 @@ const make = Effect.gen(function* () {
     )
       return yield* new PdSecretsError({ reason: "credential_failed" });
     // Der private Prozesskanal transportiert Werte ohne Datei, Shell oder Ausgabe an den Agenten.
-    const readValue = Effect.fn("PdSecrets.readBrowserValue")(function* (reference: string) {
+    const readValue = Effect.fn("PdSecrets.readBrowserValue")(function* (
+      reference: string,
+      missingReason: "credential_failed" | "browser_url_unavailable" = "credential_failed",
+    ) {
       const handle = yield* spawner.spawn(
         ChildProcess.make(
           executable,
@@ -152,13 +196,22 @@ const make = Effect.gen(function* () {
         ),
       );
       const output = yield* collectUint8StreamText({ stream: handle.stdout, maxBytes: 32768 });
-      if ((yield* handle.exitCode) !== 0 || output.truncated || output.invalidUtf8)
+      const exitCode = yield* handle.exitCode;
+      if (output.truncated || output.invalidUtf8)
         return yield* new PdSecretsError({ reason: "credential_failed" });
+      if (exitCode === 1) {
+        const snapshot = yield* readStatus(executable);
+        if (snapshot.state === "disconnected")
+          return yield* new PdSecretsError({ reason: "browser_cache_disconnected" });
+        return yield* new PdSecretsError({ reason: missingReason });
+      }
+      if (exitCode !== 0) return yield* new PdSecretsError({ reason: "credential_failed" });
       return output.text.replace(/\r?\n$/, "");
     });
     const read = Effect.gen(function* () {
-      const loginUrl = yield* readValue(passwordReference.replace(/\/password$/, "/url")).pipe(
-        Effect.mapError(() => new PdSecretsError({ reason: "browser_url_unavailable" })),
+      const loginUrl = yield* readValue(
+        passwordReference.replace(/\/password$/, "/url"),
+        "browser_url_unavailable",
       );
       const validOrigin = yield* Effect.try({
         try: () => {
@@ -183,7 +236,10 @@ const make = Effect.gen(function* () {
       return Redacted.make(value);
     }).pipe(
       Effect.scoped,
-      Effect.timeout("10 seconds"),
+      Effect.timeoutOrElse({
+        duration: "10 seconds",
+        orElse: () => Effect.fail(new PdSecretsError({ reason: "browser_timeout" })),
+      }),
       Effect.mapError((error) =>
         isPdSecretsError(error) ? error : new PdSecretsError({ reason: "credential_failed" }),
       ),
