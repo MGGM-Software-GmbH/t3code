@@ -638,6 +638,7 @@ it("a file picked after the phone composer collapses still attaches", async () =
   const editor = page.getByTestId("composer-editor");
   await expect.element(page.getByText(`Answer 0 for ${thread.id}.`)).toBeVisible();
   await userEvent.click(page.getByRole("button", { name: "Expand composer" }));
+  await expect.element(editor).toHaveFocus();
   await expect.element(page.getByRole("button", { name: "Attach files" })).toBeVisible();
   const input = document.querySelector<HTMLInputElement>(
     'form[data-chat-composer-form] input[type="file"]',
