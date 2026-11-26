@@ -193,7 +193,9 @@ function deferred<T>() {
 
 function setup() {
   const initialDrafts = useComposerDraftStore.getState();
-  onTestFinished(() => useComposerDraftStore.setState(initialDrafts, true));
+  onTestFinished(() => {
+    useComposerDraftStore.setState(initialDrafts, true);
+  });
   vi.clearAllMocks();
   state.sessions.clear();
   for (const id of [primaryId, remoteId])
