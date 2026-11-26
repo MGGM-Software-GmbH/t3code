@@ -24,7 +24,7 @@ import {
 } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render, type Screen } from "../../../test/render";
@@ -192,6 +192,8 @@ function deferred<T>() {
 }
 
 function setup() {
+  const initialDrafts = useComposerDraftStore.getState();
+  onTestFinished(() => useComposerDraftStore.setState(initialDrafts, true));
   vi.clearAllMocks();
   state.sessions.clear();
   for (const id of [primaryId, remoteId])
