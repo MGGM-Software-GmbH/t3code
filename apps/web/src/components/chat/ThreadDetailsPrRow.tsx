@@ -1,7 +1,9 @@
 import { resolvePullRequestDetailChecks } from "@t3tools/client-runtime/pull-request-checks";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+
 import { changeRequestTermKind } from "../pullRequest/changeRequestTerm";
 import { T, useGT, useMessages, Var } from "gt-react";
+import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { PullRequestChangeBreakdownRows } from "../pullRequest/PullRequestChangeBreakdownStat";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
@@ -92,6 +94,7 @@ export function ThreadDetailsPrRow({
   reference: linkedReference,
   status,
   project,
+  threadProject,
   label,
   onOpen,
   onActed,
@@ -104,6 +107,7 @@ export function ThreadDetailsPrRow({
   reference?: Pick<PullRequestRef, "host" | "repository" | "number"> | null;
   status: PrStatusIndicator | null;
   project: EnvironmentProject | null;
+  threadProject: EnvironmentProject | null;
   label: string;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
   onActed?: () => void;
@@ -180,7 +184,24 @@ export function ThreadDetailsPrRow({
     // A refused merge usually means the row is stale, so show what the host has now.
     onFailure: () => detailQuery.refresh(),
   });
-  const { handoff, startHandoff } = usePullRequestHandoffs({ environmentId, detail });
+  // A project lending host access to the detail query may have an unrelated checkout.
+  const { handoff, startDraft, startHandoff } = usePullRequestHandoffs({
+    environmentId,
+    detail:
+      detail && threadProject
+        ? {
+            projectId: threadProject.id,
+            workspaceRoot: threadProject.workspaceRoot,
+            url: detail.url,
+          }
+        : null,
+  });
+  const link = detail && sourceControlClients.parseChangeRequestUrl(detail.url)?.link;
+  const prepareCheckout =
+    composerTarget === undefined &&
+    link &&
+    threadProject &&
+    findProjectForChangeRequest([threadProject], link) !== undefined;
   const lastSelectedMergeMethod = useUiStateStore((state) => state.pullRequestMergeMethod);
   const resolveProjectDefaultMergeMethod = usePullRequestDefaultMergeMethodResolver(
     environmentId,
@@ -209,7 +230,8 @@ export function ThreadDetailsPrRow({
 
   const handOff = (kind: "conflicts" | "findings", task: PullRequestThreadTask) => {
     if (composerTarget === undefined) {
-      void startHandoff(kind, task);
+      if (prepareCheckout) void startHandoff(kind, task);
+      else void startDraft(kind, task);
       return;
     }
     writeHandoffToComposer(composerTarget, task);
@@ -228,7 +250,7 @@ export function ThreadDetailsPrRow({
         url: detail.url,
         headBranch: detail.headBranch,
         baseBranch: detail.baseBranch,
-        inThisThread: composerTarget !== undefined,
+        inThisThread: !prepareCheckout,
       }),
     });
   };
@@ -249,7 +271,7 @@ export function ThreadDetailsPrRow({
         comments: [],
         checks: detail.checks,
         commentsTruncated: false,
-        inThisThread: composerTarget !== undefined,
+        inThisThread: !prepareCheckout,
       }),
     );
   };
@@ -563,7 +585,13 @@ export function ThreadDetailsPrRow({
                       size="sm"
                       part="meta"
                       tone={trailingAction.destructive ? "destructive" : "primary"}
-                      disabled={actionPending || handoff !== null}
+                      disabled={
+                        actionPending ||
+                        handoff !== null ||
+                        ((rowAction === "fix" || rowAction === "resolve") &&
+                          composerTarget === undefined &&
+                          threadProject === null)
+                      }
                       onClick={trailingAction.onClick}
                     />
                   }

@@ -1674,6 +1674,8 @@ export const CODEX_THREAD_CONFIG = {
   // Tool calls stop waiting on the detailed reasoning summary. Codex applies it only to its
   // built-in OpenAI provider and sends each summary section whole, not as token deltas.
   "features.concurrent_reasoning_summaries": true,
+  // Otherwise Codex keeps an unsubscribed thread, and its writer lock, loaded for this delay.
+  thread_unload_delay_secs: 0,
 } as const;
 
 // request_secret can wait an hour; keep Codex's MCP timeout above that.

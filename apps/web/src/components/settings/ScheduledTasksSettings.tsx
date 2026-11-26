@@ -55,6 +55,7 @@ import { m, type MessageResolver } from "../../i18n/messages";
 import { formatRelativeTime } from "../../timestampFormat";
 import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance, selectsPlanAgent } from "../../modelSelection";
+import { getProviderModelCapabilities } from "../../providerModels";
 import { providerInstanceEntriesFor } from "../../providerInstances";
 import { usePrimaryCloudLinkState } from "../../cloud/cloudLinkState";
 import { requestConfirmDialog } from "../../confirmDialog";
@@ -119,7 +120,7 @@ import { ToggleGroup, Toggle } from "../ui/toggle-group";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "../ui/empty";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection, withImplicitFastModeDefault } from "@t3tools/shared/model";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import {
@@ -156,6 +157,14 @@ import {
 } from "./settingsLayout";
 
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
+const MONTHLY_WEEKDAY_LABELS: Readonly<Record<number, string>> = {
+  [-1]: "Last",
+  1: "First",
+  2: "Second",
+  3: "Third",
+  4: "Fourth",
+  5: "Fifth",
+};
 const WEEKDAY_SHORT = [
   msg("Su", { $context: "two-letter Sunday" }),
   msg("Mo", { $context: "two-letter Monday" }),
@@ -1468,6 +1477,7 @@ function ScheduledTaskEditorForm({
   readonly onSavingChange: (saving: boolean) => void;
   readonly onClose: () => void;
 }) {
+  const uebersetzen = useGT();
   const messages = useMessages();
   const locale = useLocale();
   const gt = useGT();
@@ -1574,6 +1584,18 @@ function ScheduledTaskEditorForm({
   const shownInstanceId = shownSelection?.instanceId ?? activeInstanceId;
   const shownModel = shownSelection?.model ?? "";
   const activeEntry = instanceEntries.find((entry) => entry.instanceId === activeInstanceId);
+  const modelOptions =
+    activeEntry && !draft.threadId
+      ? withImplicitFastModeDefault(
+          getProviderModelCapabilities(
+            activeEntry.models,
+            activeModel,
+            activeEntry.driverKind,
+            selectsPlanAgent(activeSelection?.options),
+          ),
+          activeSelection?.options,
+        )
+      : activeSelection?.options;
   const modelOptionsByInstance = getCustomModelOptionsByInstance(
     settings,
     providers,
@@ -1652,6 +1674,17 @@ function ScheduledTaskEditorForm({
       );
       return;
     }
+    if (
+      schedule.type === "fixed_time" &&
+      schedule.weekOfMonth != null &&
+      environment?.serverConfig?.environment.capabilities.monthlyWeekdaySchedules !== true
+    ) {
+      reportFailure(
+        uebersetzen("Monthly weekdays are not available here"),
+        uebersetzen("Update this environment to schedule a weekday of each month."),
+      );
+      return;
+    }
     if (draft.workspaceMode === "existing_worktree" && !draft.existingWorktreePath.trim()) {
       reportFailure(
         gt("Checkout path is required"),
@@ -1680,7 +1713,7 @@ function ScheduledTaskEditorForm({
       ...(draft.threadId === "" && draft.savedThreadId !== "" ? { unbindThread: true } : {}),
       ...(offersThreadModes ? { threadMode: draft.threadMode } : {}),
       workspaceStrategy,
-      modelSelection: selection,
+      modelSelection: createModelSelection(selection.instanceId, selection.model, modelOptions),
       // Tasks have no mode picker; a mode above the administrator's ceiling would fail every run.
       runtimeMode:
         clampManagedRuntimeMode(environment?.serverConfig?.managedPolicy, draft.runtimeMode) ??
@@ -1962,7 +1995,7 @@ function ScheduledTaskEditorForm({
                   provider={activeEntry.driverKind}
                   models={activeEntry.models}
                   model={activeModel}
-                  modelOptions={activeSelection.options ?? []}
+                  modelOptions={modelOptions ?? []}
                   allowPromptInjectedEffort={false}
                   includePlanAgent={selectsPlanAgent(activeSelection.options)}
                   disabled={saving || !connected}
@@ -2261,6 +2294,52 @@ function ScheduledTaskEditorForm({
               </div>
             ) : draft.scheduleMode === "fixed" ? (
               <div className="flex flex-wrap items-center gap-3">
+                <Field label={uebersetzen("Repeat")} htmlFor="scheduled-task-month-week">
+                  <Select
+                    value={String(draft.weekOfMonth ?? 0)}
+                    onValueChange={(value) =>
+                      setDraft((current) => ({
+                        ...current,
+                        weekOfMonth: Number(value) === 0 ? null : Number(value),
+                      }))
+                    }
+                  >
+                    <SelectTrigger
+                      id="scheduled-task-month-week"
+                      aria-label={uebersetzen("Week of month")}
+                    >
+                      <SelectValue>
+                        {draft.weekOfMonth == null
+                          ? uebersetzen("Every week")
+                          : uebersetzen("{wert1} of every month", {
+                              wert1: MONTHLY_WEEKDAY_LABELS[draft.weekOfMonth],
+                            })}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      <SelectItem value="0">
+                        <T>Every week</T>
+                      </SelectItem>
+                      {(environment?.serverConfig?.environment.capabilities
+                        .monthlyWeekdaySchedules === true ||
+                        draft.weekOfMonth != null) &&
+                        [
+                          [1, "First"],
+                          [2, "Second"],
+                          [3, "Third"],
+                          [4, "Fourth"],
+                          [5, "Fifth"],
+                          [-1, "Last"],
+                        ].map(([value, label]) => (
+                          <SelectItem key={value} value={String(value)}>
+                            <T>
+                              <Var>{label}</Var> of every month
+                            </T>
+                          </SelectItem>
+                        ))}
+                    </SelectPopup>
+                  </Select>
+                </Field>
                 <div className="flex items-center gap-2">
                   <Label htmlFor="scheduled-task-time">
                     <T>Run at</T>

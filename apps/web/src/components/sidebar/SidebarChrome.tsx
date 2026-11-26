@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { T, useGT } from "gt-react";
 import { memo } from "react";
@@ -38,6 +38,9 @@ import { readIssueListPreferences } from "../issue/issueListPreferences";
 import { IssueGlyph } from "../issue/issuePresentation";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
+import { PdSecretsControl } from "./PdSecretsControl";
+import { SidebarWeeklyLimit } from "../usage/WeeklyLimitIndicator";
+import { CodexResetForecastIndicator } from "../usage/CodexResetForecastIndicator";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -225,7 +228,51 @@ function SidebarUtilityItem({
   );
 }
 
+/** Keep the forecast only when every toolbar item fits on the first flex line. */
+function observeForecastFit(menu: HTMLUListElement) {
+  const forecast = menu.querySelector<HTMLLIElement>("[data-sidebar-forecast]");
+  if (!forecast) return;
+
+  const wraps = () => {
+    const firstRowBottom = menu.firstElementChild!.getBoundingClientRect().bottom;
+    return Array.from(menu.children).some(
+      (item) => item.getBoundingClientRect().top >= firstRowBottom,
+    );
+  };
+  const measure = () => {
+    if (!menu.clientWidth) return;
+    // Try normal spacing with the gauge first, including when the previous layout hid it.
+    menu.removeAttribute("data-compact");
+    forecast.hidden = false;
+    if (wraps()) {
+      forecast.hidden = true;
+      menu.toggleAttribute("data-compact", wraps());
+    }
+  };
+  // Changing the line count resizes the observed menu. Apply the layout outside observer delivery.
+  let frame = 0;
+  const observeItems = () =>
+    observeResize([menu, ...menu.children], () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
+  let stopObserving = observeItems();
+  const itemsChanged = new MutationObserver(() => {
+    stopObserving();
+    stopObserving = observeItems();
+    measure();
+  });
+  itemsChanged.observe(menu, { childList: true });
+  measure();
+  return () => {
+    cancelAnimationFrame(frame);
+    itemsChanged.disconnect();
+    stopObserving();
+  };
+}
+
 const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+  const uebersetzen = useGT();
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const gt = useGT();
@@ -256,20 +303,16 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/settings" });
   };
 
-  const handleUsageClick = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/usage" });
-  };
-
   const handleBackClick = () => {
     closeMobileSidebar();
     void navigateToMainApp();
   };
 
   return (
-    <SidebarMenu className="flex-row items-center">
+    <ul
+      className="flex w-full min-w-0 flex-wrap items-center gap-1 data-compact:justify-between data-compact:gap-x-0"
+      ref={observeForecastFit}
+    >
       {isOnUtilityPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
           <SidebarMenuButton onClick={handleBackClick}>
@@ -301,15 +344,20 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             />
           ) : null}
           <SidebarUtilityItem
-            icon={<ChartNoAxesColumnIcon />}
-            label={gt("Usage")}
-            onClick={handleUsageClick}
+            icon={<span aria-hidden>#</span>}
+            label={uebersetzen("Fogbugz Cases")}
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/cases" });
+            }}
           />
         </>
       )}
-      <SidebarThreadUndoNotice />
+      <PdSecretsControl />
+      <SidebarWeeklyLimit />
+      <CodexResetForecastIndicator />
       <SidebarUpdatePill />
-    </SidebarMenu>
+    </ul>
   );
 });
 
@@ -318,6 +366,9 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     <SidebarFooter>
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
+      <SidebarMenu className="empty:hidden">
+        <SidebarThreadUndoNotice />
+      </SidebarMenu>
       <SidebarUtilityMenu />
     </SidebarFooter>
   );

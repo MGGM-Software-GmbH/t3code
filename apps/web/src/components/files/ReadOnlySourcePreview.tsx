@@ -4,11 +4,12 @@ import { type ClipboardEvent, useEffect, useRef, useState } from "react";
 
 import { StyledDiffCodeView } from "~/components/diffs/StyledDiffCodeView";
 import { useClientSettings } from "~/hooks/useSettings";
+import { useFileHighlighter } from "~/hooks/useFileHighlighter";
 import { useRenderedAppearance } from "~/hooks/useTheme";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 
-import { FILE_LINK_REVEAL_UNSAFE_CSS } from "./fileSurfaceChrome";
+import { FILE_LINK_REVEAL_UNSAFE_CSS, FileSurfaceLoading } from "./fileSurfaceChrome";
 import { SourceSelection } from "./sourceSelection";
 
 // The diff surface fades a file in as it mounts; a preview appears at once, as the editable view does.
@@ -29,6 +30,7 @@ export default function ReadOnlySourcePreview(props: {
   readonly tokenizeMaxLength?: number;
 }) {
   const resolvedTheme = useRenderedAppearance();
+  const syntax = useFileHighlighter(props.name);
   const defaultWordWrap = useClientSettings((settings) => settings.wordWrap);
   const wordWrap = props.wordWrap ?? defaultWordWrap;
   const { text, onPostRender } = props;
@@ -87,6 +89,7 @@ export default function ReadOnlySourcePreview(props: {
     if (phase !== "unmount" && node.shadowRoot) selection.render(node.shadowRoot, text);
     if (onPostRender && "file" in instance) return onPostRender(node, instance, phase);
   };
+  if (!syntax.ready) return <FileSurfaceLoading />;
   const items: CodeViewItem<unknown>[] = [
     {
       id: "source",
@@ -95,6 +98,7 @@ export default function ReadOnlySourcePreview(props: {
       file: {
         name: props.name,
         contents: props.text,
+        ...(syntax.language ? { lang: syntax.language } : {}),
         ...(props.cacheKey ? { cacheKey: props.cacheKey } : {}),
       },
     },
@@ -121,6 +125,7 @@ export default function ReadOnlySourcePreview(props: {
         items={items}
         unsafeCSSExtra={READ_ONLY_SOURCE_UNSAFE_CSS}
         options={{
+          ...(syntax.highlighter ? { highlighter: syntax.highlighter } : {}),
           disableFileHeader: true,
           overflow: wordWrap ? "wrap" : "scroll",
           theme: resolveDiffThemeName(resolvedTheme),

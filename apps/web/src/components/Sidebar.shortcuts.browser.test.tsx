@@ -51,6 +51,7 @@ it("leaves thread shortcuts and their hints to the preview when their rules excl
   using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    mggmThreadSidebarEnabled: false,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   await page.viewport(1400, 900);
@@ -58,11 +59,16 @@ it("leaves thread shortcuts and their hints to the preview when their rules excl
     createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${first.id}`] }),
   );
   await router.load();
+  const container = document.createElement("div");
+  container.style.cssText = "height: 900px; width: 1400px;";
   await using _app = await render(<AppRoot router={router} />, {
     // AppRoot brings its own router.
     router: false,
+    container,
   });
-  await expect.element(page.getByText(`Thread ${second.id}`).first()).toBeVisible();
+  await expect
+    .element(page.getByRole("button", { name: `Thread ${second.id}`, exact: false }))
+    .toBeVisible();
 
   const previewChrome = document.createElement("div");
   previewChrome.dataset.previewPanelMode = "browser";

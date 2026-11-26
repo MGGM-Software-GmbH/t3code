@@ -38,6 +38,7 @@ import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
 
 function ThreadDetailsPrLinkRow({
   environmentId,
+  threadProject,
   link,
   onOpen,
   onActed,
@@ -45,6 +46,7 @@ function ThreadDetailsPrLinkRow({
   composerTarget,
 }: {
   environmentId: EnvironmentId;
+  threadProject: EnvironmentProject | null;
   link: ThreadPullRequestLink;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
   onActed?: (() => void) | undefined;
@@ -71,6 +73,7 @@ function ThreadDetailsPrLinkRow({
       reference={link}
       status={prStatusIndicator(pr, linked?.sourceControlProvider, m)}
       project={project}
+      threadProject={threadProject}
       label={`#${link.number}${link.snapshot === null ? "" : `: ${link.snapshot.title}`}`}
       onOpen={onOpen}
       onStopWatching={onStopWatching}
@@ -126,6 +129,7 @@ function ThreadDetailsPrRows({
             <ThreadDetailsPrLinkRow
               key={threadPullRequestKeyOf(link)}
               environmentId={row.environmentId}
+              threadProject={row.threadProject}
               link={link}
               onOpen={(event) => onOpenLink(event, link.url)}
               onActed={row.onActed}
@@ -195,6 +199,7 @@ export function ThreadDetailsThreadPrRows({
       reference={currentLink}
       status={displayed.status}
       project={rowProject}
+      threadProject={project}
       label={`#${number}${pr?.title.trim() ? `: ${pr.title}` : ""}`}
       onOpen={(event) => openPrLink(event, url)}
       composerTarget={composerTarget}

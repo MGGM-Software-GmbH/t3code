@@ -487,3 +487,31 @@ export function hasUnseenRunFailure(
   if (Number.isNaN(failedAtMs) || Number.isNaN(lastVisitedAtMs)) return true;
   return failedAtMs > lastVisitedAtMs;
 }
+
+export function resolveThreadWakeNotification(
+  thread: Pick<
+    EnvironmentThreadShell,
+    "unsettledAt" | "unsettledReason" | "settledOverride" | "lastVisitedAt"
+  >,
+  wokeAt: string | null,
+): { readonly at: string; readonly label: "Woke" | "Reactivated" } | null {
+  const reactivatedAt =
+    thread.unsettledReason === "fogbugz-reactivated" ? thread.unsettledAt : null;
+  const latestIsReactivation =
+    reactivatedAt != null &&
+    Number.isFinite(Date.parse(reactivatedAt)) &&
+    (wokeAt === null ||
+      !Number.isFinite(Date.parse(wokeAt)) ||
+      Date.parse(reactivatedAt) >= Date.parse(wokeAt));
+  const at = latestIsReactivation ? reactivatedAt : wokeAt;
+  return at !== null &&
+    isThreadWokeUnseen({
+      wokeAt: at,
+      settled: thread.settledOverride === "settled",
+      lastVisitedAt: thread.lastVisitedAt,
+      latestRunCompletedAt: null,
+    })
+    ? // oxlint-disable-next-line t3code/no-untranslated-copy -- Stable status tokens; clients translate them when rendering.
+      { at, label: latestIsReactivation ? "Reactivated" : "Woke" }
+    : null;
+}

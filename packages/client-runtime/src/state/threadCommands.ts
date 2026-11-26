@@ -39,6 +39,7 @@ import {
   markThreadUnread,
   mergeThreadBack,
   promoteQueuedRun,
+  reorderQueuedRun,
   resumeThreadQueue,
   retryWorkspacePreparation,
   linkThreadPullRequest,
@@ -93,6 +94,7 @@ function applySettle(
         settledOverride: "settled",
         settledAt: thread.settledOverride === "settled" ? (thread.settledAt ?? now) : now,
         unsettledAt: null,
+        unsettledReason: undefined,
         activeOrderKey: null,
         pinnedAt: null,
         pinOrderKey: null,
@@ -485,6 +487,12 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    reorderQueuedRun: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:reorder-queued-run",
+      execute: reorderQueuedRun,
+      scheduler,
+      concurrency,
+    }),
     retryWorkspacePreparation: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:retry-workspace-preparation",
       execute: retryWorkspacePreparation,
@@ -610,7 +618,8 @@ export function createThreadEnvironmentAtoms<R, E>(
     unsettle: triage.cancelQueued(
       optimistic.wrap(commands.unsettle, (thread, input, now) => ({
         ...thread,
-        settledOverride: input.reason === "user" ? "active" : null,
+        settledOverride: "active",
+        unsettledReason: input.reason,
         settledAt: null,
         unsettledAt:
           thread.settledOverride === "active"

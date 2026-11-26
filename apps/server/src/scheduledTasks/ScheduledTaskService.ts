@@ -1547,7 +1547,12 @@ export const layer = Layer.effect(
             }
           : input.schedule.type === "once"
             ? { type: "once", runAt: iso(DateTime.makeUnsafe(input.schedule.runAt)) }
-            : input.schedule;
+            : input.schedule.type === "fixed_time" &&
+                input.schedule.weekOfMonth === undefined &&
+                existingTask?.schedule.type === "fixed_time" &&
+                existingTask.schedule.weekOfMonth != null
+              ? { ...input.schedule, weekOfMonth: existingTask.schedule.weekOfMonth }
+              : input.schedule;
       const webhook =
         input.schedule.type === "webhook"
           ? yield* Effect.gen(function* () {

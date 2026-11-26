@@ -29,10 +29,17 @@ const KNOWN_SHARED_DIRECTORIES = [
   "thread-writer-locks",
 ] as const;
 
-// auth.lock guards the shadow home's private auth.json.
-const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "auth.lock", "models_cache.json"]);
+// Both lock names guard the shadow home's private auth.json.
+const PRIVATE_ENTRY_NAMES = new Set([
+  "auth.json",
+  "auth.lock",
+  "auth.json.lock",
+  "models_cache.json",
+]);
 // Finder maintains metadata separately for each directory, including shadow homes.
 const SHADOW_LOCAL_ENTRY_NAMES = new Set(["log", "memories", "tmp", ".DS_Store"]);
+const SESSION_INDEX = "session_index.jsonl";
+const SESSION_INDEX_LOCK = "session_index.jsonl.lock";
 // Shadow homes may create local runtime locks first; replace them with shared links because they guard shared state.
 const REPLACEABLE_SHARED_RUNTIME_ENTRIES = new Set([
   "mcp-oauth-locks",
@@ -96,7 +103,14 @@ export class CodexShadowHomeFileSystemError extends Schema.TaggedError<CodexShad
   "CodexShadowHomeFileSystemError",
   {
     ...CodexShadowHomeContext,
-    operation: Schema.Literals(["readLink", "makeDirectory", "readDirectory", "remove", "symlink"]),
+    operation: Schema.Literals([
+      "readLink",
+      "makeDirectory",
+      "readDirectory",
+      "remove",
+      "symlink",
+      "stat",
+    ]),
     path: Schema.String,
     targetPath: Schema.optional(Schema.String),
     entryName: Schema.optional(Schema.String),
@@ -338,6 +352,57 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
   }
 });
 
+// Codex can create both files on first use and atomically replace the index when removing a
+// name. Never discard a shadow index or unlink a regular lock that a writer can still hold.
+const ensureSessionIndex = Effect.fn("CodexHomeLayout.ensureSessionIndex")(function* (input: {
+  readonly fileSystem: FileSystem.FileSystem;
+  readonly sharedHomePath: string;
+  readonly effectiveHomePath: string;
+}) {
+  const path = yield* Path.Path;
+  const readEntry = Effect.fnUntraced(function* (entryName: string) {
+    const linkPath = path.join(input.effectiveHomePath, entryName);
+    const state = yield* readLinkState({ ...input, entryName, linkPath });
+    if (state._tag === "NotSymlink") {
+      const info = yield* input.fileSystem.stat(linkPath).pipe(
+        Effect.mapError(
+          (cause) =>
+            new CodexShadowHomeFileSystemError({
+              sharedHomePath: input.sharedHomePath,
+              effectiveHomePath: input.effectiveHomePath,
+              operation: "stat",
+              path: linkPath,
+              entryName,
+              cause,
+            }),
+        ),
+      );
+      if (info.type !== "File") {
+        return yield* new CodexShadowHomeEntryConflictError({
+          sharedHomePath: input.sharedHomePath,
+          effectiveHomePath: input.effectiveHomePath,
+          entryName,
+          linkPath,
+          targetPath: path.join(input.sharedHomePath, entryName),
+        });
+      }
+    }
+    return state;
+  });
+  const index = yield* readEntry(SESSION_INDEX);
+  const lock = yield* readEntry(SESSION_INDEX_LOCK);
+  if (index._tag === "NotSymlink") {
+    // A rewrite can detach a shared index while its original lock remains shared.
+    if (lock._tag === "Symlink") yield* ensureSymlink({ ...input, entryName: SESSION_INDEX_LOCK });
+    return;
+  }
+  if (index._tag === "Missing" && lock._tag === "NotSymlink") return;
+  // Install the lock link before the index, including when their targets don't exist yet.
+  // A shared index with a pre-existing independent lock needs an offline lock reconciliation.
+  yield* ensureSymlink({ ...input, entryName: SESSION_INDEX_LOCK });
+  yield* ensureSymlink({ ...input, entryName: SESSION_INDEX });
+});
+
 const ensureShadowAuthIsPrivate = Effect.fn("CodexHomeLayout.ensureShadowAuthIsPrivate")(
   function* (input: {
     readonly fileSystem: FileSystem.FileSystem;
@@ -418,6 +483,7 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
   );
   const entries = new Set<string>(KNOWN_SHARED_DIRECTORIES);
   for (const entryName of sharedEntryNames) {
+    if (entryName === SESSION_INDEX || entryName === SESSION_INDEX_LOCK) continue;
     if (!PRIVATE_ENTRY_NAMES.has(entryName) && !SHADOW_LOCAL_ENTRY_NAMES.has(entryName)) {
       entries.add(entryName);
     }
@@ -453,6 +519,11 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
     { discard: true },
   );
 
+  yield* ensureSessionIndex({
+    fileSystem,
+    sharedHomePath: layout.sharedHomePath,
+    effectiveHomePath,
+  });
   yield* ensureShadowAuthIsPrivate({
     fileSystem,
     sharedHomePath: layout.sharedHomePath,

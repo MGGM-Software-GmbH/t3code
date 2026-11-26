@@ -2531,6 +2531,7 @@ export function makeClaudeQueryOptions(input: {
   /** The thread's other folders: listed in the system prompt and granted as directories. */
   readonly workspace?: ProviderAdapter.ProviderAdapterV2RuntimePolicy["workspace"];
   readonly attachmentsDir?: string;
+  readonly workspaceDirectories?: ReadonlyArray<string>;
   readonly settings?: ClaudeSettings;
   readonly promptSuggestions?: boolean;
   readonly sdkSettings?: string | ClaudeSdkSettings;
@@ -2731,6 +2732,7 @@ export function makeClaudeQueryOptions(input: {
     ...(input.cwd === null ? [] : [input.cwd]),
     ...(input.workspace?.extraRoots ?? []),
     ...(input.attachmentsDir === undefined ? [] : [input.attachmentsDir]),
+    ...(input.workspaceDirectories ?? []),
     ...claudeLaunchArgDirectories(input.settings?.launchArgs),
   ];
   const withDirectories =
@@ -3692,6 +3694,22 @@ function sandboxPolicyKindForClaudeRuntimePolicy(
     isClaudeRuntimeSandboxPolicyKind(runtimePolicy.sandboxPolicy)
     ? runtimePolicy.sandboxPolicy.type
     : undefined;
+}
+
+function claudeWorkspaceDirectories(
+  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+): string[] {
+  const policy = runtimePolicy.sandboxPolicy;
+  if (
+    typeof policy !== "object" ||
+    policy === null ||
+    !("type" in policy) ||
+    policy.type !== "workspaceWrite" ||
+    !("writableRoots" in policy) ||
+    !Array.isArray(policy.writableRoots)
+  )
+    return [];
+  return policy.writableRoots.filter((root): root is string => typeof root === "string");
 }
 
 function readOnlyPolicyAllowsGlobalReads(
@@ -13524,6 +13542,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
           });
+          const workspaceDirectories = claudeWorkspaceDirectories(turnInput.runtimePolicy);
           const queryPolicyKey = claudeEffectiveQueryPolicyKey(
             queryPolicy,
             mcpOverrides,
@@ -13711,6 +13730,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { workspace: turnInput.runtimePolicy.workspace }),
             attachmentsDir,
+            workspaceDirectories,
             settings: adapterOptions.settings,
             // Delegated threads have no one typing, so they never ask for suggestions.
             promptSuggestions:

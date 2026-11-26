@@ -101,6 +101,7 @@ it.effect.each([
       ack: Effect.sync(() => acked.resolve()),
     });
     const browser = ServerBrowser.ServerBrowser.of({
+      openAuthenticated: () => Effect.die("Unexpected authenticated navigation"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,
@@ -158,7 +159,7 @@ it.effect.each([
         tabId: "tab",
         maxWidth: 1280,
         maxHeight: 800,
-        quality: 70,
+        quality: 100,
         canOperate,
       },
     ]);
@@ -177,6 +178,7 @@ it.effect("sends replies ahead of stale frames and only the newest frame after a
       ack: Effect.sync(() => void released.push(id)),
     });
     const browser = ServerBrowser.ServerBrowser.of({
+      openAuthenticated: () => Effect.die("Unexpected authenticated navigation"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,
@@ -257,6 +259,7 @@ it.effect.each([
     const auth = makeAuth(testCase.scopes, testCase.error);
     let attachments = 0;
     const browser = ServerBrowser.ServerBrowser.of({
+      openAuthenticated: () => Effect.die("Unexpected authenticated navigation"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,
@@ -298,6 +301,7 @@ it.effect("serves a tab's download only to an authorized session", () =>
     yield* fs.writeFileString(path, "report contents");
     const requests: Array<unknown> = [];
     const browser = ServerBrowser.ServerBrowser.of({
+      openAuthenticated: () => Effect.die("Unexpected authenticated navigation"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: (input) =>
@@ -346,6 +350,7 @@ it.effect("passes uploaded files to the page's open picker and needs operate sco
   Effect.gen(function* () {
     const answers: Array<{ chooserId: string; files: Array<{ name: string; text: string }> }> = [];
     const browser = ServerBrowser.ServerBrowser.of({
+      openAuthenticated: () => Effect.die("Unexpected authenticated navigation"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,
@@ -415,6 +420,7 @@ it.effect.each([
 ])("tells viewers the command that sets up the host ($need)", ({ error, need }) =>
   Effect.gen(function* () {
     const browser = ServerBrowser.ServerBrowser.of({
+      openAuthenticated: () => Effect.die("Unexpected authenticated navigation"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,

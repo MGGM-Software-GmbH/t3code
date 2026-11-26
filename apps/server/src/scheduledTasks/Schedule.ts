@@ -31,7 +31,9 @@ export function nextScheduledRunAt(
   if (time === null) return null;
   const weekdays =
     schedule.weekdays && schedule.weekdays.length > 0 ? new Set(schedule.weekdays) : null;
-  for (let offset = 0; offset <= 7; offset += 1) {
+  // A fifth weekday can be absent for several months; a full year contains every occurrence.
+  const searchDays = schedule.weekOfMonth == null ? 7 : 366;
+  for (let offset = 0; offset <= searchDays; offset += 1) {
     const candidate = DateTime.setParts(DateTime.add(from, { days: offset }), {
       hour: time.hour,
       minute: time.minute,
@@ -40,6 +42,14 @@ export function nextScheduledRunAt(
     });
     if (DateTime.toEpochMillis(candidate) <= DateTime.toEpochMillis(from)) continue;
     if (weekdays !== null && !weekdays.has(DateTime.toParts(candidate).weekDay)) continue;
+    if (schedule.weekOfMonth != null) {
+      const parts = DateTime.toParts(candidate);
+      const matches =
+        schedule.weekOfMonth === -1
+          ? DateTime.toParts(DateTime.add(candidate, { days: 7 })).month !== parts.month
+          : Math.ceil(parts.day / 7) === schedule.weekOfMonth;
+      if (!matches) continue;
+    }
     return candidate;
   }
   return null;
@@ -66,7 +76,8 @@ export function isSameSchedule(a: ScheduledTaskSchedule, b: ScheduledTaskSchedul
     bTime !== null &&
     aTime.hour === bTime.hour &&
     aTime.minute === bTime.minute &&
-    weekdayKey(a.weekdays) === weekdayKey(b.weekdays)
+    weekdayKey(a.weekdays) === weekdayKey(b.weekdays) &&
+    (a.weekOfMonth ?? null) === (b.weekOfMonth ?? null)
   );
 }
 

@@ -32,6 +32,8 @@ const RIGHT_PANEL_KINDS = [
   "issue",
   "thread",
   "linked-thread",
+  "fogbugz-cases",
+  "fogbugz-case-git",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -107,6 +109,8 @@ export type RightPanelSurface =
    * A thread of the panel's environment shown beside it: a side chat or a subagent. Which one is
    * the thread's own lineage, so the surface only names it.
    */
+  | { id: "fogbugz-cases"; kind: "fogbugz-cases" }
+  | { id: "fogbugz-case-git"; kind: "fogbugz-case-git" }
   | ThreadSurface
   /** A linked environment's thread, read through `viaEnvironmentId`; it has no thread here. */
   | LinkedThreadSurface;
@@ -297,6 +301,10 @@ const singletonSurface = (
       return { id: "files", kind };
     case "pull-requests":
       return { id: "pull-requests", kind };
+    case "fogbugz-cases":
+      return { id: "fogbugz-cases", kind };
+    case "fogbugz-case-git":
+      return { id: "fogbugz-case-git", kind };
     case "device":
       return { id: "device", kind };
   }

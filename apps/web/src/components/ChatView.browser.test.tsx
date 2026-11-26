@@ -18,9 +18,12 @@ import {
 } from "@t3tools/shared/keybindings";
 import type * as Context from "effect/Context";
 import * as Schema from "effect/Schema";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import { expect, it, vi } from "vite-plus/test";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
+
+import "~/index.css";
 
 import { AppRoot } from "~/AppRoot";
 // The route loads ChatView lazily, and its first transform (React Compiler over ~4k lines)
@@ -45,6 +48,7 @@ import {
   assistantItem,
   dispatchedCommands,
   emitThreadEvent,
+  emitThreadShell,
   hasPendingAssetUrl,
   installFakeEnvironment,
   rejectPendingCommand,
@@ -232,6 +236,8 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
   });
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
+    // This scenario uses the ungrouped sidebar, without collapsed idle project groups.
+    mggmThreadSidebarEnabled: false,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   await page.viewport(1400, 900);
@@ -294,6 +300,7 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
 });
 
 it("a machine chip stashed in one thread restores with its machine in another", async () => {
+  await page.viewport(1400, 900);
   const other = threadWithHistory("thread-stash-restore", 1);
   const asking = threadWithQuestion("thread-stash-question", "Which file should change?");
   using _environment = installFakeEnvironment([other, asking]);
@@ -403,6 +410,44 @@ it("a question that opens while a stashed file is checked keeps a machine stash"
   );
   expect(usePromptStashStore.getState().entries).toHaveLength(1);
   usePromptStashStore.getState().takeEntry("stash-late-question");
+});
+
+it("main keeps the compact sidebar row while other branches get a metadata line", async () => {
+  await page.viewport(1400, 900);
+  const activityAt = DateTime.makeUnsafe("2099-03-18T09:00:00.000Z");
+  const threads = ["main", null, "feat/sidebar-branch", "master"].map((branch) => ({
+    ...threadWithHistory(`sidebar-branch-${(branch ?? "none").replaceAll("/", "-")}`, 0),
+    branch,
+    latestUserMessageAt: activityAt,
+  }));
+  using _environment = installFakeEnvironment(threads);
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    mggmThreadSidebarEnabled: true,
+  });
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${threads[0]!.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, { router: false });
+  for (const thread of threads) await emitThreadShell(thread);
+  const heights: number[] = [];
+  for (const thread of threads) {
+    const row = page
+      .getByRole("navigation", { name: "Threads", exact: true })
+      .getByRole("button", { name: new RegExp(thread.title) });
+    await expect.element(row).toBeVisible();
+    if (thread.branch === "main") {
+      await expect.element(row.getByText("main", { exact: true })).not.toBeInTheDocument();
+    } else if (thread.branch !== null) {
+      expect(row.element().textContent).toContain(thread.branch);
+    }
+    heights.push(row.element().getBoundingClientRect().height);
+  }
+  expect(heights[0]).toBe(heights[1]);
+  expect(heights[2]).toBeGreaterThan(heights[0]!);
+  expect(heights[3]).toBeGreaterThan(heights[0]!);
 });
 
 it("a new draft does not load its reserved thread before the server lists it", async () => {
@@ -931,11 +976,10 @@ it("a shortcut conditioned on rightPanelOpen sees the thread's open right panel"
 
 it("selecting a side-chat tab focuses that side chat's composer", async () => {
   const parent = threadWithHistory("focus-parent", 1);
-  // The shell loaded by the file's first test stays; a family read serves side chats added later.
+  // Shell refreshes must retain both side chats while their tabs are open.
   const sideChat = (name: string) => ({
     ...threadWithHistory(name, 1),
     sideChatOf: parent.id,
-    olderSettled: true as const,
   });
   const side = sideChat("focus-side");
   const otherSide = sideChat("focus-other-side");

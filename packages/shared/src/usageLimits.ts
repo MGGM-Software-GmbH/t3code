@@ -788,6 +788,189 @@ export function remainingPercent(window: ServerProviderUsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
 }
 
+export interface WeeklyLimitWindowOptions {
+  readonly driver?: ServerProvider["driver"] | undefined;
+  readonly model?: string | undefined;
+}
+
+function isSevenDayWeeklyWindow(window: ServerProviderUsageWindow): boolean {
+  return (
+    window.kind === "weekly" &&
+    (window.windowDurationMins === undefined || window.windowDurationMins === 7 * 24 * 60) &&
+    Number.isFinite(window.usedPercent)
+  );
+}
+
+/** Gemini weekly windows reported by Antigravity, ordered with the default Gemini bucket first. */
+export function antigravityGeminiWeeklyWindows(
+  limits: ServerProviderUsageLimits,
+): readonly ServerProviderUsageWindow[] {
+  if (limitsNotice(limits) !== null) return [];
+  return limits.windows
+    .filter((window) => isSevenDayWeeklyWindow(window) && window.id.startsWith("gemini-"))
+    .sort(
+      (left, right) =>
+        Number(left.id !== "gemini-weekly") - Number(right.id !== "gemini-weekly") ||
+        left.id.localeCompare(right.id),
+    );
+}
+
+/** The account-wide seven-day allowance, or Antigravity's Gemini weekly allowance. */
+export function weeklyLimitWindow(
+  limits: ServerProviderUsageLimits,
+  options?: WeeklyLimitWindowOptions,
+) {
+  if (limitsNotice(limits) !== null) return null;
+  if (options?.driver === "antigravity") {
+    const model = options.model?.trim().toLowerCase();
+    // Third-party models on Antigravity (Claude/GPT) do not draw from Gemini's weekly quota.
+    if (model && /^(claude|gpt)-/.test(model)) return null;
+    const geminiWeekly = antigravityGeminiWeeklyWindows(limits);
+    if (geminiWeekly.length === 0) return null;
+    if (model && model.startsWith("gemini-")) {
+      const variant = model.match(/^gemini-(?:\d+(?:\.\d+)?-)?([a-z]+)/)?.[1];
+      if (variant) {
+        const matched = geminiWeekly.find((window) => window.id.startsWith(`gemini-${variant}-`));
+        if (matched) return matched;
+      }
+    }
+    const mainGemini = geminiWeekly.find((window) => window.id === "gemini-weekly");
+    return mainGemini ?? (geminiWeekly.length === 1 ? geminiWeekly[0]! : null);
+  }
+  const weekly = limits.windows.filter(
+    (window) =>
+      isSevenDayWeeklyWindow(window) &&
+      ["primary", "secondary", "seven_day", "weekly", "gemini-weekly"].includes(window.id),
+  );
+  const main = weekly.find(
+    (window) =>
+      window.id === "seven_day" || window.id === "weekly" || window.id === "gemini-weekly",
+  );
+  return main ?? (weekly.length === 1 ? weekly[0]! : null);
+}
+
+/** Registry agents and Antigravity need a matching quota report to show a weekly indicator. */
+export function shouldShowWeeklyLimit(
+  provider: Pick<ServerProvider, "driver" | "usageLimits">,
+  model?: string,
+): boolean {
+  return (
+    (provider.driver !== "acpRegistry" && provider.driver !== "antigravity") ||
+    (provider.usageLimits !== undefined &&
+      weeklyLimitWindow(provider.usageLimits, { driver: provider.driver, model }) !== null)
+  );
+}
+
+// Pro multipliers: https://x.com/thsottiaux/status/2119296267545419987.
+// Business Premium's initial 5× Standard allowance doubled on October 29, 2026:
+// https://help.openai.com/en/articles/11391654-chatgpt-business-release-notes.
+const CODEX_WEEKLY_PLAN_CAPACITY = new Map([
+  ["ChatGPT Plus Subscription", 1],
+  ["ChatGPT Pro 100 Subscription", 10],
+  ["ChatGPT Pro 200 Subscription", 20],
+  ["ChatGPT Pro 500 Subscription", 50],
+  ["ChatGPT Business Subscription", 1],
+  ["ChatGPT Business Standard Subscription", 1],
+  ["ChatGPT Business Premium Subscription", 10],
+  ["ChatGPT Team Subscription", 1],
+]);
+
+/**
+ * Deduplicate accounts first. Weight Codex by comparable allowances, never by price.
+ * Matching Antigravity buckets count each account once, as on Usage → Limits.
+ * Missing allowances stay visible and a passed reset never fabricates a fresh balance.
+ * Average elapsed periods separately from quota and sum banked credits across accounts.
+ */
+export function summarizeWeeklyLimits(
+  accounts: readonly LimitAccount[],
+  now?: number,
+  options?: { readonly model?: string | undefined },
+) {
+  const members = accounts.flatMap((account) => {
+    const window = weeklyLimitWindow(account.limits, {
+      driver: account.driver,
+      model: options?.model,
+    });
+    if (!window) return [];
+    const elapsedDays =
+      now === undefined ? null : elapsedShare({ ...window, windowDurationMins: 10080 }, now);
+    return [
+      {
+        account,
+        window,
+        capacity:
+          account.driver === "codex" && account.plan
+            ? (CODEX_WEEKLY_PLAN_CAPACITY.get(account.plan) ?? null)
+            : null,
+        remainingPercent: remainingPercent(window),
+        elapsedDays: elapsedDays === null ? null : elapsedDays * 7,
+      },
+    ];
+  });
+  const periods = members.flatMap(({ elapsedDays }) => (elapsedDays === null ? [] : [elapsedDays]));
+  const credits = accounts.flatMap((account) =>
+    !account.limits.unavailable && account.limits.resetCredits ? [account.limits.resetCredits] : [],
+  );
+  const creditExpiries = credits.flatMap((credit) => {
+    const expires =
+      credit.availableCount > 0 && credit.nextExpiresAt
+        ? Date.parse(credit.nextExpiresAt)
+        : Number.NaN;
+    return Number.isFinite(expires) ? [expires] : [];
+  });
+  const resets = members.flatMap(({ window }) => {
+    const at = resetMillis(window);
+    return at === null ? [] : [at];
+  });
+  const averageAntigravity =
+    members.length > 1 &&
+    members.every(
+      ({ account, window }) =>
+        account.driver === "antigravity" && window.id === members[0]!.window.id,
+    );
+  const capacityUnavailable =
+    members.length > 1 && !averageAntigravity && members.some(({ capacity }) => capacity === null);
+  const totalCapacity = averageAntigravity
+    ? members.length
+    : members.reduce((sum, { capacity }) => sum + (capacity ?? 0), 0);
+  const weightedUsed = members.reduce(
+    (sum, { window, capacity }) =>
+      sum +
+      Math.max(0, Math.min(100, window.usedPercent)) * (averageAntigravity ? 1 : (capacity ?? 0)),
+    0,
+  );
+  const checkedTimes = members
+    .map(({ account }) => Date.parse(account.limits.checkedAt))
+    .filter(Number.isFinite);
+  return {
+    members,
+    missing: accounts.filter((account) => !members.some((member) => member.account === account)),
+    capacityUnavailable,
+    remainingPercent:
+      members.length === 1
+        ? members[0]!.remainingPercent
+        : !capacityUnavailable && totalCapacity > 0
+          ? Math.round(100 - weightedUsed / totalCapacity)
+          : null,
+    elapsedDays:
+      periods.length > 0 ? periods.reduce((sum, days) => sum + days, 0) / periods.length : null,
+    reportedPeriods: periods.length,
+    bankedResets:
+      credits.length > 0 ? credits.reduce((sum, credit) => sum + credit.availableCount, 0) : null,
+    unreportedResetCredits: accounts.length - credits.length,
+    nextCreditExpiresAt:
+      creditExpiries.length > 0
+        ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...creditExpiries)))
+        : null,
+    nextResetAt:
+      resets.length > 0 ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...resets))) : null,
+    oldestCheckedAt:
+      checkedTimes.length > 0
+        ? DateTime.formatIso(DateTime.makeUnsafe(Math.min(...checkedTimes)))
+        : null,
+  };
+}
+
 function resetMillis(window: ServerProviderUsageWindow): number | null {
   if (window.resetsAt === undefined) return null;
   const at = Date.parse(window.resetsAt);

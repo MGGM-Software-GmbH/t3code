@@ -5,6 +5,7 @@ import {
   DEFAULT_UNIFIED_SETTINGS,
   EnvironmentId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   ProviderDriverKind,
   type ServerProvider,
@@ -12,6 +13,9 @@ import {
   ScheduledTaskId,
   ThreadId,
   type ScheduledTask,
+  type ScheduledTaskUpsertInput,
+  type ServerProvider,
+  type UnifiedSettings,
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -64,7 +68,6 @@ const state = vi.hoisted(() => ({
   tasksLoaded: true,
   remove: vi.fn(),
   tasks: [] as ScheduledTask[],
-  secondary: false,
   providers: null as unknown as Atom.Writable<ReadonlyArray<ServerProvider>>,
   settings: null as unknown as UnifiedSettings,
   upsert: vi.fn(),
@@ -155,6 +158,18 @@ vi.mock(import("../../state/threads"), async (original) => {
     threadFamilies: { ...actual.threadFamilies, familyAtom: (() => threadFamilyRead) as never },
   };
 });
+vi.mock(import("../../state/queries"), async (original) => ({
+  ...(await original()),
+  usePaginatedBranches: (() => ({
+    data: { refs: [], isRepo: true, hasPrimaryRemote: false, nextCursor: null, totalCount: 0 },
+    refs: [],
+    error: null,
+    isPending: false,
+    isFetchingNextPage: false,
+    refresh: vi.fn(),
+    loadNext: vi.fn(),
+  })) as never,
+}));
 // Mirrors the real query: a null request (disconnected environment) has no data.
 vi.mock(import("../../state/query"), async (original) => ({
   ...(await original()),
@@ -173,6 +188,10 @@ vi.mock(import("../../state/environments"), async (original) => ({
   useEnvironment: ((id: EnvironmentId) =>
     id === secondaryId ? secondaryEnvironment() : environment()) as never,
 }));
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
+  readEnvironmentScope: (() => true) as never,
+}));
 vi.mock(import("../../state/entities"), async (original) => ({
   ...(await original()),
   useProjects: (() => [{ id: projectId, environmentId, title: "Project" }]) as never,
@@ -180,13 +199,17 @@ vi.mock(import("../../state/entities"), async (original) => ({
 vi.mock(import("../../hooks/useSettings"), async (original) => ({
   ...(await original()),
   useEnvironmentSettings: (() => state.settings) as never,
+  useEnvironmentModelPreferences: (() => ({ favorites: [] })) as never,
 }));
 
-function setupEffortTask() {
+function setupModelOptionsTask() {
   setup();
   const selection = {
     ...task.modelSelection,
-    options: [{ id: "reasoningEffort", value: "high" }],
+    options: [
+      { id: "reasoningEffort", value: "high" },
+      { id: "serviceTier", value: "ultrafast" },
+    ],
   };
   state.tasks = [{ ...task, threadId: null, modelSelection: selection }];
   state.settings = { ...DEFAULT_UNIFIED_SETTINGS, defaultModelSelection: selection };
@@ -199,7 +222,7 @@ function setupEffortTask() {
       version: null,
       status: "ready",
       auth: { status: "authenticated" },
-      checkedAt: "2026-11-03T00:00:00.000Z",
+      checkedAt: "2026-11-16T00:00:00.000Z",
       models: [
         {
           slug: selection.model,
@@ -217,11 +240,31 @@ function setupEffortTask() {
                 ],
                 currentValue: "low",
               },
+              {
+                id: "serviceTier",
+                label: "Speed",
+                type: "select",
+                options: [
+                  { id: "default", label: "Standard", isDefault: true },
+                  { id: "priority", label: "Fast" },
+                  { id: "ultrafast", label: "Ultrafast" },
+                ],
+                currentValue: "default",
+              },
             ],
           }),
         },
         { slug: "plain", name: "Plain model", isCustom: false, capabilities: null },
-        { slug: "gpt-5.5", name: "Bound model", isCustom: false, capabilities: null },
+        {
+          slug: "toggle",
+          name: "Fast toggle model",
+          isCustom: false,
+          capabilities: createModelCapabilities({
+            optionDescriptors: [
+              { id: "fastMode", label: "Fast", type: "boolean", currentValue: true },
+            ],
+          }),
+        },
       ],
       skills: [],
       slashCommands: [],
@@ -231,7 +274,7 @@ function setupEffortTask() {
 }
 
 async function fillTitleAndPrompt() {
-  await userEvent.fill(page.getByRole("textbox", { name: "Name" }), "Effort task");
+  await userEvent.fill(page.getByRole("textbox", { name: "Name" }), "Model options task");
   await userEvent.fill(page.getByRole("textbox", { name: "Prompt", exact: true }), "Review issues");
 }
 
@@ -265,9 +308,9 @@ describe("ScheduledTasksSettings", () => {
   });
 
   it.each([false, true])(
-    "keeps model options when the same model is reselected (existing task: %s)",
+    "keeps reasoning and speed when reselecting the same account and model (existing task: %s)",
     async (editing) => {
-      const selection = setupEffortTask();
+      const selection = setupModelOptionsTask();
       await using screen = await render(
         <ScheduledTasksSettings {...(editing ? { taskId: task.id } : {})} />,
       );
@@ -279,7 +322,7 @@ describe("ScheduledTasksSettings", () => {
       await fillTitleAndPrompt();
       await page.getByRole("button", { name: "GPT-5.4", exact: true }).click();
       await page.getByRole("option", { name: /GPT-5.4/ }).click();
-      await expect.element(page.getByRole("button", { name: "High", exact: true })).toBeVisible();
+      await expect.element(page.getByRole("button", { name: /^High(?: |$)/ })).toBeVisible();
       await page.getByRole("button", { name: editing ? "Save task" : "Create task" }).click();
       await vi.waitFor(() =>
         expect(state.upsert).toHaveBeenLastCalledWith(expect.anything(), {
@@ -290,13 +333,17 @@ describe("ScheduledTasksSettings", () => {
     },
   );
 
-  it("saves a changed effort and drops options when switching models", async () => {
-    const selection = setupEffortTask();
+  it.each([
+    ["Standard", "default"],
+    ["Fast", "priority"],
+    ["Ultrafast", "ultrafast"],
+  ])("saves and reopens changed reasoning with %s speed", async (label, tier) => {
+    const selection = setupModelOptionsTask();
     await using screen = await render(<ScheduledTasksSettings taskId={task.id} />);
-    await fillTitleAndPrompt();
-    await page.getByRole("button", { name: "High", exact: true }).click();
+    await page.getByRole("button", { name: /^High(?: |$)/ }).click();
     await page.getByRole("menuitemradio", { name: /^Low/ }).click();
-    await expect.element(page.getByRole("button", { name: "Low", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /^Low(?: |$)/ }).click();
+    await page.getByRole("menuitemradio", { name: new RegExp(`^${label}`) }).click();
     await page.getByRole("button", { name: "Save task" }).click();
     await vi.waitFor(() =>
       expect(state.upsert).toHaveBeenLastCalledWith(expect.anything(), {
@@ -304,17 +351,28 @@ describe("ScheduledTasksSettings", () => {
         input: expect.objectContaining({
           modelSelection: {
             ...selection,
-            options: expect.arrayContaining([{ id: "reasoningEffort", value: "low" }]),
+            options: [
+              { id: "reasoningEffort", value: "low" },
+              { id: "serviceTier", value: tier },
+            ],
           },
         }),
       }),
     );
-
     await screen.rerender(<ScheduledTasksSettings />);
     await screen.rerender(<ScheduledTasksSettings taskId={task.id} />);
+    await page.getByRole("button", { name: /^Low(?: |$)/ }).click();
+    await expect
+      .element(page.getByRole("menuitemradio", { name: new RegExp(`^${label}`) }))
+      .toHaveAttribute("aria-checked", "true");
+  });
+
+  it("clears incompatible options when switching models", async () => {
+    const selection = setupModelOptionsTask();
+    await using _screen = await render(<ScheduledTasksSettings taskId={task.id} />);
     await page.getByRole("button", { name: "GPT-5.4", exact: true }).click();
     await page.getByRole("option", { name: /Plain model/ }).click();
-    expect(page.getByRole("button", { name: "High", exact: true }).query()).toBeNull();
+    expect(page.getByRole("button", { name: /^High(?: |$)/ }).query()).toBeNull();
     await page.getByRole("button", { name: "Save task" }).click();
     await vi.waitFor(() =>
       expect(state.upsert).toHaveBeenLastCalledWith(expect.anything(), {
@@ -325,6 +383,27 @@ describe("ScheduledTasksSettings", () => {
       }),
     );
   });
+
+  it("saves the displayed Standard when a provider defaults its Fast toggle to on", async () => {
+    const selection = setupModelOptionsTask();
+    await using _screen = await render(<ScheduledTasksSettings taskId={task.id} />);
+    await page.getByRole("button", { name: "GPT-5.4", exact: true }).click();
+    await page.getByRole("option", { name: /Fast toggle model/ }).click();
+    await page.getByRole("button", { name: "Save task" }).click();
+    await vi.waitFor(() =>
+      expect(state.upsert).toHaveBeenLastCalledWith(expect.anything(), {
+        environmentId,
+        input: expect.objectContaining({
+          modelSelection: {
+            instanceId: selection.instanceId,
+            model: "toggle",
+            options: [{ id: "fastMode", value: false }],
+          },
+        }),
+      }),
+    );
+  });
+
   it("creates on a permitted secondary and reacts to permission changes", async () => {
     setup();
     state.secondary = true;
@@ -380,7 +459,7 @@ describe("ScheduledTasksSettings", () => {
   });
 
   it("offers no model choice for a task bound to a thread, whose runs use the thread's model", async () => {
-    setupEffortTask();
+    setupModelOptionsTask();
     state.tasks = [{ ...state.tasks[0]!, threadId: task.threadId }];
     await using _screen = await render(<ScheduledTasksSettings taskId={task.id} />);
     await expect.element(page.getByRole("dialog").getByText("Fix login bug")).toBeVisible();

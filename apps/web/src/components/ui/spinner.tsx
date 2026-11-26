@@ -5,8 +5,12 @@ import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { cn } from "~/lib/utils";
 
 // No default size: inside a Button the parent's svg rule sizes the glyph.
-const spinnerVariants = cva("motion-safe:visible-animate-spin", {
+const spinnerVariants = cva("", {
   variants: {
+    motion: {
+      auto: "motion-safe:visible-animate-spin",
+      progress: "visible-animate-spin [animation-timing-function:steps(8)]",
+    },
     size: {
       xs: "size-3",
       sm: "size-3.5",
@@ -18,21 +22,27 @@ const spinnerVariants = cva("motion-safe:visible-animate-spin", {
       muted: "text-muted-foreground",
     },
   },
-  defaultVariants: { tone: "current" },
+  defaultVariants: { tone: "current", motion: "auto" },
 });
+
+/** Keep explicit progress legible with reduced motion at a limited frame rate. */
+function observeProgressAnimation(element: HTMLElement | SVGElement | null) {
+  return observeVisibleAnimation(element, { allowReducedMotion: true });
+}
 
 function Spinner({
   className,
   size,
   tone,
+  motion,
   ...props
 }: React.ComponentPropsWithoutRef<typeof LoaderCircleIcon> & VariantProps<typeof spinnerVariants>) {
   const gt = useGT();
   return (
     <LoaderCircleIcon
       aria-label={gt("Loading")}
-      ref={observeVisibleAnimation}
-      className={cn(spinnerVariants({ size, tone }), className)}
+      ref={motion === "progress" ? observeProgressAnimation : observeVisibleAnimation}
+      className={cn(spinnerVariants({ size, tone, motion }), className)}
       role="status"
       {...props}
     />

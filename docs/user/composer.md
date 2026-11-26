@@ -76,6 +76,8 @@ commands are the exception: some can stop the current turn.
 If your **Send shortcut** requires `Cmd+Enter` or `Ctrl+Enter`, that shortcut uses
 your default follow-up behavior; add **Shift** to use the opposite action. This
 applies only to multiline messages when you choose the multiline send option.
+In a touch browser, long-press the Steer or Queue button to send with the opposite action.
+Releasing after the long press does not send the message again.
 
 Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send
 the oldest queued message as a steer. This leaves the current draft intact and
@@ -278,6 +280,10 @@ not been sent yet. On mobile they appear above the composer. Each shows its text
 images. **Send now** sends a message right away, into the running turn if there is one. While a
 turn runs, a slash command moves to the front of the queue instead. You can also edit or
 remove it.
+
+On web and desktop, hover over a queued message and drag the grip on its left.
+Drop it where the line marks the new position. You can also tab to the grip and
+press the up or down arrow key to move the message one place.
 
 If you stop the agent or the server restarts, queued messages keep their order and are held.
 Press **Resume** in an empty composer to continue. For stopped runs and usage limits,

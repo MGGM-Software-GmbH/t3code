@@ -37,6 +37,30 @@ describe("resolveSendEnvMode", () => {
 });
 
 describe("resolveProjectSettings", () => {
+  it("inherits FogBugz automation and keeps explicit per-project opt-outs", () => {
+    const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      fogbugzAutoSettle: "resolved",
+      fogbugzAutoUnsettle: true,
+      fogbugzAutoAnalyze: "assigned",
+      projectSettingsOverrides: {
+        [projectId]: {
+          fogbugzAutoSettle: "closed",
+          fogbugzAutoUnsettle: false,
+          fogbugzAutoAnalyze: "never",
+        },
+      },
+    });
+    expect(resolveProjectSettings(settings, projectId).settings).toMatchObject({
+      fogbugzAutoSettle: "closed",
+      fogbugzAutoUnsettle: false,
+      fogbugzAutoAnalyze: "never",
+    });
+    expect(resolveProjectSettings(settings, otherProjectId).settings).toMatchObject({
+      fogbugzAutoSettle: "resolved",
+      fogbugzAutoUnsettle: true,
+      fogbugzAutoAnalyze: "assigned",
+    });
+  });
   it("ignores an override left undefined by a forward-compatible decode", () => {
     const resolved = resolveProjectSettings(
       {
@@ -102,7 +126,9 @@ describe("resolveProjectSettings", () => {
       projectId,
       project,
     );
-    expect(folded.settings.defaultModelSelection).toBeNull();
+    expect(folded.settings.defaultModelSelection).toEqual(
+      DEFAULT_SERVER_SETTINGS.defaultModelSelection,
+    );
     expect(folded.sources.defaultModelSelection).toBe("environment");
   });
 
@@ -118,7 +144,7 @@ describe("resolveProjectSettings", () => {
       projectSettingsOverrides: { [projectId]: { defaultModelSelection: disabledSelection } },
     });
     const resolved = resolveProjectSettings(settings, projectId);
-    expect(resolved.settings.defaultModelSelection).toBeNull();
+    expect(resolved.settings.defaultModelSelection).toEqual(settings.defaultModelSelection);
     expect(resolved.sources.defaultModelSelection).toBe("environment");
   });
 
@@ -153,6 +179,12 @@ describe("resolveProjectSettings", () => {
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,
       textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
+      providerInstances: {
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+        },
+      },
       projectSettingsOverrides: {
         [projectId]: { providerInstances: { [codex]: { enabled: false } } },
       },

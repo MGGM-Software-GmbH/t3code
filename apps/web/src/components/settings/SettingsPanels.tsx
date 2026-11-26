@@ -20,6 +20,7 @@ import {
   DEFAULT_UNIFIED_SETTINGS,
   type DiffLayout,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
   type QuitConfirmationMode,
@@ -499,6 +500,14 @@ export function useSettingsRestore(onRestored?: () => void) {
   const isBackgroundActivityDirty = hasChangedBackgroundActivitySettings(settings);
 
   const changedSettingLabels = [
+    ...(settings.mggmCodexAutoRedeemExpiringResets !==
+    DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemExpiringResets
+      ? ["Redeem expiring banked resets"]
+      : []),
+    ...(settings.mggmCodexAutoRedeemAtWeeklyLimit !==
+    DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemAtWeeklyLimit
+      ? ["Auto-redeem banked reset at 0% weekly limit"]
+      : []),
     ...(theme !== "system" ? [gt("Theme")] : []),
     ...(!followSystem ? [gt("Follow system")] : []),
     ...(themeHalves !== null ? [gt("Theme mix")] : []),
@@ -537,6 +546,14 @@ export function useSettingsRestore(onRestored?: () => void) {
       : []),
     ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
       ? [gt("In-app notifications")]
+      : []),
+    ...(settings.slowRequestWarningThresholdSeconds !==
+    DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds
+      ? ["Slow request warning threshold"]
+      : []),
+    ...(settings.modelCapacityRetryDelayMinutes !==
+    DEFAULT_UNIFIED_SETTINGS.modelCapacityRetryDelayMinutes
+      ? ["Model capacity retry delay"]
       : []),
     ...(settings.sidebarProjectGroupingMode !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
       ? [gt("Project Grouping")]
@@ -719,6 +736,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
+      slowRequestWarningThresholdSeconds:
+        DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
@@ -743,11 +762,14 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
+      modelCapacityRetryDelayMinutes: DEFAULT_UNIFIED_SETTINGS.modelCapacityRetryDelayMinutes,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+      mggmCodexAutoRedeemExpiringResets: DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemExpiringResets,
+      mggmCodexAutoRedeemAtWeeklyLimit: DEFAULT_UNIFIED_SETTINGS.mggmCodexAutoRedeemAtWeeklyLimit,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       keepAwakeWhileAgentsWork: DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
@@ -844,6 +866,7 @@ function AutoSettleDaysInput({
 }
 
 export function GeneralSettingsPanel() {
+  const uebersetzen = useGT();
   const gt = useGT();
   const m = useMessages();
   const setting = useSearchableSetting();
@@ -861,13 +884,53 @@ export function GeneralSettingsPanel() {
       <SettingsSection id="notifications" title={gt("Notifications")}>
         <NotificationSettings />
         <SettingsRow
-          {...setting("in-app-notifications")}
-          description={
-            <T>
-              Show a toast when another thread finishes, fails, or needs input or approval while
-              this app has focus.
-            </T>
+          {...setting("slow-request-warning-threshold")}
+          description={uebersetzen(
+            "Seconds before showing a slow-request warning. Set to 0 to disable.",
+          )}
+          resetAction={
+            settings.slowRequestWarningThresholdSeconds !==
+            DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds ? (
+              <SettingResetButton
+                ariaLabel={uebersetzen("Reset slow request warning threshold to default")}
+                onClick={() =>
+                  updateSettings({
+                    slowRequestWarningThresholdSeconds:
+                      DEFAULT_UNIFIED_SETTINGS.slowRequestWarningThresholdSeconds,
+                  })
+                }
+              />
+            ) : null
           }
+          control={
+            <DraftInput
+              size="sm"
+              type="number"
+              min={0}
+              max={MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS}
+              step={1}
+              className="w-full sm:w-24"
+              value={String(settings.slowRequestWarningThresholdSeconds)}
+              onCommit={(value) => {
+                const seconds = Number(value);
+                if (
+                  value.trim() !== "" &&
+                  Number.isInteger(seconds) &&
+                  seconds >= 0 &&
+                  seconds <= MAX_SLOW_REQUEST_WARNING_THRESHOLD_SECONDS
+                ) {
+                  updateSettings({ slowRequestWarningThresholdSeconds: seconds });
+                }
+              }}
+              aria-label={uebersetzen("Slow request warning threshold (seconds)")}
+            />
+          }
+        />
+        <SettingsRow
+          {...setting("in-app-notifications")}
+          description={uebersetzen(
+            "Show a toast when another thread finishes, fails, or needs input or approval while this app has focus.",
+          )}
           control={
             <Switch
               checked={settings.inAppNotificationsEnabled}
@@ -955,13 +1018,36 @@ export function GeneralSettingsPanel() {
           }
         />
         <SettingsRow
-          {...setting("working-shelf")}
-          description={
-            <T>
-              Fold working and monitoring threads into a Working section. They return to the top of
-              the inbox when they need you. The boring sidebar in Labs has no Working section.
-            </T>
+          serverScoped
+          {...setting("model-capacity-retry-delay")}
+          description={uebersetzen(
+            "Minutes before retrying a model-capacity stop with the same model. Set to 0 to disable. Play resumes immediately.",
+          )}
+          settingKeys={["modelCapacityRetryDelayMinutes"]}
+          control={
+            <DraftInput
+              size="sm"
+              type="number"
+              min={0}
+              step={1}
+              className="w-full sm:w-24"
+              value={String(settings.modelCapacityRetryDelayMinutes)}
+              onCommit={(value) => {
+                const minutes = Number(value);
+                if (value.trim() !== "" && Number.isSafeInteger(minutes) && minutes >= 0) {
+                  updateSettings({ modelCapacityRetryDelayMinutes: minutes });
+                }
+              }}
+              aria-label={uebersetzen("Model capacity retry delay (minutes)")}
+            />
           }
+        />
+
+        <SettingsRow
+          {...setting("working-shelf")}
+          description={uebersetzen(
+            "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The boring sidebar in Labs has no Working section.",
+          )}
           resetAction={
             settings.sidebarWorkingShelfEnabled !==
             DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
