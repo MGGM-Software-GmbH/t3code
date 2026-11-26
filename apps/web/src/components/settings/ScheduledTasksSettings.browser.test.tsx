@@ -252,6 +252,7 @@ function setupModelOptionsTask() {
           }),
         },
         { slug: "plain", name: "Plain model", isCustom: false, capabilities: null },
+        { slug: "gpt-5.5", name: "Bound model", isCustom: false, capabilities: null },
         {
           slug: "toggle",
           name: "Fast toggle model",
@@ -356,6 +357,8 @@ describe("ScheduledTasksSettings", () => {
         }),
       }),
     );
+    const savedSelection = state.upsert.mock.lastCall![1].input.modelSelection;
+    state.tasks = state.tasks.map((entry) => ({ ...entry, modelSelection: savedSelection }));
     await screen.rerender(<ScheduledTasksSettings />);
     await screen.rerender(<ScheduledTasksSettings taskId={task.id} />);
     await page.getByRole("button", { name: /^Low(?: |$)/ }).click();

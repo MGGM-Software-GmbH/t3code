@@ -466,6 +466,10 @@ describe("sidebar thread rename", () => {
 describe("sidebar thread click", () => {
   // regression: #40715 macOS counts quick clicks on different rows, so the next row got detail 2 and was ignored
   it("opens another thread when the click arrives with a double-click count", async () => {
+    using stack = new DisposableStack();
+    const previousSettings = getClientSettings();
+    stack.defer(() => __setClientSettingsForTests(previousSettings));
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, mggmThreadSidebarEnabled: false });
     const activeProject = project("active");
     const threads = [threadShell(activeProject.id, 0), threadShell(activeProject.id, 1)];
     const routeThreadRef: ScopedThreadRef = {

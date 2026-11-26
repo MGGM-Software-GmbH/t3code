@@ -442,7 +442,8 @@ function markdownUrlTransform(href: string) {
   if (parseThreadLinkHref(href)) return href;
   if (isWindowsDrivePathHref(href)) return href;
   if (isLocalEditorFileHref(href)) return href;
-  return rewriteMarkdownFileUriHref(href) ?? safeUrl(href);
+  // Keep the scheme until file-link resolution can distinguish URI escapes from literal host paths.
+  return rewriteMarkdownFileUriHref(href) !== null ? href : safeUrl(href);
 }
 
 const NO_MARKDOWN_EDITORS: ReadonlyArray<EditorId> = [];
