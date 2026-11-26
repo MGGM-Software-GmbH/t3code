@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { act, render } from "../../../test/render";
 import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 
 const state = vi.hoisted(() => ({
@@ -101,6 +102,21 @@ describe("restoring V2 settings", () => {
     await screen.rerender(<MggmSettingsPanel />);
     await expect.element(toggle).toBeEnabled();
     await expect.element(toggle).not.toBeChecked();
+    await toggle.hover();
+    await expect
+      .element(page.getByRole("tooltip"))
+      .toHaveTextContent(
+        "Only use with a trusted agent and login page. Filled credentials can be read by both. Applies to the selected environments.",
+      );
+    await userEvent.keyboard("{Escape}");
+    await userEvent.unhover(toggle);
+    await userEvent.keyboard("{Tab}");
+    await expect.element(toggle).toHaveFocus();
+    await expect.element(page.getByRole("tooltip")).toBeVisible();
+    expect(toggle.element().getAttribute("aria-describedby")).toBe(
+      page.getByRole("tooltip").element().id,
+    );
+    await userEvent.keyboard("{Escape}");
     await toggle.click();
     expect(state.update).toHaveBeenLastCalledWith({ pdSecretsBrowserSignInEnabled: true });
     state.settings = { ...DEFAULT_UNIFIED_SETTINGS, pdSecretsBrowserSignInEnabled: true };

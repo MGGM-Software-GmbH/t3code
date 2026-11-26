@@ -183,7 +183,7 @@ const PreviewActTool = browserTool(
 const PreviewFillCredentialsTool = browserTool(
   Tool.make("preview_fill_credentials", {
     description:
-      "Fill browser login fields from pd-secrets using a credential prefix such as OPS_LOKAL (USERNAME/PASSWORD mappings). Pass the expected origin, e.g. https://ops.mggm.de; it must match the configured PREFIX_BROWSER_ORIGIN. Requires Settings → MGGM → browser sign-in enabled. Optional usernameLocator/passwordLocator disambiguate visible fields. Does not submit. Trust in the agent and login page is required; both can read filled values. Never read or pass credential values yourself. Server browser only; own or unclaimed tab, no human control.",
+      "Fill browser login fields from pd-secrets using a credential prefix such as OPS_LOKAL (USERNAME/PASSWORD mappings). Pass the expected origin, e.g. https://ops.mggm.de; it must match the URL field of that Password Depot entry. Requires Settings → MGGM → browser sign-in enabled. Optional usernameLocator/passwordLocator disambiguate visible fields. Does not submit. Trust in the agent and login page is required; both can read filled values. Never read or pass credential values yourself. Server browser only; own or unclaimed tab, no human control.",
     parameters: PreviewAutomationFillCredentialsInput,
     success: PreviewActionResult,
     failure: PreviewToolFailure,

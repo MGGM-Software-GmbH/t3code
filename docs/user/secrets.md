@@ -61,12 +61,16 @@ Der Zugang benötigt die vorhandenen Zuordnungen `OPS_LOKAL_USERNAME` und
 `OPS_LOKAL_PASSWORD` in `~/.claude/.env`. Weitere Zugangsdialoge oder gespeicherte
 Kennwörter in T3 sind nicht erforderlich.
 
-Zusätzlich bindet `OPS_LOKAL_BROWSER_ORIGIN=https://ops.mggm.de` diesen Zugang
-ausdrücklich an diese Origin. Ohne diesen Eintrag oder bei einer abweichenden
-Origin verweigert der Server den Zugriff, bevor er Zugangsdaten abruft.
-Die Origin enthält nur Protokoll, Host und gegebenenfalls Port, keinen Pfad
-oder abschließenden Schrägstrich. Die beiden Zugangszuordnungen müssen auf
-Benutzername und Kennwort desselben Password-Depot-Eintrags verweisen.
+Die erlaubte Origin wird aus dem URL-Feld desselben Password-Depot-Eintrags
+abgeleitet. Eine dort gespeicherte Login-URL darf einen Pfad enthalten; verglichen
+werden Protokoll, Host und Port. Der Werkzeugparameter `expectedOrigin` enthält
+keinen Pfad und keinen abschließenden Schrägstrich. Ohne nutzbares URL-Feld oder
+bei einer abweichenden Origin verweigert der Server den Abruf von Benutzername
+und Kennwort. Die beiden Zugangszuordnungen müssen auf denselben Depot-Eintrag
+verweisen. Eine zusätzliche Origin-Zuordnung in der Mappingdatei ist nicht nötig.
+`pd-secrets` muss auch dessen URL-Feld im Cache haben. Fehlt es, beim vorhandenen
+`pd-secrets config` die Attribute `username,password,url` auswählen und den Cache
+erneuern. T3 meldet diesen fehlenden Zugriff ausdrücklich.
 Klartextzuordnungen und lediglich geerbte Umgebungsvariablen werden abgewiesen.
 
 Kennwörter werden intern über einen Prozesskanal übertragen und

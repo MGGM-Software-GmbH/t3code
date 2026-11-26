@@ -1,4 +1,5 @@
 import { useGT } from "gt-react";
+import { useId } from "react";
 import { DEFAULT_CLIENT_SETTINGS, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts/settings";
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -20,6 +21,7 @@ import { ScopedSwitch } from "./ScopedSwitch";
 
 export function MggmSettingsPanel() {
   const uebersetzen = useGT();
+  const browserSignInHelpId = useId();
   const searchableSetting = useSearchableSetting();
   const { target, connectedEnvironments } = useSettingsScope();
   const svnAvailable =
@@ -68,10 +70,11 @@ export function MggmSettingsPanel() {
                       updateSettings({ pdSecretsBrowserSignInEnabled: checked })
                     }
                     aria-label={uebersetzen("Allow browser sign-in via pd-secrets")}
+                    aria-describedby={browserSignInHelpId}
                   />
                 }
               />
-              <TooltipPopup>
+              <TooltipPopup id={browserSignInHelpId} role="tooltip">
                 {uebersetzen(
                   "Only use with a trusted agent and login page. Filled credentials can be read by both. Applies to the selected environments.",
                 )}

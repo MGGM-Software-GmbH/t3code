@@ -17,8 +17,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
-import * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as NodeUtil from "node:util";
@@ -59,6 +59,7 @@ interface LoginFlow {
   dispose: Array<() => void>;
 }
 
+const isPdSecretsError = Schema.is(PdSecretsError);
 const decodeBrowserCredentials = Schema.decodeEffect(
   Schema.Struct({
     username: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192)),
@@ -132,21 +133,6 @@ const make = Effect.gen(function* () {
     );
     const usernameReference = mappings[`${credential}_USERNAME`];
     const passwordReference = mappings[`${credential}_PASSWORD`];
-    const allowedOrigin = mappings[`${credential}_BROWSER_ORIGIN`];
-    const validOrigin = yield* Effect.try({
-      try: () => {
-        const origin = new URL(expectedOrigin);
-        return (
-          expectedOrigin === allowedOrigin &&
-          origin.origin === expectedOrigin &&
-          (origin.protocol === "https:" ||
-            (origin.protocol === "http:" &&
-              ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname)))
-        );
-      },
-      catch: () => new PdSecretsError({ reason: "browser_origin_denied" }),
-    }).pipe(Effect.orElseSucceed(() => false));
-    if (!validOrigin) return yield* new PdSecretsError({ reason: "browser_origin_denied" });
     if (
       usernameReference === undefined ||
       passwordReference === undefined ||
@@ -157,11 +143,11 @@ const make = Effect.gen(function* () {
     )
       return yield* new PdSecretsError({ reason: "credential_failed" });
     // Der private Prozesskanal transportiert Werte ohne Datei, Shell oder Ausgabe an den Agenten.
-    const readValue = Effect.fn("PdSecrets.readBrowserValue")(function* (variable: string) {
+    const readValue = Effect.fn("PdSecrets.readBrowserValue")(function* (reference: string) {
       const handle = yield* spawner.spawn(
         ChildProcess.make(
           executable,
-          ["read", variable, "--env-file", path.join(home, ".claude", ".env")],
+          ["read", reference, "--env-file", path.join(home, ".claude", ".env")],
           { cwd: home, env, stdin: "ignore", stdout: "pipe", stderr: "ignore" },
         ),
       );
@@ -171,6 +157,26 @@ const make = Effect.gen(function* () {
       return output.text.replace(/\r?\n$/, "");
     });
     const read = Effect.gen(function* () {
+      const loginUrl = yield* readValue(passwordReference.replace(/\/password$/, "/url")).pipe(
+        Effect.mapError(() => new PdSecretsError({ reason: "browser_url_unavailable" })),
+      );
+      const validOrigin = yield* Effect.try({
+        try: () => {
+          const origin = new URL(expectedOrigin);
+          const configured = new URL(loginUrl);
+          return (
+            configured.username === "" &&
+            configured.password === "" &&
+            configured.origin === expectedOrigin &&
+            origin.origin === expectedOrigin &&
+            (origin.protocol === "https:" ||
+              (origin.protocol === "http:" &&
+                ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname)))
+          );
+        },
+        catch: () => new PdSecretsError({ reason: "browser_origin_denied" }),
+      });
+      if (!validOrigin) return yield* new PdSecretsError({ reason: "browser_origin_denied" });
       const username = yield* readValue(usernameReference);
       const password = yield* readValue(passwordReference);
       const value = yield* decodeBrowserCredentials({ username, password });
@@ -178,7 +184,9 @@ const make = Effect.gen(function* () {
     }).pipe(
       Effect.scoped,
       Effect.timeout("10 seconds"),
-      Effect.mapError(() => new PdSecretsError({ reason: "credential_failed" })),
+      Effect.mapError((error) =>
+        isPdSecretsError(error) ? error : new PdSecretsError({ reason: "credential_failed" }),
+      ),
     );
     return yield* read;
   });
