@@ -43,7 +43,7 @@ const v2TableCount = Effect.gen(function* () {
 });
 
 describe("runMigrations", () => {
-  it.effect.each([73, 74, 75, 77, 78, 79])(
+  it.effect.each([73, 74, 75, 77, 78, 79, 106])(
     "preserves FogBugz data when upgrading migration %s",
     (lastId) =>
       Effect.gen(function* () {
@@ -58,7 +58,7 @@ describe("runMigrations", () => {
             }),
           });
         yield* sql`INSERT INTO fogbugz_connection VALUES (1, 'connection')`;
-        yield* sql`INSERT INTO fogbugz_projects VALUES ('project', 7)`;
+        yield* sql`INSERT INTO fogbugz_projects (project_id, fogbugz_project_id) VALUES ('project', 7)`;
         yield* sql`INSERT INTO fogbugz_threads VALUES ('thread', 'project', 12345, 'Case title')`;
         const data = yield* sql`SELECT * FROM fogbugz_threads`;
         yield* sql`UPDATE effect_sql_migrations SET created_at = '2026-10-30' WHERE migration_id = ${lastId >= 77 ? 77 : 73}`;

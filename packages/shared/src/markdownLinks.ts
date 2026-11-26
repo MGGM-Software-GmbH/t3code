@@ -254,7 +254,9 @@ export function safeDecodeURIComponent(value: string): string {
 function decodeMarkdownPath(value: string, isFileUrl: boolean): string {
   // Bare host paths can contain literal URI escapes, including encoded thread IDs.
   try {
-    return isFileUrl ? decodeURIComponent(value) : decodeURI(value);
+    return decodeURIComponent(
+      isFileUrl ? value : value.replace(/%3a/gi, (escape) => `%25${escape.slice(1)}`),
+    );
   } catch {
     return value;
   }

@@ -7,13 +7,9 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
-  ProviderDriverKind,
-  type ServerProvider,
-  type UnifiedSettings,
   ScheduledTaskId,
   ThreadId,
   type ScheduledTask,
-  type ScheduledTaskUpsertInput,
   type ServerProvider,
   type UnifiedSettings,
 } from "@t3tools/contracts";
@@ -65,6 +61,7 @@ const threadFamilyRead = {
 
 const state = vi.hoisted(() => ({
   connected: true,
+  secondary: false,
   tasksLoaded: true,
   remove: vi.fn(),
   tasks: [] as ScheduledTask[],

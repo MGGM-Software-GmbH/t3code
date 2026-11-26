@@ -23,8 +23,6 @@ import {
 } from "./remoteOpen";
 import { serverEnvironment } from "./state/server";
 import { useEnvironmentScope } from "./state/session";
-import { shellEnvironment } from "./state/shell";
-import { useAtomCommand } from "./state/use-atom-command";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,

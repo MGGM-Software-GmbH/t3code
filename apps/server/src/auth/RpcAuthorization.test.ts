@@ -687,12 +687,19 @@ describe("settings mutation authorization", () => {
         ).toMatchObject({ requiredPermission: AuthOrchestrationOperateScope });
       }
       expect(settingsOnly.handled()).toBe(0);
-      // Settings that carry no script stay with the settings grant alone.
+      // Explicitly disabled automation needs no task grant; inherited settings can enable it.
       yield* settingsOnly.client[WS_METHODS.serverUpdateSettings]({
         patch: {
           defaultAutoPull: true,
           projectScriptOverrides: { [projectId]: null },
-          projectSettingsOverrides: { [projectId]: { defaultAutoPull: true } },
+          projectSettingsOverrides: {
+            [projectId]: {
+              defaultAutoPull: true,
+              fogbugzAutoAnalyze: "never",
+              fogbugzAutoSettle: "never",
+              fogbugzAutoUnsettle: false,
+            },
+          },
         },
       });
       expect(settingsOnly.handled()).toBe(1);

@@ -1,4 +1,5 @@
 import { injectHtmlRenderBootstrap } from "@t3tools/shared/htmlRender";
+import { flushSync } from "react-dom";
 import { HtmlRenderDocument } from "../files/BrowserDocumentFrame";
 import { AudioPreview } from "../files/AudioPreview";
 import { cdp, page, userEvent } from "vite-plus/test/browser";

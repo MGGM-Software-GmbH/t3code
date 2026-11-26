@@ -60,7 +60,7 @@ describe("searchSettings", () => {
     expect(
       searchSettings("FogBugz analysis").some((item) => item.id === "fogbugz-auto-analyze"),
     ).toBe(true);
-    expect(SETTINGS_NAV_GROUPS[0]?.paths.slice(0, 2)).toEqual([
+    expect(settingsNavGroups(false)[0]?.paths.slice(0, 2)).toEqual([
       "/settings/general",
       "/settings/mggm",
     ]);

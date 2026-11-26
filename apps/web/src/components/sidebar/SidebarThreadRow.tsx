@@ -91,7 +91,7 @@ import {
   useEnvironmentScope,
   useEnvironmentScopeDenied,
 } from "../../state/session";
-import { formatRelativeTime, parseTimestampDate } from "../../timestampFormat";
+import { formatRelativeTime } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
@@ -196,6 +196,41 @@ function useThreadTimeTimestamp(thread: SidebarThreadSummary): string {
     ? resolveSidebarThreadActivityTimestamp(thread)
     : (thread.latestUserMessageAt ?? thread.updatedAt);
 }
+function ThreadWorktreeIndicator({
+  thread,
+}: {
+  thread: Pick<SidebarThreadSummary, "id" | "branch" | "worktreePath">;
+}) {
+  const gt = useGT();
+  const worktreePath = thread.worktreePath?.trim();
+  if (!worktreePath) {
+    return null;
+  }
+
+  const displayPath = formatWorktreePathForDisplay(worktreePath);
+  const tooltip = thread.branch
+    ? gt("Worktree: {path} ({branch})", { path: displayPath, branch: thread.branch })
+    : gt("Worktree: {path}", { path: displayPath });
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            role="img"
+            aria-label={tooltip}
+            data-testid={`thread-worktree-${thread.id}`}
+            className="inline-flex items-center justify-center"
+          />
+        }
+      >
+        <FolderGit2Icon className="size-3.5 shrink-0 text-icon-muted" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">{tooltip}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 export function JumpHintBadge(props: { label: string }) {
   return (
     <Kbd aria-hidden data-jump-hint>
@@ -1299,6 +1334,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const diff = latestRunDiff(thread);
   const displayedBranch = thread.branch === "main" ? null : thread.branch;
+  const showsScratchMachine = !checkoutThread.branch && props.environmentLabel !== null;
   // Only the trailing icons would remain, so the row moves them to the title line instead.
   const metaLineEmpty =
     !displayedBranch &&

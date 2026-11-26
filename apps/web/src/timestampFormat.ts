@@ -205,7 +205,11 @@ export function formatGermanTimestamp(
   return `${weekday}${parts.get("day")}.${parts.get("month")}.${parts.get("year")} ${parts.get("hour")}:${parts.get("minute")}`;
 }
 
-export function formatShortTimestamp(isoDate: string, timestampFormat: TimestampFormat): string {
+export function formatShortTimestamp(
+  isoDate: string,
+  timestampFormat: TimestampFormat,
+  locale?: string,
+): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
   return getTimestampFormatter(timestampFormat, false, "UTC", locale).format(wallClockAsUtc(date));

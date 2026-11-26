@@ -2328,9 +2328,8 @@ export const layer: Layer.Layer<
               }),
         ),
       );
-      const deliverySession = carriesPendingContext
-        ? makeDeliverySession(session, startWithHandoffs)
-        : session;
+      // Case instructions are prepared at delivery time, including native follow-ups.
+      const deliverySession = makeDeliverySession(session, startWithHandoffs);
       return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,
