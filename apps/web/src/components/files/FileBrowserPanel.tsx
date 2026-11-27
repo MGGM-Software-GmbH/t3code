@@ -778,22 +778,21 @@ export default function FileBrowserPanel({
                 },
               },
             ].map(({ label, icon: Icon, action }) => (
-              <Tooltip key={label}>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label={label}
-                      disabled={fileActions.disabled}
-                      onClick={action}
-                    />
-                  }
-                >
-                  <Icon className="size-3.5" />
-                </TooltipTrigger>
-                <TooltipPopup>{label}</TooltipPopup>
-              </Tooltip>
+              <SharedTooltipTrigger
+                key={label}
+                label={label}
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={label}
+                    disabled={fileActions.disabled}
+                    onClick={action}
+                  />
+                }
+              >
+                <Icon className="size-3.5" />
+              </SharedTooltipTrigger>
             ))}
           </>
         )}

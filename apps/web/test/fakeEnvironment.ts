@@ -754,11 +754,6 @@ export function answerRpc(method: string, handler: (input: never) => unknown): D
   };
 }
 
-export async function emitTerminalMetadata(event: TerminalMetadataStreamEvent): Promise<void> {
-  if (terminalMetadataSubscriber === null) throw new Error("No terminal metadata subscription");
-  await Effect.runPromise(Queue.offer(terminalMetadataSubscriber, event));
-}
-
 export async function emitThreadShell(thread: FakeThread): Promise<void> {
   sequence += 1;
   const event: OrchestrationV2ShellStreamItem = {
@@ -768,11 +763,6 @@ export async function emitThreadShell(thread: FakeThread): Promise<void> {
     thread: shellOf(thread),
   };
   await Effect.runPromise(Effect.forEach(shellSubscribers, (queue) => Queue.offer(queue, event)));
-}
-
-/** Whether the app holds a live subscription to the thread, so events reach it. */
-export function isThreadSubscribed(threadId: ThreadId): boolean {
-  return threadSubscribers.has(threadId);
 }
 
 /** Delivers one domain event, such as a run or turn-item update, to the thread's subscription. */
@@ -792,17 +782,4 @@ export async function emitThreadEvent(
   );
 }
 
-export function runningRun(threadId: ThreadId, id: string, ordinal: number, userMessageId: string) {
-  return {
-    ...run(threadId, RunId.make(id), ordinal, userMessageId),
-    status: "running" as const,
-    completedAt: null,
-  };
-}
-
-export { userItem, projectionOf };
-
-export async function emitVcsStatus(event: VcsStatusStreamEvent): Promise<void> {
-  if (vcsStatusSubscriber === null) throw new Error("No VCS status subscription");
-  await Effect.runPromise(Queue.offer(vcsStatusSubscriber, event));
-}
+export { projectionOf };

@@ -217,21 +217,19 @@ function ThreadWorktreeIndicator({
     : gt("Worktree: {path}", { path: displayPath });
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            role="img"
-            aria-label={tooltip}
-            data-testid={`thread-worktree-${thread.id}`}
-            className="inline-flex items-center justify-center"
-          />
-        }
-      >
-        <FolderGit2Icon className="size-3.5 shrink-0 text-icon-muted" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{tooltip}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      label={tooltip}
+      render={
+        <span
+          role="img"
+          aria-label={tooltip}
+          data-testid={`thread-worktree-${thread.id}`}
+          className="inline-flex items-center justify-center"
+        />
+      }
+    >
+      <FolderGit2Icon className="size-3.5 shrink-0 text-icon-muted" />
+    </SharedTooltipTrigger>
   );
 }
 
@@ -1509,19 +1507,21 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       render={
                         <button
                           type="button"
-                          aria-label={gt("Dismiss Woke notification")}
+                          aria-label={uebersetzen("Dismiss {wert1} notification", {
+                            wert1: wakeLabel,
+                          })}
                           onClick={handleAcknowledgeWokeClick}
                           className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-warning-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         >
-                          <AlarmClockIcon aria-hidden className="size-3" />
-                          <span role="status">
-                            <T context="thread status: woke from snooze">Woke</T>
-                          </span>
+                          <TopStatusIcon icon={wakeIcon} className="size-3" />
+                          <span role="status">{wakeLabel}</span>
                         </button>
                       }
                       label={
                         <>
-                          <T>Dismiss Woke notification</T>
+                          <T>
+                            Dismiss <Var>{wakeLabel}</Var> notification
+                          </T>
                         </>
                       }
                     />
@@ -1723,20 +1723,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         render={
                           <button
                             type="button"
-                            aria-label={gt("Dismiss Woke notification")}
+                            aria-label={uebersetzen("Dismiss {wert1} notification", {
+                              wert1: wakeLabel,
+                            })}
                             onClick={handleAcknowledgeWokeClick}
                             className={cn(
                               "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                               topStatus.className,
                             )}
                           >
-                            <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
+                            <TopStatusIcon icon={wakeIcon} className="size-4 shrink-0" />
                             <span role="status">{topStatus.label}</span>
                           </button>
                         }
                         label={
                           <>
-                            <T>Dismiss Woke notification</T>
+                            <T>
+                              Dismiss <Var>{wakeLabel}</Var> notification
+                            </T>
                           </>
                         }
                       />
