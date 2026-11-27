@@ -1768,6 +1768,9 @@ describe("Working section beta", () => {
     const off = build({ workingShelfEnabled: false });
     expect(ids(off)).toContain("working");
     expect(off.workingCount).toBe(0);
+    const parent = { ...finishedAt("parent", NOW), hasWorkingChild: true };
+    expect(build({ threads: [parent] }).workingCount).toBe(1);
+    expect(resolveThreadListV2RowStatus(parent)).toBe("working");
   });
 
   it("keeps an inactive row in Working during the shared grace and returns it on expiry", () => {

@@ -345,9 +345,17 @@ export function threadListV2RowAccessibilityLabel(
 /** Row status: a failure the user has already opened settles to ready, like Done. */
 export function resolveThreadListV2RowStatus(
   thread: Parameters<typeof resolveThreadListV2Status>[0] &
-    Pick<EnvironmentThreadShell, "latestRun" | "lastVisitedAt">,
+    Pick<
+      EnvironmentThreadShell,
+      | "latestRun"
+      | "lastVisitedAt"
+      | "hasWorkingChild"
+      | "hasActionableProposedPlan"
+      | "interactionMode"
+    >,
 ): ThreadListV2Status {
   const status = resolveThreadListV2Status(thread);
+  if (status === "ready" && thread.hasWorkingChild && isThreadWorking(thread)) return "working";
   // A runtime failure without a failed run has nothing to date it, so it stays.
   if (status !== "failed" || thread.latestRun?.status !== "failed") return status;
   return hasUnseenRunFailure(thread) ? status : "ready";

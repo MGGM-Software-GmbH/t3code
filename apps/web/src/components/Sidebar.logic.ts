@@ -4,6 +4,7 @@ import type {
 } from "@t3tools/client-runtime/connection";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
+import { isThreadWorking } from "@t3tools/client-runtime/state/thread-inbox";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
@@ -692,6 +693,7 @@ export interface ThreadStatusPill {
 type ThreadStatusInput = Pick<
   SidebarThreadSummary,
   | "hasActionableProposedPlan"
+  | "hasWorkingChild"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
   | "pendingSubagentRequest"
@@ -1038,6 +1040,7 @@ export function resolveSidebarRowStatus(
   thread: ThreadStatusInput & SidebarThreadStatusInput,
 ): SidebarThreadStatus {
   const status = resolveSidebarThreadStatus(thread);
+  if (status === "ready" && thread.hasWorkingChild && isThreadWorking(thread)) return "working";
   // A runtime failure without a failed run has nothing to date it, so it stays.
   if (status !== "failed" || thread.latestRun?.status !== "failed") return status;
   return hasUnseenRunFailure(thread) ? status : "ready";

@@ -1286,6 +1286,12 @@ describe("Working shelf (beta)", () => {
     expect(isSidebarThreadWorking({ ...idle, runtime })).toBe(true);
     expect(isSidebarThreadWorking(waiting)).toBe(true);
     expect(isSidebarThreadWorking(idle)).toBe(false);
+    const parent = { ...idle, hasWorkingChild: true };
+    expect(resolveSidebarRowStatus(parent)).toBe("working");
+    expect(isSidebarThreadWorking({ ...parent, pendingGuestMessageCount: 1 })).toBe(false);
+    expect(isSidebarThreadWorking({ ...parent, runtime: { ...runtime, status: "failed" } })).toBe(
+      false,
+    );
     expect(isSidebarThreadWorking({ ...idle, runtime, hasPendingApprovals: true })).toBe(false);
     expect(isSidebarThreadWorking({ ...idle, runtime, hasPendingUserInput: true })).toBe(false);
     expect(

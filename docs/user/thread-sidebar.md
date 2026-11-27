@@ -33,6 +33,8 @@ Threads don't require a project. Pick **No project** (or press `mod+alt+n` on we
 
 Enabled by default (**Settings → General → Working section**, per device). Unpinned threads that are actively running or waiting on subagents, watched PRs, or monitors collapse into a **Working** section above Active, below pinned threads, and return to the top of Active when they finish, fail, or need input.
 
+A parent stays in **Working** after its own turn ends while a side chat or subagent is still working. If it needs your approval or an answer, it returns to Active.
+
 With **MGGM thread layout** enabled on web and desktop, drag threads to pin or unpin
 them, or to arrange pinned threads. Automatically sorted sections do not accept manual
 reordering or other state changes by drag and drop. Use the thread's actions to snooze,

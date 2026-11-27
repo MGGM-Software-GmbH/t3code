@@ -315,6 +315,62 @@ describe("v2 thread shell lists", () => {
     registry.dispose();
   });
 
+  it.each([
+    { relationshipToParent: "fork", sideChat: true },
+    { relationshipToParent: "subagent", sideChat: false },
+  ] as const)(
+    "keeps the listed parent working while its $relationshipToParent child runs",
+    (lineage) => {
+      const { registry, threads, snapshotAtom } = makeHarness();
+      const root = {
+        ...v2ThreadShell,
+        latestRunId: RunId.make("parent-run"),
+        status: "completed" as const,
+      };
+      const child = {
+        ...root,
+        id: ThreadId.make("child"),
+        latestRunId: RunId.make("child-run"),
+        status: "running" as const,
+        lineage: { ...root.lineage, parentThreadId: root.id, ...lineage },
+      };
+      const fork = {
+        ...child,
+        id: ThreadId.make("independent-fork"),
+        lineage: { ...child.lineage, relationshipToParent: "fork" as const, sideChat: false },
+      };
+      const nested = {
+        ...child,
+        id: ThreadId.make("nested"),
+        lineage: {
+          ...child.lineage,
+          parentThreadId: child.id,
+          relationshipToParent: "subagent" as const,
+          sideChat: false,
+        },
+      };
+      const navigation = threads.navigationThreadShellsAtom;
+      const dispose = registry.mount(navigation);
+      const update = (children: readonly OrchestrationV2ThreadShell[]) => {
+        registry.set(snapshotAtom(environmentId), {
+          ...v2ShellSnapshot,
+          threads: [root, fork, ...children],
+        });
+        const [parent, independent] = registry.get(navigation);
+        expect(independent?.id).toBe(fork.id);
+        return isThreadWorking(parent!);
+      };
+      expect(update([child])).toBe(true);
+      const stopped = { ...child, status: "interrupted" as const };
+      expect(update([stopped, nested])).toBe(true);
+      expect(update([stopped, { ...nested, status: "completed" }])).toBe(false);
+      expect(update([{ ...child, archivedAt: v2Now }])).toBe(false);
+      expect(update([])).toBe(false);
+      dispose();
+      registry.dispose();
+    },
+  );
+
   it("brings a parent back from Working while a nested subagent waits for approval", () => {
     const { registry, threads, snapshotAtom } = makeHarness();
     const child = {
@@ -387,6 +443,7 @@ describe("v2 thread shell lists", () => {
     const task = {
       ...v2ThreadShell,
       id: ThreadId.make("remote-task"),
+      latestRunId: RunId.make("remote-task-run"),
       creationSource: "mcp" as const,
       status: "running" as const,
       activityRunStatus: "running" as const,
@@ -422,6 +479,7 @@ describe("v2 thread shell lists", () => {
         .get(threads.navigationThreadShellsAtom)
         .map((thread) => `${thread.environmentId}/${thread.id}`);
     expect(listed()).toEqual([`${environmentId}/${parent.id}`]);
+    expect(isThreadWorking(registry.get(threads.threadShellAtom(parentRef))!)).toBe(true);
 
     // The helper the task started there asks for approval: the parent here hears of it.
     registry.set(snapshotAtom(remoteEnvironmentId), {
@@ -431,6 +489,7 @@ describe("v2 thread shell lists", () => {
     expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBe(
       "approval",
     );
+    expect(isThreadWorking(registry.get(threads.threadShellAtom(parentRef))!)).toBe(false);
     expect(registry.get(inputs).map((thread) => `${thread.environmentId}/${thread.id}`)).toEqual([
       `${remoteEnvironmentId}/${helper.id}`,
     ]);
