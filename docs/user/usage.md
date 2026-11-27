@@ -3,6 +3,7 @@
 Open **Usage** by clicking a weekly limit indicator in the sidebar or composer, from the command
 palette, or by pressing `mod+u` on web and desktop when the terminal is not focused. Press it
 again to close Usage. Customize **Usage: Toggle** in **Settings → Keybindings**.
+Track token usage, cache hit rates, estimated API-equivalent costs, and pooled subscription quotas across all connected environments.
 
 - **Open Usage**: Click **Usage** in the sidebar, press `mod+u` (web/desktop outside terminals), or pick **Usage** on mobile.
 - **Quick shortcuts** (web/desktop on Usage): `C` (Cost), `T` (Tokens), `L` (Limits), `mod+Shift+1/2/3/4` (24h / 7d / 30d / 90d), `Esc` (back).
@@ -33,26 +34,6 @@ Usage aggregates history across Codex, Claude Code, Grok Build, OpenCode, Antigr
 
 **Usage → Limits** pools subscription quotas per provider across connected environments and hubs (deduplicating the same account signed in on multiple machines).
 
-## Track subscription limits
-
-**Usage → Limits** pools every subscription account it can see per provider, so with several Codex
-or Claude accounts across your enabled environments and hubs you read one number per window rather than a
-list. Each window card shows how much of the pool is left and a bar with one segment per account,
-kept in the same column across windows. Accounts are ordered by their next 5-hour refill, soonest
-first. For an account with no weekly quota left, this is when its session becomes usable again.
-The first available window is used when no account reports a 5-hour limit. A gap means the
-account does not report that window. When the provider reports reset times, the card also says
-when the next reset lands and how much it hands back. The hatched
-part of a segment is what that reset restores. Tap a segment or account row for the account's plan,
-where it is signed in, and its reset time. On web, you can hover too. Codex and Claude accounts
-with banked reset credits show a ticket count and the **Use reset** action in the account details.
-Claude resets are not available when the server runs on macOS, where Claude keeps its login in the
-Keychain. On narrow screens, numbered rows below
-the bar show each account's quota, countdown, and credits. Tap a row to open its details.
-
-The same account signed in on more than one environment, or reported by a hub as well, counts once.
-Filter with the environment dropdown to see what a single machine has.
-
 For Codex CLI accounts, **Settings → MGGM → Redeem expiring banked resets** is enabled by default.
 The server checks every minute and attempts to redeem credits during their last hour before expiry.
 In the model picker, **Auto-redeem at 0%** can also redeem a credit when an account's overall weekly
@@ -61,16 +42,10 @@ the selected environment and work with the picker closed while the server is run
 unavailable limits do not trigger a reset. Hub accounts and managed ChatGPT sign-ins are excluded.
 Codex decides whether there is usage to reset; failed attempts are logged without replacing a thread.
 
-When a Claude or Codex account has no overall weekly quota left, its pooled session contribution
-shows 0% left. The next refill depends on both reset times: an exhausted session must also reset,
-and a partly spent session may only regain its unused portion when the week resets. Missing or
-stale reset times have no refill estimate; refresh Limits for a new reading. Claude's
-model-specific weekly allowances keep their reported values.
-
 The weekly indicators in the sidebar and next to the composer's access selector show the remaining
 seven-day allowance across accounts and for the selected account. Antigravity does not report
 subscription limits over ACP, so T3 does not read its limits or renew its login for quota checks.
-Its locally recorded token history remains available. Clicking any weekly limit indicator opens **Usage → Limits** directly, replacing a
+Clicking any weekly limit indicator opens **Usage → Limits** directly, replacing a
 separate Usage button under the thread list. The combined percentage weights
 Codex accounts by their included plan allowance: Plus and Business Standard (formerly Team) count
 as 1, Pro 100 and Business Premium as 10, Pro 200 as 20, and Pro 500 as 50. These are allowance
@@ -104,42 +79,15 @@ show the forecast's original timestamp and time since the last reported addition
 less than eight hours old are highlighted in green. Both usage indicators show local timestamps
 with German weekdays and numeric dates. Failed requests and snapshots already stale on retrieval show `?`.
 
-Opening Limits checks the selected connected environments automatically. Each client waits at
-least five minutes between automatic checks of an environment, including after a failed check.
-If a window still looks stale, refresh Limits to re-check every provider and hub.
-
-Pick `/usage-limits` from the composer's command menu, or send it as a message, to check the
-current model's limits without leaving the conversation. The result opens above the composer and
-closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
-anything. The command is offered only for providers that appear under **Usage → Limits**.
-
-To keep them in view on web and desktop, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
-The bottom of the thread details card then shows how much is left in each limit window of the
-current provider account. Some windows, such as a weekly Opus limit, count only one model. Hover a
-row to see when it resets and your pace. Turn on **Context window** to also show the thread's
-context use against the model's limit. A tick on the bar marks where the provider compacts
-automatically, when it reports that point.
-
-OpenCode Go reports its session, weekly, and monthly allowance when OpenCode runs locally in
-the environment. T3 cannot report limits for external OpenCode servers because their credentials
-belong to the remote server. Limits need an OpenCode Go API key, or an OpenCode Console connected
-in OpenCode with an API key. A Console browser sign-in alone does not report them. You can also add
-your Go API key as `OPENCODE_API_KEY` in the OpenCode instance's **Environment variables**, then
-refresh provider status. Cursor reports
-its monthly allowance, including separate Auto and API usage, for `CURSOR_AUTH_TOKEN` when it is set,
-otherwise for the account you signed in with in T3 or set as `CURSOR_API_KEY`.
-Sign-in and API keys report limits only with Cursor's default API endpoint. If you configure a custom
-Cursor endpoint, use an explicit `CURSOR_AUTH_TOKEN` for limits.
-
-Grok reports the remaining subscription allowance and reset time for its current billing period
-after signing in with `grok login`. Explicit `XAI_API_KEY` connections and custom authentication
-or endpoint configurations do not report subscription limits.
-
-Muse Code reports its session and weekly windows and its tier once the Muse CLI has run in a thread.
-Until then it shows no limits. Readings are not kept across a server restart.
-
-API-key accounts may not report subscription limits. This also applies to Claude connections
-using a proxy through `ANTHROPIC_AUTH_TOKEN`.
+- **In chat**: Run `/usage-limits` in the composer to view the current model's snapshot without running the agent, or enable **Settings → Appearance → Thread details → Usage limits** (web/desktop).
+- **Reset credits**: Click an account segment/row to inspect plan details and redeem banked Codex/Claude reset credits via **Use reset** (Claude resets unavailable on macOS Keychain logins).
+- **Provider notes**:
+  - **OpenCode**: OpenCode 2 servers with usage reporting show Go allowances and Console budgets for the connected workspace. Local servers can also report Go usage from a Go API key (`OPENCODE_API_KEY`).
+  - **Cursor**: Reports monthly Auto + API quotas via `CURSOR_AUTH_TOKEN` or default-endpoint sign-in/`CURSOR_API_KEY`.
+  - **Grok**: Reports billing-period quotas for `grok login` (not `XAI_API_KEY`).
+  - **Muse Code**: Reports session/weekly limits after running in a thread (not persisted across restarts).
+  - Pure API-key accounts generally do not report subscription limits.
+- **Mobile widget**: Add the **Subscription usage** widget on iOS or Android to monitor Codex and Claude quotas from your home screen.
 
 ## Start a fresh Codex week automatically
 

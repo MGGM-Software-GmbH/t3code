@@ -95,6 +95,8 @@ script on that environment; repeating sign-in is not needed to use its cached se
 
 The following commands install upstream releases.
 
+Install the `t3` command to `~/.local/bin`:
+
 ```bash
 # macOS / Linux
 curl -fsSL https://t3.codes/install.sh | sh
