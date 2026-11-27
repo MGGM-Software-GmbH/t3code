@@ -23,6 +23,7 @@ import * as ProviderSessions from "./ProviderSessionManager.ts";
 import * as ProviderTurnControl from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunFinalization from "./RunFinalizationService.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
 import * as RuntimeRequests from "./RuntimeRequestService.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as ThreadTitles from "./ThreadTitleRegenerationService.ts";
@@ -80,6 +81,7 @@ const makeWorker = (
     ),
   );
   const finalization = RunFinalization.layer.pipe(
+    Layer.provide(Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({ finishTurn: () => Effect.void })),
     Layer.provide(
       Layer.mergeAll(
         projections,

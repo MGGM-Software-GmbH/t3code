@@ -24,7 +24,7 @@ import {
 } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render, type Screen } from "../../../test/render";
@@ -126,6 +126,19 @@ vi.mock(import("./ProjectActionsSettings"), async (original) => ({
   ...(await original()),
   ProjectActionsSettings: (() => null) as never,
 }));
+vi.mock(import("./FogBugzProjectSettings"), () => ({
+  FogBugzProjectSettings: ({ environmentId, projectId }) => (
+    <output aria-label="FogBugz mapping target">
+      {environmentId}:{projectId}
+    </output>
+  ),
+}));
+vi.mock(import("./FogBugzAutomationSettings"), () => ({
+  FogBugzAutomationSettings: () => <></>,
+}));
+vi.mock(import("./FogBugzCaseGitSettings"), () => ({
+  FogBugzCaseGitSettings: () => <></>,
+}));
 
 vi.mock(import("../files/projectFilesQueryState"), async (original) => ({
   ...(await original()),
@@ -179,6 +192,10 @@ function deferred<T>() {
 }
 
 function setup() {
+  const initialDrafts = useComposerDraftStore.getState();
+  onTestFinished(() => {
+    useComposerDraftStore.setState(initialDrafts, true);
+  });
   vi.clearAllMocks();
   state.sessions.clear();
   for (const id of [primaryId, remoteId])
@@ -654,7 +671,9 @@ describe("project settings scope", () => {
   it("offers every environment while no project is selected", async () => {
     setup();
     state.projects = state.projects.filter((project) => project.environmentId === primaryId);
-    await using _screen = await mountSettings({});
+    await using screen = await mountSettings({});
+
+    expect(screen.container.querySelector('[aria-label="FogBugz mapping target"]')).toBeNull();
 
     await userEvent.click(environmentMenu());
     await expect.element(primaryOption()).toBeVisible();
@@ -691,7 +710,21 @@ describe("project settings scope", () => {
   it("offers only the selected project's checkout environments", async () => {
     setup();
     state.projects = state.projects.filter((project) => project.environmentId === primaryId);
-    await using _screen = await mountSettings({ project: projectKey() });
+    const selectedProject = projectKey();
+    state.projects.push({
+      ...state.projects[0]!,
+      id: ProjectId.make("unrelated-project"),
+      title: "Unrelated project",
+      workspaceRoot: "/work/unrelated",
+      repositoryIdentity: null,
+    });
+    await using screen = await mountSettings({ project: selectedProject });
+
+    expect(
+      [...screen.container.querySelectorAll('[aria-label="FogBugz mapping target"]')].map(
+        (element) => element.textContent,
+      ),
+    ).toEqual(["primary:project-primary"]);
 
     await expect.element(page.getByRole("textbox", { name: "Project name" })).toBeVisible();
     await userEvent.click(environmentMenu());

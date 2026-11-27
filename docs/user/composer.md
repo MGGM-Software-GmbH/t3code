@@ -32,7 +32,22 @@ See [images and videos](#images-and-videos-in-messages) for previewing and savin
 
 ## Send while the agent is working
 
-Choose your default follow-up behavior in **Settings → Chat → Follow-up behavior** (per client):
+On web and desktop, choose **Settings → Chat → Follow-up behavior** to queue
+new messages for a later turn or steer the running turn immediately. The setting
+applies to this client; already queued messages keep their place. Queued messages
+are saved on the server and can be edited or removed before they send.
+When Enter sends, `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses
+the opposite action: it steers when your default is Queue and queues when your
+default is Steer.
+A slash command such as `/compact` or `/context` waits for the current turn to
+finish, because a command steered into a turn would replace the agent's task.
+Sending a queued command now moves it to the front of the queue. [Goal](#goals)
+commands are the exception: some can stop the current turn.
+If your **Send shortcut** requires `Cmd+Enter` or `Ctrl+Enter`, that shortcut uses
+your default follow-up behavior; add **Shift** to use the opposite action. This
+applies only to multiline messages when you choose the multiline send option.
+In a touch browser, long-press the Steer or Queue button to send with the opposite action.
+Releasing after the long press does not send the message again.
 
 - **Queue**: Holds the message on the server for the next turn.
 - **Steer**: Injects the message into the running turn (when supported by the agent).
@@ -122,7 +137,26 @@ Queued messages appear at the end of the thread (web/desktop) or above the compo
 - **Edit**: Opens the message and its attachments in the composer without losing your existing draft.
 - **Remove**: Cancels the queued message.
 
-If you stop the agent or the server restarts, queued messages pause in order. Click **Resume** in an empty composer (or send a new message) to continue. When the provider supports native continuation, **Resume** continues without sending a new prompt.
+On web and desktop, hover over a queued message and drag the grip on its left.
+Drop it where the line marks the new position. You can also tab to the grip and
+press the up or down arrow key to move the message one place.
+
+If you stop the agent or the server restarts, queued messages keep their order and are held.
+Press **Resume** in an empty composer to continue. For stopped runs and usage limits,
+this uses the provider's native continuation without sending a new prompt. If the provider
+does not support it, send a message to continue instead. If the original request never reached
+the provider, Resume sends that request again.
+
+Sending a new message also resumes the queue, unless it steers a turn that is already
+running. You can edit or remove held messages without starting them.
+
+The pencil on a queued message opens it in the composer for editing. The original message
+stays in the queue until you save, and it is highlighted while you edit. The message's
+attachments appear above the text with a remove control, and new images can be added the usual way.
+The checkmark saves the queued message in place; **Cancel** next to it leaves it unchanged. Whatever
+you had typed in the composer before starting the edit is restored afterwards. If the queued
+message starts or is removed while you are editing, the edit ends: changed content moves into the
+composer when it is empty, and is discarded otherwise.
 
 ## Commands and skills
 

@@ -49,7 +49,9 @@ import {
   ChevronRight,
   FileDiff,
   Files,
+  FolderGit2,
   Globe2,
+  Hash,
   MessagesSquare,
   Plus,
   TerminalSquare,
@@ -157,6 +159,9 @@ export interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
+  onAddFogBugzCases?: () => void;
+  onAddFogBugzCaseGit?: () => void;
+  fogbugzCaseGitAvailable?: boolean;
   onAddDevice: () => void;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
@@ -166,6 +171,7 @@ export interface RightPanelTabsProps {
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
+  fogbugzCasesAvailable?: boolean;
   deviceAvailable: boolean;
   sideChatAvailable?: boolean;
   /** Overrides the default reason while side chats are available but cannot start. */
@@ -329,7 +335,7 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-function RightPanelEmptyState(props: {
+export function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
@@ -338,6 +344,9 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
+  onAddFogBugzCases?: (() => void) | undefined;
+  onAddFogBugzCaseGit?: (() => void) | undefined;
+  fogbugzCaseGitAvailable?: boolean | undefined;
   onAddDevice: () => void;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
@@ -347,10 +356,12 @@ function RightPanelEmptyState(props: {
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
+  fogbugzCasesAvailable?: boolean | undefined;
   deviceAvailable: boolean;
   sideChatAvailable: boolean;
   sideChatDisabledReason: string | null;
 }) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const messages = useMessages();
   const [highlight, setHighlight] = useState(-1);
@@ -413,6 +424,34 @@ function RightPanelEmptyState(props: {
       disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.device),
       onClick: props.onAddDevice,
     },
+    ...(props.onAddFogBugzCaseGit
+      ? [
+          {
+            label: uebersetzen("FogBugz-Case-Git"),
+            icon: FolderGit2,
+            shortcut: "G",
+            available: props.fogbugzCaseGitAvailable === true,
+            disabledReason: uebersetzen(
+              "Link this thread to a FogBugz case and allow source control access to open its Git files.",
+            ),
+            onClick: props.onAddFogBugzCaseGit,
+          },
+        ]
+      : []),
+    ...(props.onAddFogBugzCases
+      ? [
+          {
+            label: uebersetzen("Fogbugz-Cases"),
+            icon: Hash,
+            shortcut: "C",
+            available: props.fogbugzCasesAvailable === true,
+            disabledReason: uebersetzen(
+              "Browsing cases requires a saved thread in a project with a FogBugz mapping.",
+            ),
+            onClick: props.onAddFogBugzCases,
+          },
+        ]
+      : []),
     ...(props.onAddSideChat
       ? [
           {
@@ -616,6 +655,10 @@ function surfaceTitle(
     case "issue":
       // A git host numbers its issues; a tracker with keys of its own, such as Linear, names them.
       return /^\d+$/.test(surface.key) ? `#${surface.key}` : surface.key;
+    case "fogbugz-cases":
+      return resolve(msg("Fogbugz-Cases"));
+    case "fogbugz-case-git":
+      return resolve(msg("FogBugz-Case-Git"));
     case "device":
       return surface.title ?? surface.target?.name ?? resolve(msg("Device"));
     case "thread":
@@ -716,6 +759,10 @@ function SurfaceIcon({
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "issue":
       return <IssueSurfaceIcon surface={surface} environmentId={environmentId} />;
+    case "fogbugz-cases":
+      return <Hash className="size-3 shrink-0" />;
+    case "fogbugz-case-git":
+      return <FolderGit2 className="size-3 shrink-0" />;
     case "thread":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "linked-thread":
@@ -1112,6 +1159,7 @@ function RightPanelTab(
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const messages = useMessages();
   const focusedSurface = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
@@ -1213,6 +1261,34 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: messages(SURFACE_DISABLED_REASONS.device),
       onClick: props.onAddDevice,
     },
+    ...(props.onAddFogBugzCaseGit
+      ? [
+          {
+            label: uebersetzen("FogBugz-Case-Git"),
+            icon: FolderGit2,
+            shortcut: "G",
+            available: props.fogbugzCaseGitAvailable === true,
+            disabledReason: uebersetzen(
+              "Link this thread to a FogBugz case and allow source control access to open its Git files.",
+            ),
+            onClick: props.onAddFogBugzCaseGit,
+          },
+        ]
+      : []),
+    ...(props.onAddFogBugzCases
+      ? [
+          {
+            label: uebersetzen("Fogbugz-Cases"),
+            icon: Hash,
+            shortcut: "C",
+            available: props.fogbugzCasesAvailable === true,
+            disabledReason: uebersetzen(
+              "Browsing cases requires a saved thread in a project with a FogBugz mapping.",
+            ),
+            onClick: props.onAddFogBugzCases,
+          },
+        ]
+      : []),
     ...(props.onAddSideChat
       ? [
           {
@@ -1686,6 +1762,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
             onAddPullRequests={props.onAddPullRequests}
+            onAddFogBugzCases={props.onAddFogBugzCases}
+            onAddFogBugzCaseGit={props.onAddFogBugzCaseGit}
+            fogbugzCaseGitAvailable={props.fogbugzCaseGitAvailable}
             onAddDevice={props.onAddDevice}
             onAddSideChat={props.onAddSideChat}
             browserAvailable={props.browserAvailable}
@@ -1694,6 +1773,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
             pullRequestsAvailable={props.pullRequestsAvailable}
+            fogbugzCasesAvailable={props.fogbugzCasesAvailable}
             deviceAvailable={props.deviceAvailable}
             sideChatAvailable={props.sideChatAvailable === true}
             sideChatDisabledReason={props.sideChatDisabledReason ?? null}

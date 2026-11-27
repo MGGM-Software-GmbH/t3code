@@ -300,8 +300,16 @@ it.effect.each([
     shown: true,
     message: new PreviewBrowserRootError().message,
   },
-])("preserves server browser failure guidance ($clientId)", ({ clientId, shown, message }) =>
+  ...["PreviewCredentialOriginError", "PreviewCredentialFillError"].map((tag) => ({
+    clientId: SERVER_BROWSER_AUTOMATION_CLIENT_ID,
+    shown: false,
+    message: "synthetic-password in a discarded remote error",
+    tag,
+  })),
+])("preserves server browser failure guidance ($clientId)", (row) =>
   Effect.gen(function* () {
+    const { clientId, shown, message } = row;
+    const tag = "tag" in row ? row.tag : "PreviewAutomationExecutionError";
     const broker = yield* makeBroker;
     const requests = requestsFrom(yield* broker.connect(makeHost({ clientId })));
     yield* Stream.runForEach(requests, (request) =>
@@ -311,7 +319,7 @@ it.effect.each([
         requestId: request.requestId,
         ok: false,
         error: {
-          _tag: "PreviewAutomationExecutionError",
+          _tag: tag,
           message,
         },
       }),
@@ -320,7 +328,7 @@ it.effect.each([
     const error = yield* broker
       .invoke<void>({ scope, operation: "open", input: {} })
       .pipe(Effect.flip);
-    expect(error._tag).toBe("PreviewAutomationExecutionError");
+    expect(error._tag).toBe(tag);
     expect(error.message.includes(message)).toBe(shown);
   }),
 );

@@ -4922,7 +4922,6 @@
   "d71048f4fb9cf44a": "Aguardando sincronização",
   "0a260c7744afd0be": "Aguardando",
   "ad78fae7d373cf21": "Trabalhando",
-  "be451f475c514b37": "Dispensar notificação de despertar",
   "54ccc22be28a985d": "Personalizado…",
   "bdd8716a3d6f1a53": "Organizar threads…",
   "e4c22e8809f2f431": "Desafixar",
@@ -5700,5 +5699,10 @@
   "99451a5d2d40440f": "Retirada por {by}.",
   "3ee30a50b70fffab": "Retirada por {by}: {reason}",
   "201490988858b511": "retirada por {by}",
-  "46d614fa7b4bf1e5": "Execuções de workflow"
+  "46d614fa7b4bf1e5": "Execuções de workflow",
+  "79f9ab280094d5eb": "Monthly weekdays are not available here",
+  "1f41516b2ca0eb5b": "Update this environment to schedule a weekday of each month.",
+  "af115fe96798d68a": "Week of month",
+  "ee6590d81a6db8dd": "{wert1} of every month",
+  "162ce6c96258a8b8": "Dismiss {wert1} notification"
 }

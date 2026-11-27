@@ -51,6 +51,7 @@ export const PREVIEW_AUTOMATION_SERVER_OPERATIONS = [
   "hover",
   "select",
   "drag",
+  "fillCredentials",
 ] as const;
 export const PreviewAutomationOperation = Schema.Literals(PREVIEW_AUTOMATION_SERVER_OPERATIONS);
 export type PreviewAutomationOperation = typeof PreviewAutomationOperation.Type;
@@ -401,6 +402,17 @@ export const PreviewAutomationTypeInput = Schema.Struct({
   ),
 );
 export type PreviewAutomationTypeInput = typeof PreviewAutomationTypeInput.Type;
+
+export const PreviewAutomationFillCredentialsInput = Schema.Struct({
+  ...PreviewAutomationTabTargetFields,
+  credential: Schema.String.check(Schema.isPattern(/^[A-Z][A-Z0-9_]{0,95}$/)),
+  expectedOrigin: BoundedUrl,
+  usernameLocator: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(4096))),
+  passwordLocator: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(4096))),
+  timeoutMs: OptionalTimeoutMs,
+});
+export type PreviewAutomationFillCredentialsInput =
+  typeof PreviewAutomationFillCredentialsInput.Type;
 
 export const PreviewAutomationPressInput = Schema.Struct({
   ...PreviewAutomationTabTargetFields,
@@ -1001,7 +1013,27 @@ export class PreviewAutomationRecordingDeadlineExpiredError extends Schema.Tagge
   }
 }
 
+export class PreviewCredentialOriginError extends Schema.TaggedError<PreviewCredentialOriginError>()(
+  "PreviewCredentialOriginError",
+  PreviewAutomationRequestErrorFields,
+) {
+  override get message(): string {
+    return "The browser is not at the expected secure login origin.";
+  }
+}
+
+export class PreviewCredentialFillError extends Schema.TaggedError<PreviewCredentialFillError>()(
+  "PreviewCredentialFillError",
+  PreviewAutomationRequestErrorFields,
+) {
+  override get message(): string {
+    return "Could not fill unique visible login fields. Verify the locators, frame, and origin.";
+  }
+}
+
 export const PreviewAutomationError = Schema.Union([
+  PreviewCredentialOriginError,
+  PreviewCredentialFillError,
   PreviewAutomationRecordingTransferError,
   PreviewAutomationRecordingDesktopUpdateRequiredError,
   PreviewAutomationRecordingTooLargeError,

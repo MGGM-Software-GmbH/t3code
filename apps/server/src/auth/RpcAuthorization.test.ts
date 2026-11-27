@@ -2,6 +2,7 @@ import {
   AuthEnvironmentMaintainScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
+  AuthFilesystemWriteScope,
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
   AuthAccessWriteScope,
@@ -16,6 +17,7 @@ import {
   TurnItemId,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
+  AuthPreviewOperateScope,
   AuthSourceControlWriteScope,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
@@ -59,6 +61,41 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.agentFeedbackAnswerRequest)).toBe(
       AuthOrchestrationOperateScope,
     );
+  });
+
+  it("guards FogBugz credentials separately from case reads and thread mutations", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzManageCaseGit)).toBe(
+      AuthSourceControlWriteScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzMutateCaseFiles)).toBe(
+      AuthFilesystemWriteScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.fogbugzOpenCase)).toBe(AuthPreviewOperateScope);
+    for (const method of [
+      WS_METHODS.fogbugzConnect,
+      WS_METHODS.fogbugzDisconnect,
+      WS_METHODS.fogbugzTest,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthSettingsWriteScope);
+    }
+    for (const method of [
+      WS_METHODS.fogbugzStatus,
+      WS_METHODS.fogbugzProjects,
+      WS_METHODS.fogbugzAreas,
+      WS_METHODS.fogbugzCases,
+      WS_METHODS.fogbugzCaseContext,
+      WS_METHODS.fogbugzThread,
+      WS_METHODS.fogbugzThreadCases,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
+    for (const method of [
+      WS_METHODS.fogbugzLinkProject,
+      WS_METHODS.fogbugzLinkThread,
+      WS_METHODS.fogbugzCreateThread,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+    }
   });
 
   it("keeps triage, which seeds an agent that reads logs and the database, behind operate scope", () => {
@@ -650,12 +687,19 @@ describe("settings mutation authorization", () => {
         ).toMatchObject({ requiredPermission: AuthOrchestrationOperateScope });
       }
       expect(settingsOnly.handled()).toBe(0);
-      // Settings that carry no script stay with the settings grant alone.
+      // Explicitly disabled automation needs no task grant; inherited settings can enable it.
       yield* settingsOnly.client[WS_METHODS.serverUpdateSettings]({
         patch: {
           defaultAutoPull: true,
           projectScriptOverrides: { [projectId]: null },
-          projectSettingsOverrides: { [projectId]: { defaultAutoPull: true } },
+          projectSettingsOverrides: {
+            [projectId]: {
+              defaultAutoPull: true,
+              fogbugzAutoAnalyze: "never",
+              fogbugzAutoSettle: "never",
+              fogbugzAutoUnsettle: false,
+            },
+          },
         },
       });
       expect(settingsOnly.handled()).toBe(1);

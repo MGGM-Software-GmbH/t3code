@@ -1,5 +1,6 @@
 import { PreviewAutomationEvaluateInput } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import * as Redacted from "effect/Redacted";
 import {
   chromium,
   type Browser,
@@ -246,6 +247,228 @@ describe("server browser element refs", () => {
   });
   afterEach(async () => {
     await context.close();
+  });
+
+  it("fills only an unambiguous login on the expected origin without submitting", async () => {
+    await context.route("https://login.test/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: '<form action="/login"><input name="username"><input type="password"><button>Login</button></form><input name="username" hidden>',
+      }),
+    );
+    await page.goto("https://login.test/");
+    const input = { credential: "OPS_LOKAL", expectedOrigin: "https://login.test" };
+    const credentials = Redacted.make({
+      username: "synthetic-user",
+      password: "synthetic-password",
+    });
+    await ServerBrowserPage.fillCredentials(page, input, credentials);
+    await expect(page.locator('input[name="username"]:visible').inputValue()).resolves.toBe(
+      "synthetic-user",
+    );
+    await expect(page.locator('input[type="password"]').inputValue()).resolves.toBe(
+      "synthetic-password",
+    );
+    expect(page.url()).toBe("https://login.test/");
+    await expect(
+      ServerBrowserPage.fillCredentials(
+        page,
+        { ...input, expectedOrigin: "https://other.test" },
+        credentials,
+      ),
+    ).rejects.toMatchObject({ tag: "PreviewCredentialOriginError" });
+    await page
+      .locator("form")
+      .evaluate((form) => form.setAttribute("action", "https://other.test/login"));
+    await expect(ServerBrowserPage.fillCredentials(page, input, credentials)).rejects.toMatchObject(
+      { tag: "PreviewCredentialFillError" },
+    );
+    await page.locator("form").evaluate((form) => form.setAttribute("action", "/login"));
+    await page.evaluate(`(() => {
+      const additional = document.createElement("input");
+      additional.type = "password";
+      document.body.append(additional);
+    })()`);
+    await expect(ServerBrowserPage.fillCredentials(page, input, credentials)).rejects.toMatchObject(
+      { tag: "PreviewCredentialFillError" },
+    );
+    await ServerBrowserPage.fillCredentials(
+      page,
+      { ...input, passwordLocator: 'form input[type="password"]' },
+      credentials,
+    );
+    await page
+      .locator('form input[type="password"]')
+      .evaluate((element) => element.setAttribute("readonly", ""));
+    await expect(
+      ServerBrowserPage.fillCredentials(
+        page,
+        { ...input, passwordLocator: 'form input[type="password"]' },
+        credentials,
+      ),
+    ).rejects.toMatchObject({ tag: "PreviewCredentialFillError" });
+    await page
+      .locator('form input[type="password"]')
+      .evaluate((element) => element.removeAttribute("readonly"));
+    await page.evaluate(`Object.defineProperty(HTMLInputElement.prototype, "value", {
+      set() { throw new Error("synthetic-password"); }
+    })`);
+    const failure = await ServerBrowserPage.fillCredentials(
+      page,
+      { ...input, passwordLocator: 'form input[type="password"]' },
+      credentials,
+    ).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ tag: "PreviewCredentialFillError" });
+    expect(String(failure)).not.toContain("synthetic-password");
+  });
+
+  it("keeps locator failures distinguishable before transferring credentials", async () => {
+    const failure = new Error("Invalid selector syntax");
+    const failing = {
+      url: () => "https://login.test/",
+      locator: () => {
+        throw failure;
+      },
+    } as unknown as Page;
+    await expect(
+      ServerBrowserPage.fillCredentials(
+        failing,
+        { credential: "OPS_LOKAL", expectedOrigin: "https://login.test" },
+        Redacted.make({ username: "u", password: "synthetic-password" }),
+      ),
+    ).rejects.toBe(failure);
+    await expect(
+      ServerBrowserPage.fillCredentials(
+        failing,
+        {
+          credential: "OPS_LOKAL",
+          expectedOrigin: "https://login.test",
+          usernameLocator: "aria-ref=stale",
+        },
+        Redacted.make({ username: "u", password: "synthetic-password" }),
+      ),
+    ).rejects.toMatchObject({
+      tag: "PreviewAutomationInvalidSelectorError",
+      detail: { staleRef: true },
+    });
+    for (const origin of [
+      "http://login.test",
+      "https://login.test/path",
+      "https://login.test?query",
+      "file://",
+      "invalid",
+    ]) {
+      expect(() => ServerBrowserPage.assertCredentialOrigin(failing, origin)).toThrow();
+    }
+  });
+
+  it("fills same-origin frames and refuses cross-origin frames", async () => {
+    await context.route("**/*", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: route.request().url().endsWith("/frame")
+          ? '<form><input name="username"><input type="password"></form>'
+          : '<iframe id="login" src="/frame"></iframe>',
+      }),
+    );
+    await page.goto("https://login.test/");
+    const input = {
+      credential: "OPS_LOKAL",
+      expectedOrigin: "https://login.test",
+      usernameLocator: 'iframe#login >> internal:control=enter-frame >> input[name="username"]',
+      passwordLocator: 'iframe#login >> internal:control=enter-frame >> input[type="password"]',
+    };
+    const credentials = Redacted.make({
+      username: "synthetic-user",
+      password: "synthetic-password",
+    });
+    await ServerBrowserPage.fillCredentials(page, input, credentials);
+    await expect(
+      page.frameLocator("#login").locator('input[type="password"]').inputValue(),
+    ).resolves.toBe("synthetic-password");
+    const navigated = page.waitForEvent(
+      "framenavigated",
+      (frame) => frame.url() === "https://other.test/frame",
+    );
+    await page
+      .locator("#login")
+      .evaluate((element) => element.setAttribute("src", "https://other.test/frame"));
+    await navigated;
+    await page.frameLocator("#login").locator('input[name="username"]').waitFor();
+    await expect(ServerBrowserPage.fillCredentials(page, input, credentials)).rejects.toMatchObject(
+      { tag: "PreviewCredentialOriginError" },
+    );
+    await expect(
+      page.frameLocator("#login").locator('input[type="password"]').inputValue(),
+    ).resolves.toBe("");
+  });
+
+  it("does not transfer credentials after losing control during field lookup", async () => {
+    await context.route("https://login.test/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: '<input name="username"><input type="password">',
+      }),
+    );
+    await page.goto("https://login.test/");
+    let active = true;
+    const frame = page.mainFrame();
+    const evaluate = vi.spyOn(frame, "evaluate");
+    const locator = page.locator.bind(page);
+    const lookups = vi.spyOn(page, "locator").mockImplementation((...args) => {
+      const field = locator(...args);
+      const handle = field.elementHandle.bind(field);
+      vi.spyOn(field, "elementHandle").mockImplementation(async (options) => {
+        const result = await handle(options);
+        active = false;
+        return result;
+      });
+      return field;
+    });
+    const interruption = new Error("Control taken by user");
+    await expect(
+      ServerBrowserPage.fillCredentials(
+        page,
+        {
+          credential: "OPS_LOKAL",
+          expectedOrigin: "https://login.test",
+        },
+        Redacted.make({ username: "synthetic-user", password: "synthetic-password" }),
+        () => {
+          if (!active) throw interruption;
+          return 15_000;
+        },
+      ),
+    ).rejects.toBe(interruption);
+    expect(evaluate).not.toHaveBeenCalled();
+    lookups.mockRestore();
+    await expect(locator('input[type="password"]').inputValue()).resolves.toBe("");
+  });
+
+  it("expires a pending field count without transferring credentials", async () => {
+    vi.useFakeTimers();
+    try {
+      const evaluate = vi.fn();
+      const page = {
+        url: () => "https://login.test/",
+        locator: () => ({ count: () => new Promise<number>(() => {}) }),
+        evaluate,
+      } as unknown as Page;
+      const outcome = ServerBrowserPage.fillCredentials(
+        page,
+        {
+          credential: "OPS_LOKAL",
+          expectedOrigin: "https://login.test",
+          timeoutMs: 100,
+        },
+        Redacted.make({ username: "synthetic-user", password: "synthetic-password" }),
+      ).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await outcome).toMatchObject({ name: "TimeoutError" });
+      expect(evaluate).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   const takeSnapshot = () =>

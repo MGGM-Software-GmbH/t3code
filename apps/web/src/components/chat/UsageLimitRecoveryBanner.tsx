@@ -25,6 +25,7 @@ import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { copyAdminRequest } from "./ThreadErrorBanner";
 
 type RecoveryProps = {
+  capacity?: boolean;
   runId: RunId;
   errorCode: string | null;
   resetAt: string | null;
@@ -117,8 +118,26 @@ export function usageLimitRecoveryBannerItem(
       variant: "warning",
       group: "environment",
       icon: <GaugeIcon />,
-      title: resolve(msg("Usage limit reached")),
-      description: resetDescription,
+      title: props.capacity
+        ? resolve(msg("Model at capacity"))
+        : resolve(msg("Usage limit reached")),
+      description: props.capacity
+        ? props.recovery?.runId === runId && props.recovery.autoResume === false
+          ? resolve(msg("Automatic retry cancelled. Use Play to resume."))
+          : resetAt
+            ? resolve(
+                msg("Retry with the same model {wert1}", {
+                  wert1: formatUpcomingTimestamp(
+                    resetAt,
+                    timestampFormat,
+                    undefined,
+                    undefined,
+                    resolve,
+                  ),
+                }),
+              )
+            : resolve(msg("Use Play to retry with the same model"))
+        : resetDescription,
       actions: recoveryActions,
     };
   }
@@ -149,7 +168,15 @@ export function usageLimitRecoveryBannerItem(
   };
 }
 
-function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: RecoveryProps) {
+function RecoveryActions({
+  runId,
+  resetAt,
+  recovery,
+  snoozedUntil,
+  onChange,
+  capacity,
+}: RecoveryProps) {
+  const uebersetzen = useGT();
   const gt = useGT();
   const [pending, setPending] = useState(false);
 
@@ -201,7 +228,9 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
             ? gt("Cancel auto-resume")
             : resetPassed
               ? gt("Resume now")
-              : gt("Resume at reset")}
+              : capacity
+                ? gt("Schedule retry")
+                : gt("Resume at reset")}
       </InlineButton>
       <InlineButton
         touchTarget="padded"
@@ -210,6 +239,19 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
       >
         {pending ? gt("Saving...") : snoozed ? gt("Wake now") : gt("Snooze until reset")}
       </InlineButton>
+      {!capacity ? (
+        <InlineButton
+          touchTarget="padded"
+          disabled={pending || (!snoozed && resetPassed)}
+          onClick={() => void toggle("snooze")}
+        >
+          {pending
+            ? uebersetzen("Saving...")
+            : snoozed
+              ? uebersetzen("Wake now")
+              : uebersetzen("Snooze until reset")}
+        </InlineButton>
+      ) : null}
     </span>
   );
 }

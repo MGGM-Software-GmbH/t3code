@@ -173,9 +173,9 @@ export const PreviewOpenInput = Schema.Struct({
   threadId: ThreadId,
   url: Schema.optional(Url),
   viewport: Schema.optional(PreviewViewportSetting),
+  colorScheme: Schema.optional(PreviewAppearancePreference),
   profileId: Schema.optional(BrowserProfileId),
   runtime: Schema.optional(PreviewRuntime),
-  colorScheme: Schema.optional(PreviewAppearancePreference),
   zoomFactor: Schema.optional(PreviewZoomFactor),
   reveal: Schema.optional(Schema.Boolean),
 });

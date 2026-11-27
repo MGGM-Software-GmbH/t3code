@@ -1,3 +1,4 @@
+import { editorFailure } from "~/editorFailure";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { contextMenuSourceOf } from "../contextMenuSource";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
@@ -1191,10 +1192,7 @@ function TerminalSessionViewport({
             return;
           }
           const error = squashAtomCommandFailure(result);
-          writeSystemMessage(
-            latestTerminal,
-            thrownErrorMessage(error, m) ?? m(msg("Unable to open path")),
-          );
+          writeSystemMessage(latestTerminal, editorFailure(error));
         })();
       }
 

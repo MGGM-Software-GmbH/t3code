@@ -68,6 +68,11 @@ revocation and ceilings hold, not what a full-scope session can do once issued.
 
 ## Intended, not vulnerabilities
 
+- Die Browserbefüllung mit `pd-secrets` setzt Vertrauen in Agent und Loginseite voraus.
+  Beide können ausgefüllte Werte lesen. Der Umgebungsschalter und die zugangsbezogene
+  Origin-Bindung verhindern eine versehentliche Befüllung anderer Ziele, isolieren die
+  Werte aber nicht gegenüber dem Agenten oder der freigegebenen Seite.
+
 - A full-scope session gives a shell. Leaking its token is serious, but the bug
   is the leak, not the shell. The same applies to a narrow session holding
   `terminal:operate` or `orchestration:operate`: reaching via another route

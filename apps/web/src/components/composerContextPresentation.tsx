@@ -1,5 +1,6 @@
 import ChatMarkdown from "./ChatMarkdown";
 import { isSvgAttachment } from "@t3tools/shared/image";
+import { DiffCommentAnnotation } from "./diffs/DiffCommentAnnotation";
 import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
 import type {
   ChatAttachment,
@@ -412,7 +413,9 @@ function previewAnnotationTooltip(
 }
 
 function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentContext }) {
+  const uebersetzen = useGT();
   const messages = useMessages();
+  const actions = use(ComposerContextActionsContext);
   return (
     <div className="space-y-2 overflow-hidden rounded-lg border border-border/70 bg-background/70 p-3">
       <div className="space-y-1">
@@ -421,8 +424,35 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
           {reviewCommentSectionText(comment.sectionTitle, messages)} ·{" "}
           {reviewCommentRangeText(comment.rangeLabel, messages)}
         </div>
+        {comment.sourceStatus === "removed" || comment.sourceStatus === "unresolved" ? (
+          <p className="text-xs text-muted-foreground">
+            {comment.sourceStatus === "removed"
+              ? uebersetzen("Source removed. This comment retains the last known snapshot.")
+              : uebersetzen(
+                  "Source changed. This comment cannot be assigned to the current lines.",
+                )}
+          </p>
+        ) : null}
       </div>
-      {comment.text.trim() ? <ChatMarkdown text={comment.text.trim()} cwd={undefined} /> : null}
+      {actions.editReviewComment ? (
+        <DiffCommentAnnotation
+          kind="comment"
+          rangeLabel={comment.rangeLabel}
+          text={comment.text}
+          editDraft={comment.editDraft}
+          onCancel={() => {}}
+          onComment={() => {}}
+          onEdit={(text) => actions.editReviewComment?.(comment.id, text)}
+          {...(actions.setReviewCommentEditDraft
+            ? {
+                onEditDraftChange: (text: string | null) =>
+                  actions.setReviewCommentEditDraft?.(comment.id, text),
+              }
+            : {})}
+        />
+      ) : comment.text.trim() ? (
+        <ChatMarkdown text={comment.text.trim()} cwd={undefined} />
+      ) : null}
       {comment.diff.trim() ? (
         <div className="flex h-64 min-h-0 flex-col overflow-hidden rounded-md border border-border">
           <ReadOnlySourcePreview name="review.diff" text={comment.diff} />

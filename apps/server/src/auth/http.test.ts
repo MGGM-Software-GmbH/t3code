@@ -166,6 +166,32 @@ it.effect("sets the selected browser session cookies through the HTTP route", ()
           expect(restrictedCookies).toHaveLength(1);
           expect(restrictedCookies[0]).toMatch(/^t3_session_/);
           expect(restrictedCookies[0]).not.toContain("t3_dev_session_");
+          const cookie = restrictedCookies[0]!.split(";", 1)[0]!;
+          const activity = (headers: Record<string, string>) =>
+            environmentA.handler(
+              postJson("/api/auth/browser-activity", {}, headers),
+              requestContext,
+            );
+          const renewed = await activity({ cookie });
+          expect(renewed.status).toBe(204);
+          expect(renewed.headers.getSetCookie()).toHaveLength(1);
+          expect(renewed.headers.getSetCookie()[0]).toContain("HttpOnly");
+          expect(renewed.headers.get("cache-control")).toBe("no-store");
+          const refreshedCookie = renewed.headers.getSetCookie()[0]!.split(";", 1)[0]!;
+          const session = await environmentA.handler(
+            new Request("http://127.0.0.1/api/auth/session", {
+              headers: { cookie: refreshedCookie },
+            }),
+            requestContext,
+          );
+          expect(await session.json()).toMatchObject({
+            authenticated: true,
+            scopes: ["orchestration:read"],
+          });
+          const untrusted = await activity({ cookie, origin: "https://unrelated.example" });
+          expect(untrusted.status).toBe(401);
+          expect(untrusted.headers.getSetCookie()).toEqual([]);
+          expect((await activity({ cookie: devCookieHeader })).headers.getSetCookie()).toEqual([]);
         }),
       ([environmentA, environmentB]) =>
         Effect.promise(() => Promise.all([environmentA.dispose(), environmentB.dispose()])),

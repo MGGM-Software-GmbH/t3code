@@ -1,3 +1,4 @@
+import { editorFailure } from "~/editorFailure";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { useEnvironmentScope } from "../../state/session";
@@ -1563,10 +1564,7 @@ export function KeybindingsSettingsPanel() {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         title: gt("Unable to open keybindings file"),
-        description:
-          error instanceof Error
-            ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
-            : gt("The keybindings file was not opened."),
+        description: editorFailure(error),
         type: "error",
       });
     })();

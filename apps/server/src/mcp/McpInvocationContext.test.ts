@@ -25,6 +25,18 @@ it.effect("reports other missing capabilities with the neutral error", () => {
   };
 
   return Effect.gen(function* () {
+    for (const enabled of [undefined, false, true]) {
+      for (const thread of [undefined, invocation.thread]) {
+        const visible = yield* Effect.sync(McpInvocationContext.browserCredentialsEnabled).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, {
+            ...invocation,
+            thread,
+            ...(enabled === undefined ? {} : { pdSecretsBrowserSignIn: enabled }),
+          }),
+        );
+        expect(visible).toBe(enabled === true && thread !== undefined);
+      }
+    }
     const error = yield* McpInvocationContext.requireMcpCapability("pull-requests").pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
       Effect.flip,

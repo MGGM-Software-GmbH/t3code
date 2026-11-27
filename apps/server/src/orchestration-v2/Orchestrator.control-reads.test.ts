@@ -547,6 +547,7 @@ it.effect("mark unread retires an expired snooze so a dismissed wake stays dismi
       snoozedAt: null,
       lastSnoozeWakeAt: snoozedUntil,
     });
+    assert.deepEqual((yield* projections.getThreadShell(threadId))?.lastSnoozeWakeAt, snoozedUntil);
   }).pipe(Effect.provide(layerTest)),
 );
 

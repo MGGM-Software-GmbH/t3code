@@ -19,6 +19,7 @@ import {
   PreviewAutomationSnapshotMetadata,
   PreviewAutomationStatus,
   PreviewAutomationTabTargetInput,
+  PreviewAutomationFillCredentialsInput,
   PreviewAutomationWaitForInput,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -179,6 +180,17 @@ const PreviewActTool = browserTool(
   }).annotate(Tool.Title, "Act in preview page"),
 );
 
+const PreviewFillCredentialsTool = browserTool(
+  Tool.make("preview_fill_credentials", {
+    description:
+      "Fill browser login fields from pd-secrets using a credential prefix such as OPS_LOKAL (USERNAME/PASSWORD mappings). Pass the expected origin, e.g. https://ops.mggm.de; it must match the URL field of that Password Depot entry. Requires Settings → MGGM → browser sign-in enabled. Optional usernameLocator/passwordLocator disambiguate visible fields. Does not submit. Trust in the agent and login page is required; both can read filled values. Never read or pass credential values yourself. Server browser only; own or unclaimed tab, no human control.",
+    parameters: PreviewAutomationFillCredentialsInput,
+    success: PreviewActionResult,
+    failure: PreviewToolFailure,
+    dependencies,
+  }).annotate(Tool.Title, "Fill browser credentials via pd-secrets"),
+).annotate(McpSchema.EnabledWhen, McpInvocationContext.browserCredentialsEnabled);
+
 /** Wrap non-objects: MCP requires object structuredContent, and Claude Code rejects invalid results entirely. */
 export const PreviewEvaluateResult = Schema.Struct({
   ...presentationFields,
@@ -239,6 +251,7 @@ export const PreviewToolkit = Toolkit.make(
   PreviewSetAppearanceTool,
   PreviewSnapshotTool,
   PreviewActTool,
+  PreviewFillCredentialsTool,
   PreviewEvaluateTool,
   PreviewWaitForTool,
   PreviewRecordingStartTool,
@@ -253,6 +266,7 @@ export const PreviewStandardToolkit = Toolkit.make(
   PreviewResizeTool,
   PreviewSetAppearanceTool,
   PreviewActTool,
+  PreviewFillCredentialsTool,
   PreviewEvaluateTool,
   PreviewWaitForTool,
   PreviewRecordingStartTool,

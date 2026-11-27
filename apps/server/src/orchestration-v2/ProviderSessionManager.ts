@@ -3587,6 +3587,7 @@ export const layerWithOptions = (
                 return [
                   Option.none<{
                     readonly entry: LiveSessionEntry;
+                    readonly heldProviderThreads: ReadonlyArray<OrchestrationV2ProviderThread>;
                     readonly idleUnloadFibers: ReadonlyArray<Fiber.Fiber<void, never>>;
                   }>(),
                   current,
@@ -3629,6 +3630,9 @@ export const layerWithOptions = (
                 Option.some({
                   entry: updatedEntry,
                   idleUnloadFibers,
+                  heldProviderThreads: [...entry.idleThreadUnloads.values()]
+                    .filter((pending) => pending.threadId === input.threadId)
+                    .map((pending) => pending.providerThread),
                 }),
                 updated,
               ] as const;
@@ -3638,17 +3642,17 @@ export const layerWithOptions = (
                 discard: true,
               });
             }
-            const detached = Option.map(detachResult, (result) => result.entry);
             // Plain detaches preserve credentials held by live shared providers across workspace handoffs.
             if (input.revokeMcpCredential === true) {
               yield* clearMcpSession(input.threadId);
             }
-            if (Option.isNone(detached)) {
+            if (Option.isNone(detachResult)) {
               return;
             }
+            const { entry: detached, heldProviderThreads } = detachResult.value;
             if (
-              detached.value.attachedThreadIds.size === 0 &&
-              !detached.value.supportsMultipleProviderThreads
+              detached.attachedThreadIds.size === 0 &&
+              !detached.supportsMultipleProviderThreads
             ) {
               yield* releaseEntry({
                 providerSessionId: input.providerSessionId,
@@ -3658,8 +3662,17 @@ export const layerWithOptions = (
               });
               return;
             }
-            const unloadThread = detached.value.exposedRuntime.unloadThread;
-            if (detached.value.supportsMultipleProviderThreads && unloadThread !== undefined) {
+            const unloadThread = detached.exposedRuntime.unloadThread;
+            if (detached.supportsMultipleProviderThreads && unloadThread !== undefined) {
+              // A cross-instance switch repoints the row before this detach, so the projection
+              // can miss what this session still holds for the thread.
+              for (const heldProviderThread of heldProviderThreads) {
+                if (
+                  !detachedProviderThreads.some((thread) => thread.id === heldProviderThread.id)
+                ) {
+                  detachedProviderThreads = [...detachedProviderThreads, heldProviderThread];
+                }
+              }
               // The projection includes native children owned by other app threads;
               // lock each owner so an attached child stays loaded and later attaches wait.
               for (const providerThread of detachedProviderThreads) {
@@ -3673,7 +3686,7 @@ export const layerWithOptions = (
                   Effect.gen(function* () {
                     const entry = (yield* Ref.get(sessions)).get(key);
                     if (
-                      entry?.runtime !== detached.value.runtime ||
+                      entry?.runtime !== detached.runtime ||
                       entry.attachedThreadIds.has(ownerThreadId)
                     ) {
                       return;

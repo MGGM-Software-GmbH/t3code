@@ -26,6 +26,7 @@ import {
   CalendarClockIcon,
   ChevronDownIcon,
   Clock3Icon,
+  GripVerticalIcon,
   MessagesSquareIcon,
   PencilIcon,
   XIcon,
@@ -62,6 +63,12 @@ export interface EditQueuedRunRequest {
 
 // A longer queue shows its first messages and a button that shows the rest.
 const QUEUE_VISIBLE_ROWS = 3;
+const QUEUED_RUN_DRAG_TYPE = "application/x-t3code-queued-run";
+
+function queueInsertionIndex(row: HTMLLIElement, position: number, pointerY: number) {
+  const bounds = row.getBoundingClientRect();
+  return pointerY < bounds.top + bounds.height / 2 ? position : position + 1;
+}
 
 export interface QueuedRunsControlHandle {
   steerNext: (repeat: boolean) => boolean;
@@ -110,6 +117,11 @@ export function QueuedRunsControl({
   const promote = useAtomCommand(threadEnvironment.promoteQueuedRun);
   const resume = useAtomCommand(threadEnvironment.resumeThreadQueue);
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
+  const reorder = useAtomCommand(threadEnvironment.reorderQueuedRun);
+  const [drag, setDrag] = useState<{
+    runId: RunId;
+    insertAt: number | null;
+  } | null>(null);
   const [showAll, setShowAll] = useState(false);
   const queueListId = useId();
   const [busyRunId, setBusyRunId] = useState<RunId | null>(null);
@@ -253,6 +265,41 @@ export function QueuedRunsControl({
 
   const collapsible = items.length > QUEUE_VISIBLE_ROWS;
   const visibleItems = collapsible && !showAll ? items.slice(0, QUEUE_VISIBLE_ROWS - 1) : items;
+  const move = async (runId: RunId, insertAt: number) => {
+    const from = queued.findIndex(({ run }) => run.id === runId);
+    if (
+      busyRunId !== null ||
+      from < 0 ||
+      insertAt < 0 ||
+      insertAt > queued.length ||
+      insertAt === from ||
+      insertAt === from + 1
+    )
+      return;
+    setBusyRunId(runId);
+    const result = await reorder({
+      environmentId: props.environmentId,
+      input: { threadId: props.threadId, runId, beforeRunId: queued[insertAt]?.run.id ?? null },
+    });
+    setBusyRunId(null);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: gt("Could not reorder queued message"),
+        description:
+          error instanceof Error ? (thrownErrorMessage(error, m) ?? error.message) : undefined,
+      });
+    }
+  };
+  const draggedIndex = drag === null ? -1 : queued.findIndex(({ run }) => run.id === drag.runId);
+  const markerIndex =
+    drag &&
+    draggedIndex >= 0 &&
+    drag.insertAt !== draggedIndex &&
+    drag.insertAt !== draggedIndex + 1
+      ? drag.insertAt
+      : null;
 
   return (
     <section
@@ -269,7 +316,21 @@ export function QueuedRunsControl({
           count: items.length,
         })}
       </span>
-      <ol className="flex flex-col items-end gap-3" id={queueListId}>
+      <ol
+        className="flex flex-col items-end"
+        id={queueListId}
+        onDragLeave={(event) => {
+          if (
+            drag?.insertAt != null &&
+            !(
+              event.relatedTarget instanceof Node &&
+              event.currentTarget.contains(event.relatedTarget)
+            )
+          ) {
+            setDrag({ ...drag, insertAt: null });
+          }
+        }}
+      >
         {visibleItems.map((item, position) => {
           const previewText = isAttachmentOnlyBootstrapPrompt(item.text)
             ? ""
@@ -282,6 +343,9 @@ export function QueuedRunsControl({
           // The server decides on the agent's text, and a goal command can stop the turn.
           const sentText = { text: item.message?.text ?? item.text, attachments: item.attachments };
           const movesCommandFirst = isSlashCommand(sentText) && parseGoalCommand(sentText) === null;
+          const runId = item.runId;
+          const markerAbove = markerIndex === position && runId !== null;
+          const markerBelow = markerIndex === queued.length && position === queued.length - 1;
           return (
             <li
               key={item.key}
@@ -292,9 +356,79 @@ export function QueuedRunsControl({
               aria-posinset={position + 1}
               aria-setsize={items.length}
               aria-current={isEditing ? "true" : undefined}
-              className="group/queued flex w-full flex-col items-end gap-1"
+              className="group/queued relative flex w-full flex-col items-end gap-1 py-1.5"
+              onDragOver={(event) => {
+                if (
+                  !drag ||
+                  draggedIndex < 0 ||
+                  !event.dataTransfer.types.includes(QUEUED_RUN_DRAG_TYPE)
+                )
+                  return;
+                const insertAt =
+                  runId === null
+                    ? null
+                    : queueInsertionIndex(event.currentTarget, position, event.clientY);
+                if (insertAt !== null) {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }
+                if (drag.insertAt !== insertAt) setDrag({ ...drag, insertAt });
+              }}
+              onDrop={(event) => {
+                if (!drag || event.dataTransfer.getData(QUEUED_RUN_DRAG_TYPE) !== drag.runId)
+                  return;
+                event.preventDefault();
+                setDrag(null);
+                if (runId !== null)
+                  void move(
+                    drag.runId,
+                    queueInsertionIndex(event.currentTarget, position, event.clientY),
+                  );
+              }}
             >
+              {markerAbove || markerBelow ? (
+                <span
+                  aria-hidden
+                  data-queue-insertion=""
+                  className={cn(
+                    "pointer-events-none absolute inset-x-0 h-0.5 rounded bg-primary",
+                    markerAbove ? "top-0" : "bottom-0",
+                  )}
+                />
+              ) : null}
               <QueuedMessage
+                grip={
+                  queued.length > 1 && runId !== null ? (
+                    <button
+                      type="button"
+                      aria-label={gt(
+                        "Reorder queued message {position} (drag or use the up and down arrow keys)",
+                        { position: position + 1 },
+                      )}
+                      aria-keyshortcuts="ArrowUp ArrowDown"
+                      aria-disabled={busyRunId !== null || undefined}
+                      draggable={busyRunId === null}
+                      className="absolute end-full top-1/2 me-1 flex size-6 -translate-y-1/2 cursor-grab items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing group-hover/queued:opacity-100"
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData(QUEUED_RUN_DRAG_TYPE, runId);
+                        event.dataTransfer.effectAllowed = "move";
+                        if (event.currentTarget.parentElement)
+                          event.dataTransfer.setDragImage(event.currentTarget.parentElement, 0, 0);
+                        setShowAll(true);
+                        setDrag({ runId, insertAt: null });
+                      }}
+                      onDragEnd={() => setDrag(null)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                        event.preventDefault();
+                        setShowAll(true);
+                        void move(runId, position + (event.key === "ArrowUp" ? -1 : 2));
+                      }}
+                    >
+                      <GripVerticalIcon aria-hidden className="pointer-events-none size-4" />
+                    </button>
+                  ) : null
+                }
                 environmentId={props.environmentId}
                 message={item.message}
                 previewText={previewText}
@@ -469,6 +603,7 @@ type QueuedRunMessage = NonNullable<ThreadQueueProjection["messages"][number]>;
 
 /** A queued turn wears its sent form's attribution; only the dashed edge and controls differ. */
 function QueuedMessage(props: {
+  readonly grip: ReactNode;
   readonly environmentId: EnvironmentId;
   readonly message: QueuedRunMessage | undefined;
   readonly previewText: string;
@@ -528,7 +663,7 @@ function QueuedMessage(props: {
       {/* Dashed and unfilled: a turn that has not been sent yet. */}
       <div
         className={cn(
-          "flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed text-sm",
+          "relative flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed text-sm",
           props.isEditing
             ? "border-primary/60 text-foreground"
             : attribution === "guest"
@@ -538,6 +673,7 @@ function QueuedMessage(props: {
           fold !== null && expanded && "w-full",
         )}
       >
+        {props.grip}
         {fold ? (
           <FoldedMessageHeader
             icon={fold.icon}

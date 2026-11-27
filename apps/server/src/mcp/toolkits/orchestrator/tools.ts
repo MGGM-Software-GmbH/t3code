@@ -50,6 +50,7 @@ import * as RemoteDelegation from "../../../peer/RemoteDelegation.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
+import { FogBugzService } from "../../../fogbugz/FogBugzService.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
@@ -256,7 +257,7 @@ const ThreadReadTool = Tool.make("t3_thread_read", {
   success: OrchestratorMcpThreadReadResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies,
+  dependencies: [...dependencies, FogBugzService],
 })
   .annotate(Tool.Title, "Read a T3 thread")
   .annotate(Tool.Strict, true)

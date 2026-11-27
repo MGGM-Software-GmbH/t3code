@@ -12,13 +12,13 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
 import * as TestClock from "effect/testing/TestClock";
 
-import WorkflowsMigration from "../persistence/Migrations/110_Workflows.ts";
-import WorkflowSkippedRunsMigration from "../persistence/Migrations/113_WorkflowSkippedRuns.ts";
-import WorkflowRunIndexesMigration from "../persistence/Migrations/114_WorkflowRunIndexes.ts";
-import WorkflowRunTagsMigration from "../persistence/Migrations/115_WorkflowRunTags.ts";
-import WorkflowMailSenderMigration from "../persistence/Migrations/117_WorkflowMailSender.ts";
-import WorkflowPoolsMigration from "../persistence/Migrations/118_WorkflowPools.ts";
-import WorkflowRunSubjectMigration from "../persistence/Migrations/119_WorkflowRunSubject.ts";
+import WorkflowsMigration from "../persistence/Migrations/114_Workflows.ts";
+import WorkflowSkippedRunsMigration from "../persistence/Migrations/117_WorkflowSkippedRuns.ts";
+import WorkflowRunIndexesMigration from "../persistence/Migrations/118_WorkflowRunIndexes.ts";
+import WorkflowRunTagsMigration from "../persistence/Migrations/119_WorkflowRunTags.ts";
+import WorkflowMailSenderMigration from "../persistence/Migrations/121_WorkflowMailSender.ts";
+import WorkflowPoolsMigration from "../persistence/Migrations/122_WorkflowPools.ts";
+import WorkflowRunSubjectMigration from "../persistence/Migrations/123_WorkflowRunSubject.ts";
 import * as MilestoneHub from "../milestones/MilestoneHub.ts";
 import * as WorkflowStore from "./WorkflowStore.ts";
 

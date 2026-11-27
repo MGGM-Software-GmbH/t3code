@@ -325,6 +325,41 @@ export const layer = HttpApiBuilder.group(
         ),
       )
       .handle(
+        "browserActivity",
+        Effect.fn("environment.auth.browserActivity")(function* () {
+          const principal = yield* EnvironmentAuthenticatedPrincipal;
+          if (
+            principal.method !== "browser-session-cookie" ||
+            principal.subject !== SessionStore.PAIRING_LINK_SUBJECT
+          )
+            return;
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const credential = EnvironmentAuth.selectRequestCredential(
+            request,
+            sessions.cookieName,
+            sessions.legacyCookieName,
+          );
+          if (credential?.source !== "cookie" && credential?.source !== "legacy-cookie") return;
+          const renewed = yield* sessions.renewPairedBrowserCookie(credential.token).pipe(
+            Effect.catch((error) =>
+              Effect.gen(function* () {
+                if (SessionStore.isSessionCredentialInvalidError(error)) {
+                  return yield* failEnvironmentAuthInvalid("invalid_credential");
+                }
+                return yield* failEnvironmentInternal("internal_error", error);
+              }),
+            ),
+          );
+          yield* appendSessionCookie(
+            request,
+            sessions.cookieName,
+            renewed.token,
+            renewed.expiresAt,
+          );
+          yield* appendCredentialResponseHeaders;
+        }),
+      )
+      .handle(
         "browserSession",
         Effect.fn("environment.auth.browserSession")(
           function* (args) {

@@ -23,8 +23,12 @@ import {
 } from "./remoteOpen";
 import { serverEnvironment } from "./state/server";
 import { useEnvironmentScope } from "./state/session";
-import { shellEnvironment } from "./state/shell";
-import { useAtomCommand } from "./state/use-atom-command";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import { editorFailure } from "./editorFailure";
+import { useOpenEditorWithFeedback } from "./useOpenEditorWithFeedback";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { toastManager } from "./components/ui/toast";
 import { useAtomValue } from "@effect/atom-react";
@@ -112,7 +116,7 @@ function buildFileContextMenuItems(input: {
 }
 
 export function useFileContextMenu(environmentId: EnvironmentId | null) {
-  const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
+  const openInEditor = useOpenEditorWithFeedback("caller");
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const resolve = useMessages();
 
@@ -187,7 +191,7 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
       environmentId,
       input: { cwd: absolutePath, editor, ...(reveal ? { reveal: true } : {}) },
     });
-    if (result._tag !== "Failure") return;
+    if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
     toastManager.add({
       type: "error",
       title:
@@ -196,7 +200,7 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
           : reveal
             ? resolve(msg("Unable to reveal file"))
             : editorFailureTitle(editor),
-      description: absolutePath,
+      description: editorFailure(squashAtomCommandFailure(result)),
     });
   };
 

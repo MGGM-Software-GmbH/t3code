@@ -2277,7 +2277,6 @@
     " nach der Installation nicht gefunden wird, füge den Ordner, den das Installationsprogramm nennt, zu deinem PATH hinzu."
   ],
   "87b24d00c08f54bb": "Tastenkürzel-Datei kann nicht geöffnet werden",
-  "0ee16208cbfcdbf4": "Unbekannter Fehler beim Öffnen der Datei.",
   "9e20856550715c74": [
     {
       "i": 1,
@@ -2691,7 +2690,6 @@
   "c1a2fad61f86dfe7": "Terminal konnte nicht geleert werden",
   "a05932899932bf3f": "Links können in diesem Browser nicht geöffnet werden.",
   "e0fcb9eb90aa21b2": "Link kann nicht geöffnet werden",
-  "5a916ca92d569ef7": "Pfad kann nicht geöffnet werden",
   "77c351e5a0a29bb8": "libghostty-vt kann nicht initialisiert werden",
   "27955c5552a789d2": "{message}. Schließe das Terminal und öffne es erneut, um es noch einmal zu versuchen.",
   "310d656152b20e71": "Einzeln",
@@ -8410,7 +8408,6 @@
   "988ef9cf99d06084": "Ø {average} %, Spitze {peak} %",
   "1bcd9fcd9866a01d": "Zeitraum des Prozessverlaufs",
   "5602db67733bdfd7": "Zuletzt geprüft: {time}",
-  "b5343daba436ba2a": "Log-Ordner konnte nicht geöffnet werden.",
   "f5680d01df28a62e": "SIGKILL an Prozess {pid} senden? Der Prozess kann das nicht abfangen.",
   "753971ab309059ad": "Signal konnte nicht bestätigt werden",
   "ead636d5ac1ea127": "{signal} konnte nicht gesendet werden.",
@@ -8904,7 +8901,6 @@
   "ccb06bc3210f6432": "Neues Tastenkürzel abbrechen",
   "56d20dc836e152b8": "Neues Tastenkürzel",
   "ac1e3d93bd6ad3d6": "Der Browser kann manche Tastenkürzel zuerst abfangen. Die Desktop-App empfängt alle.",
-  "048a214973e8c818": "Die Tastenkürzel-Datei wurde nicht geöffnet.",
   "ed98d3a2244097dd": "Tastenkürzel konnte nicht gespeichert werden",
   "9d0d7048a404b46a": "Das Tastenkürzel wurde nicht gespeichert.",
   "34aeeaeda3a7d566": "Tastenkürzel konnte nicht entfernt werden",
@@ -10278,10 +10274,8 @@
   "7c0512387c3a42ea": "Stable",
   "3476687eaa175b32": "Nightly",
   "0dde92a0e2d0258a": "Neueste",
-  "cbf6a6bbc17e75e1": "Einen Hinweis anzeigen, wenn ein anderer Thread fertig ist, fehlschlägt oder auf Eingabe oder Genehmigung wartet, während die App aktiv ist.",
   "83ca942c7163904f": "Gleiche Repositorys aus verschiedenen Umgebungen zusammenfassen.",
   "609da998ca13521e": "Reihenfolge der Projekte in der Projektauswahl der Seitenleiste und in der Befehlspalette.",
-  "b4c541137a76b351": "Laufende und überwachende Threads im Bereich „In Arbeit“ bündeln. Sie rücken im Posteingang wieder nach oben, sobald sie dich brauchen. Die schlichte Seitenleiste unter Labs hat keinen Bereich „In Arbeit“.",
   "e815f49e5abedcfd": "Vor dem Loslösen eines Threads aus dem Bereich „Angeheftet“ nachfragen.",
   "41210f99adeeba78": "Einen zweiten Klick auf die Archivieren-Aktion verlangen, bevor ein Thread archiviert wird.",
   "84f3d2cefc8d2a74": "Vor dem Löschen eines Threads samt Chatverlauf nachfragen.",
@@ -12093,50 +12087,46 @@
   "201317aac48d4d9f": "Thread-Suche leeren",
   "bcda2ccaa871dc46": "Neuer Thread im aktuellen Projekt: Shift+Klick ({shortcut})",
   "aa5c379423baace1": "Neuer Thread im aktuellen Projekt: Shift+Klick",
-  "9d9d32b401d2931a": "{count, plural, one {{count} Terminal-Prozess läuft} other {{count} Terminal-Prozesse laufen}}",
-  "ade06f6723949b39": "Fehler aufgetreten",
-  "021fe65858278fe9": "Thread zurückstellen",
-  "e7c18f33bc1326f7": "Wird eingerichtet",
-  "26375cafb52d0503": "Ziel",
-  "ad78fae7d373cf21": "Arbeitet",
-  "0a260c7744afd0be": "Wartet",
-  "32ac331a7b1e7efd": "Genehmigung",
-  "a484e4248b460c95": "Eingabe",
-  "0ab9086d50e83ca7": "Anfrage",
-  "4ad56740ee2f814b": "Limitiert",
-  "37ffec8201f153c1": "Fehlgeschlagen",
-  "984b361806ce8d25": "Aufgeweckt",
-  "c6e8abc00ae470d2": "Fertig",
-  "353b08f4363dbb2c": "Ausstehend",
+  "9d9d32b401d2931a": "{count, plural, one {{count} terminal process running} other {{count} terminal processes running}}",
+  "ade06f6723949b39": "Error occurred",
+  "021fe65858278fe9": "Snooze thread",
+  "e7c18f33bc1326f7": "Setting up",
+  "26375cafb52d0503": "Goal",
+  "ad78fae7d373cf21": "Working",
+  "0a260c7744afd0be": "Waiting",
+  "32ac331a7b1e7efd": "Approval",
+  "a484e4248b460c95": "Input",
+  "0ab9086d50e83ca7": "Request",
+  "4ad56740ee2f814b": "Limited",
+  "37ffec8201f153c1": "Failed",
+  "c6e8abc00ae470d2": "Done",
+  "353b08f4363dbb2c": "Pending",
   "f31a95961de19433": "Issue {key}: {title}, {state}",
-  "2dd9d295c882ef65": "{count, plural, one {{count} verknüpftes Issue} other {{count} verknüpfte Issues}}",
-  "8cf699ae75fd8067": "Angeheftet",
-  "be451f475c514b37": "Aufgeweckt-Hinweis schließen",
-  "e9ced65134f2f36c": "Thread jetzt aufwecken",
-  "374dac09151d4578": "Ausstehend",
-  "a8f30f631e2b010e": "Wartet auf die Synchronisierung mit seiner Umgebung",
-  "aca5896600bf173e": "Du hast gerade einen anderen Branch ausgecheckt.",
+  "2dd9d295c882ef65": "{count, plural, one {{count} linked issue} other {{count} linked issues}}",
+  "8cf699ae75fd8067": "Pinned",
+  "e9ced65134f2f36c": "Wake thread now",
+  "374dac09151d4578": "Pending",
+  "a8f30f631e2b010e": "Waiting to sync with its environment",
+  "aca5896600bf173e": "You're currently checked out on another branch.",
   "f665b5be60d8c144": [
-    "Übergeben von ",
+    "Handed off from ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     }
   ],
-  "4b53176b7af3d87a": "Thread zurückstellen",
-  "9f20632581a1de90": "Anheften",
-  "fcd14f3717170dae": "Loslösen",
-  "8e800a9dfe7f9487": "Erledigen",
-  "dd46b84dfd8849bd": "Erledigt aufheben",
-  "5c3e33c17a1c7cf2": "Aufwecken",
-  "f8fec76a8dea38d4": "Nicht gesendeter Entwurf",
-  "b0b811c800c8af57": "Thread loslösen",
-  "4fca00950ff1db87": "Titel wird neu generiert",
-  "6bf3499c98fc67f2": "Aufgeweckt",
-  "4851fe12e61ec84b": "Aufgeweckt-Hinweis schließen",
-  "467c8192b9726ba6": "Erledigt aufheben",
-  "9e8470dfcf1004d6": "Thread erledigen",
+  "4b53176b7af3d87a": "Snooze thread",
+  "9f20632581a1de90": "Pin",
+  "fcd14f3717170dae": "Unpin",
+  "8e800a9dfe7f9487": "Settle",
+  "dd46b84dfd8849bd": "Un-settle",
+  "5c3e33c17a1c7cf2": "Wake",
+  "f8fec76a8dea38d4": "Unsent draft",
+  "b0b811c800c8af57": "Unpin thread",
+  "4fca00950ff1db87": "Regenerating title",
+  "467c8192b9726ba6": "Un-settle thread",
+  "9e8470dfcf1004d6": "Settle thread",
   "a75fb28f41e65d1d": "{count, plural, =1 {Erledigt,} other {{count} erledigt,}}",
   "0186f474fc350897": "{count, plural, =1 {Zurückgestellt,} other {{count} zurückgestellt,}}",
   "1bc189242bfa159d": "{count, plural, =1 {Losgelöst,} other {{count} losgelöst,}}",
@@ -13018,5 +13008,481 @@
       "v": "v"
     },
     " weitere unter Verknüpfte Elemente"
-  ]
+  ],
+  "2bdeaa094b0c84f5": "Setze T3CODE_VSCODE_REMOTE_CLI in der Serverumgebung auf true oder false.",
+  "9d27f675747d87a1": "{editor} ist nicht verfügbar (Code 69). Öffne ein Fenster mit Verbindung zu dieser Umgebung und versuche es erneut.",
+  "fec7a9b4ef85d162": "{editor} hat den Exit-Code {code} zurückgegeben. Führe den Befehl im Terminal der Umgebung aus, um Details zu sehen.",
+  "7d444ebf7acfb480": "{editor} antwortet nicht. Prüfe die Verbindung des Editorfensters zu dieser Umgebung und versuche es erneut.",
+  "17e3b8ec5c8035d8": "Diese Umgebung unterstützt das Öffnen von {editor} nicht.",
+  "ee6f6291618321b4": "Die Umgebung kann {editor} nicht finden. Prüfe, ob der Editorbefehl installiert und über PATH erreichbar ist.",
+  "b2f99f58485edeec": "Die Umgebung kann {editor} nicht starten. Prüfe, ob sich der Editorbefehl im Terminal der Umgebung ausführen lässt.",
+  "15d9812aadaa1fc9": "{editor} kann diesen Pfad nicht öffnen.",
+  "4503a8c585ce2047": "Der Editoraufruf ist fehlgeschlagen.",
+  "94d32abc2c01c541": "Warten auf {editor}…",
+  "2d52dc551266fd05": "Editor konnte nicht geöffnet werden",
+  "afad235e8f7afecf": "Open Fogbugz Cases",
+  "ab6f67e74cbcdf48": [
+    "FogBugz #",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "2ed352b8825c59b9": "Fogbugz-Cases",
+  "96d9b12fcd67dc1a": "FogBugz-Case-Git",
+  "14603c1e7da873f0": "Link this thread to a FogBugz case and allow source control access to open its Git files.",
+  "7dbd46504461f453": "Browsing cases requires a saved thread in a project with a FogBugz mapping.",
+  "fd250edc3c8b3ca0": "Unknown project",
+  "099a9776d362aba2": "Idle 24h",
+  "d03d0b0478d53383": "Idle Projects",
+  "912e4456cffdd7e7": "Source removed. This comment retains the last known snapshot.",
+  "59fd8df1e465247a": "Source changed. This comment cannot be assigned to the current lines.",
+  "d6fccecf2a163769": "Auto-redeem banked reset at 0% weekly limit",
+  "30427ff2dfe7316c": "Auto-redeem at 0%",
+  "d602f784040d3ff0": "Redeem a banked reset when a Codex account has no weekly allowance left. Applies to all Codex accounts on this environment, even when the picker is closed.",
+  "638b1a9fce2881cf": "FogBugz #{wert1}",
+  "e57ba6bd9f48677b": "{wert1}% remaining",
+  "ac03b7576111b0d8": "{wert1} (local time)",
+  "add971565dbb8e97": "not reported",
+  "d3538bbce3c72988": [
+    "Next banked reset expiry:",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "99e045a6f11e2fde": "Nachricht in der Warteschlange konnte nicht verschoben werden",
+  "2c5808f8e4bcaae7": "Nachricht {position} in der Warteschlange verschieben (ziehen oder die Pfeiltasten nach oben und unten verwenden)",
+  "1a4b78b6c9dec724": "Model at capacity",
+  "1d4c484edb12f324": "Automatic retry cancelled. Use Play to resume.",
+  "e7ee71114dea15f9": "Retry with the same model {wert1}",
+  "a3111bc5032b9249": "Use Play to retry with the same model",
+  "e817a07907ea17c5": "Schedule retry",
+  "4526a0a4e79e5eed": "Could not refresh review comments.",
+  "d5ea0941e51a2dad": "Source changed. This comment refers to the selected snapshot, not the current lines.",
+  "e0d02dd3945636a0": "Save comment",
+  "cb47b5907e24179f": "New file",
+  "117072c3108e16ff": "New folder",
+  "80af318ba589018b": "Upload files",
+  "50a0781c5495e5f4": "Upload case files",
+  "6a5795cb6764c9d3": "Delete selected",
+  "cb33a4d83db4588f": "case root",
+  "33d5ee88f2414368": [
+    "Drop files into ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "befa89471a19ebc2": "Commented lines were removed.",
+  "746e1ac7f4e2ebaa": "Comment location could not be identified.",
+  "cca32497ca3c0ae2": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    "Last known location: ",
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    },
+    "."
+  ],
+  "19c9610d9238d836": "Could not read the case file",
+  "0b8a99f607e47622": "Could not update case Git.",
+  "2b0a250533aa5fbb": "Could not change case files.",
+  "9d476f613d3c5842": "Drop individual files. Create folders in the case file tree first.",
+  "32ed3934a9798e7d": "Could not upload case files.",
+  "601a53cb5c185233": "Case Git actions",
+  "6dc8f75bc86a296e": "Save or discard the open file before using Git actions",
+  "ff255d2c45c78b9d": "Commit case files",
+  "bbff7193a65214a5": "Revert case files",
+  "39b46e1a6b980188": "Commit all local file changes and publish case commits to FogBugz.",
+  "330e6cdaba49105d": "Discard all uncommitted changes in this case checkout, including new files. Existing commits and ignored files are kept.",
+  "9f2943c46a4fc8c9": "Commit and publish",
+  "5e42ecffd43b9d3c": "Delete case files",
+  "ab7321d8f4380439": "Source control permission is required to prepare case files.",
+  "0fde65c945c07df5": "Loading case…",
+  "7cad8afca4cb2613": "Link this thread to a FogBugz case to open its Git files.",
+  "8c138bbd91923a5c": "Preparing case Git checkout…",
+  "bd1e7e958a9d2fc2": "Updating case files…",
+  "17c26fc7cf2118fc": [
+    {
+      "t": "GitCommitHorizontal",
+      "i": 1
+    },
+    "Commit…"
+  ],
+  "c5acc39f514ca83d": [
+    {
+      "t": "RotateCcw",
+      "i": 1
+    },
+    "Revert…"
+  ],
+  "4abf3b3c1b2ab5fd": [
+    {
+      "t": "RefreshCw",
+      "i": 1
+    },
+    "Update"
+  ],
+  "a6b82cca5ecfd8bf": "No uncommitted changes.",
+  "2e463c1f880b8d56": "Commit message",
+  "287a094d5b398dd1": [
+    "Delete “",
+    {
+      "t": "span",
+      "i": 1,
+      "c": {
+        "i": 2,
+        "k": "_gt_value_2",
+        "v": "v"
+      }
+    },
+    "” and any files inside it from this checkout?"
+  ],
+  "0da379a78e76414e": [
+    "Name in ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "cad849d07caf72b6": "Select environment",
+  "2921a30608525f3c": "Unable to open FogBugz case",
+  "ed78e9a89e5d1984": "Unable to process the case",
+  "54f0cb25ea38d8ae": "Search cases",
+  "7bf66ff0e9fce53a": "Case status",
+  "b2be70822d55f16a": "Open",
+  "7f7f6116f1c8f3a9": "Closed",
+  "a499c791eb893aff": "All statuses",
+  "e15c1a5064076784": "Assignee",
+  "354be6ceb1c3d693": "All assignees",
+  "2686221a3452a463": "T3 project",
+  "a2101ca2dba870fb": "All linked projects",
+  "e1f2a980218a1d4c": "Refreshing cases…",
+  "6c626f8c496c460b": "Loading cases…",
+  "c74b5449283aa2e1": "Case actions for #{wert1}",
+  "ee71a2d27ef992ee": "Fogbugz Cases",
+  "07f6ddc377d4d9a1": "Connect to an environment to load cases.",
+  "d05f56d2129e990b": "Search",
+  "987796c2241442d7": "Closed",
+  "3b5c47a544990370": "All statuses",
+  "95b3315d03ef3288": "Assigned to me",
+  "166dce8b067ef85d": "All assignees",
+  "e50d2e59f203338e": "All linked projects",
+  "a3cd3aa772e07082": "Connect FogBugz",
+  "a54836e7e9eb638b": "Set up your account in Settings > MGGM.",
+  "ac9afec38998fed1": "Link a project",
+  "4fa6427dbfeb451a": "Assign a FogBugz project or group in Settings > Projects.",
+  "16b6ac1fed3f7de1": "No matching cases",
+  "c4a3236b92f236c3": "Change the search or filters, or refresh the list.",
+  "db89367b182189de": "Priority",
+  "95cbbe8d3c13e8f2": "Assigned to",
+  "3eb056e2fa28f34d": "Showing the first 200 results. Narrow your search.",
+  "289d43595d10759e": "Unable to prepare FogBugz case files",
+  "999666e32f2324ce": "FogBugz case number",
+  "bcc1469a06cd3b7f": "Open FogBugz case",
+  "51d40d135f82d3b5": "FogBugz-Case-Git",
+  "1b3eb59ee8a6b934": "Unlink FogBugz case",
+  "6f417047b0caf11c": "Link FogBugz case",
+  "0e6d90e91e4c3ec5": "Link case",
+  "d60459c1ef55ebf8": [
+    "Prio ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "c8db1a06d52308c3": "Added to a new thread",
+  "4c53fddd8743e633": "Auto-Settle on",
+  "9dd54a353f73bd26": "Auto-Unsettle On reactivate",
+  "31570650c58f5e6e": "Auto-Analyze New Cases",
+  "6f9501d359a1542b": "Starts an analysis-only agent run for newly created cases assigned to you, or also after a later assignment. Uses the project's default model and may incur costs.",
+  "4a87c6774076107c": "Select a default model for this scope to run automatic case analysis.",
+  "a8c6f22b127d9db5": "Case-Git checkout folder",
+  "c1450f64ebbe76ac": "Absolute or project-relative path. Threads share {folder}/FB12345; empty keeps per-thread checkouts. For SVN projects, adding this folder to svn:ignore is recommended.",
+  "1d1b2a838ad48c43": "Separate per-thread checkouts",
+  "fcadd522b8f89fde": "FogBugz project or group",
+  "ba08cd0944c82a85": "FogBugz project for {wert1}",
+  "9cbb50cbc8676886": "FogBugz project",
+  "ddbbe3b7198d7e7c": "Loading projects…",
+  "b19ba67249bf53a4": "Group: {wert1}",
+  "44ceda1bb7430dc7": "FogBugz area",
+  "17000b8eba4ef45c": "FogBugz area for {wert1}",
+  "8407b96614cf63c0": "Loading areas…",
+  "9b402907312dd25a": "All areas",
+  "c7b610ccf16fd11b": "Area {wert1}",
+  "0ee44694148257bb": "Not linked",
+  "d1540535963566cf": [
+    "Group: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "b326bad60cfa2e2d": "Set up connection",
+  "3530fabda9aa918a": "All areas",
+  "75411d31942d034f": "Connected as {wert1}.",
+  "f62b343ae66c0311": "Base URL",
+  "e3ee6087fe537392": "FogBugz base URL",
+  "ca2c1237f26bfbff": "Account E-Mail",
+  "e106fa62c74eb674": "FogBugz account",
+  "182a659d70f8ea72": "Password",
+  "519c5e1662feb4b8": "Password (optional)",
+  "5815ab24da216489": "Changing the account clears its project and thread links.",
+  "82eaffc5af484063": "Sign in with your existing FogBugz account.",
+  "9b0c19226daa426e": "Leave empty to keep your current sign-in. Changing the URL keeps your project and thread links.",
+  "24b6297315342bf7": "FogBugz password",
+  "97322307767841af": "Account password",
+  "997a2067317806bc": "Keep current sign-in",
+  "fd3ef68c512d3405": "Enter your password to save these connection changes.",
+  "cad2f8e6636a6f0d": "Unsaved connection changes. Save changes to apply and verify them.",
+  "d4193f039d896123": "Connection verified: {wert1}.",
+  "b1823a42ec066784": "Disconnected. T3 threads and FogBugz cases are preserved.",
+  "bfdcdf0797e26cb3": "FogBugz compatibility",
+  "ba4cc2028b63cc06": "FogBugz automation",
+  "7de703a696b1aabd": "Sign in again to reconnect FogBugz.",
+  "bb71ddda2fa86e7a": [
+    "Could not check integration features:",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " Use Test connection to retry."
+  ],
+  "e21546f5558d80e1": "Integration features have not been checked. Use Test connection to check this FogBugz version.",
+  "81eaf5657dab6a90": "Project groups are not supported by this FogBugz version. You can link individual projects. Existing group links are preserved but cannot load cases until FogBugz is updated.",
+  "e98d3d994321409f": "Automatic browser sign-in is not supported by this FogBugz version. Sign in directly in the Browser panel.",
+  "d1ef0fa93f3ecf89": "Case-Git is not supported by this FogBugz version. Threads and cases remain available; case files and automatic file synchronization require a FogBugz update.",
+  "6f7ec4827dd45a9d": "All integration features are supported.",
+  "eda8829bc2a872d7": "Update FogBugz to enable these features, then use Test connection to check again.",
+  "b1cc98c299246314": "Browseranmeldung über pd-secrets erlauben",
+  "d580e58771dadd32": "Nur mit einem vertrauenswürdigen Agenten und einer vertrauenswürdigen Loginseite verwenden. Beide können ausgefüllte Zugangsdaten lesen. Gilt für die ausgewählten Umgebungen.",
+  "56c73bee6e191fe0": "Subversion",
+  "df6aeac841c232e6": "Runs svn update in ~/.claude/ daily at 06:00 and 13:00, in the environment’s local time.",
+  "1acc15b13820f8bf": "Requires a T3 environment with a ~/.claude/.svn/ directory. Select an environment with an SVN working copy.",
+  "1b3be838ab81bfab": "Auto-SVN-Update ~/.claude/",
+  "3448e7110cee297c": "Redeem a banked reset during its last hour before expiry, even when the model picker is closed. Applies to Codex accounts on this environment.",
+  "94cc31bd19464843": "Reset Redeem expiring banked resets to default",
+  "c4c5ba504adce2a3": "Redeem expiring banked resets",
+  "207f986ade776117": "Layout",
+  "78c310c8df8e0b96": "Group idle threads by activity and project, with compact project cards and group separators.",
+  "ece7e79a4074098c": "Reset MGGM thread layout to default",
+  "6072c915b4477ebb": "MGGM thread layout",
+  "14fdec436d8cd0f8": "Bash script on this environment, run after successful sign-in. Use an absolute path or ~/; leave empty to skip.",
+  "7116efc4de391dc6": "Reset pd-secrets post-login script to default",
+  "f9b3e1850f2ff5fd": "Post-login script",
+  "55246d5fe32f1ffe": "No script",
+  "79f9ab280094d5eb": "Monthly weekdays are not available here",
+  "1f41516b2ca0eb5b": "Update this environment to schedule a weekday of each month.",
+  "98e95191ecca16d8": "Repeat",
+  "af115fe96798d68a": "Week of month",
+  "3d6b0d3f296a27d0": "Every week",
+  "ee6590d81a6db8dd": "{wert1} of every month",
+  "81be1b0bf35f07dd": "Every week",
+  "2138840b70e824ff": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " of every month"
+  ],
+  "afd0f5501f4c9589": "Seconds before showing a slow-request warning. Set to 0 to disable.",
+  "dfb29cb2b2c7c76a": "Reset slow request warning threshold to default",
+  "b8bcf30a6a6e1da8": "Slow request warning threshold (seconds)",
+  "d5a1be4c34f08bc1": "Show a toast when another thread finishes, fails, or needs input or approval while this app has focus.",
+  "fa7d9b49c4c5cb61": "Minutes before retrying a model-capacity stop with the same model. Set to 0 to disable. Play resumes immediately.",
+  "1f4cb0bc6df52dea": "Model capacity retry delay (minutes)",
+  "6b40bde0c7d99404": "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The boring sidebar in Labs has no Working section.",
+  "8992625b001441c0": "MGGM",
+  "688984c859c2bc7c": "Model capacity retry delay",
+  "85dabd4bbe43d6e9": "Slow request warning threshold",
+  "efc75c8e8c896b20": "pd-secrets sign-in interrupted on {wert1}",
+  "74d5d89dba1ea713": "The environment disconnected.",
+  "7e21333a0956c2ac": "pd-secrets is disconnected on {wert1}",
+  "ec704f3bd0265925": "This session cannot manage environment credentials.",
+  "b2964e8ef9d2a550": "Could not check pd-secrets",
+  "1bd6e081673149f1": "pd-secrets is connected",
+  "518ade3e1cb837d0": "pd-secrets is connected on {wert1}",
+  "42c2073fabe05829": "pd-secrets setup failed on {wert1}",
+  "5cf38b579f06d6e3": "Could not sign in to pd-secrets on {wert1}",
+  "417c18fc311c169a": "pd-secrets TOTP",
+  "1e7cc09a959df34b": "pd-secrets password",
+  "0e8b26d3c6169e71": "Signing in to pd-secrets",
+  "15cf2f99230d6452": "Sign in to pd-secrets",
+  "bb29f5c8171137bc": "TOTP code",
+  "c3c6c6b87e9d18ff": "Password Depot password",
+  "388ad6ab79cbf0ee": "Waiting for the environment to reconnect.",
+  "3c4e2f4ec76effcf": "Verify code",
+  "b86f260a9e3a690f": "check failed",
+  "8ccc8bdc63dc2f37": "Signing in and completing setup…",
+  "62f00defec23cc38": "Continue in background",
+  "ac9543bc015a0dbf": "Fogbugz Cases",
+  "fbcd3ef924b4c7a9": "Last activity",
+  "643c4b50feadc874": "Worktree: {path} ({branch})",
+  "fb7c44da0f0825ea": "Worktree: {path}",
+  "162ce6c96258a8b8": "Dismiss {wert1} notification",
+  "95f833efd5244749": [
+    "Dismiss ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " notification"
+  ],
+  "5f30e6ffc74ef187": "Open Codex Forecast",
+  "5542a047844aa987": "Click to open Codex Forecast.",
+  "71b78e6b92311e69": "Loading forecast…",
+  "30c183a51c21f14f": "Forecast unavailable. A current estimate could not be read.",
+  "abd81e36a7011f0a": "Codex reset forecast",
+  "a38d690696263d51": "Statistical estimate, not a guaranteed reset.",
+  "09554224cf218fd1": "Chance within 24 hours",
+  "4f5cc63f152f4ab3": [
+    "Chance within ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " hours"
+  ],
+  "6ec044d9735311ca": "24-hour uncertainty range",
+  "a7cbc839631dbe27": [
+    "Last reset:",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    {
+      "t": "time",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    }
+  ],
+  "84d04ff009eb0a80": [
+    "Time since last reset:",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "6f9b863fe10acb42": "Last reset: not reported",
+  "042c442562bd7fd4": [
+    "Forecast from",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    {
+      "t": "time",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    {
+      "i": 4,
+      "k": "_gt_value_4",
+      "v": "v"
+    },
+    "(local time). Updated every 60 minutes."
+  ],
+  "5f5d1a5f4aef71ab": "LunarWerx forecast of additional Codex resets. Separate from your regular account reset.",
+  "b36fb4e03f815504": "Usage details",
+  "082da73bf39e1156": "Click for usage details.",
+  "b815517a89897f40": "Combined percentage unavailable: plan capacities are unknown or not comparable.",
+  "1ba3067d380a8b05": "No account-wide seven-day limit reported.",
+  "865b2d337160674f": " · {wert1} accounts, weighted by plan allowance",
+  "a80b15385953dde8": "Weekly period elapsed: not reported",
+  "ce40f4891028f7bd": "Weekly period elapsed: {wert1} of 7 days{wert2}",
+  "935667694a891af5": "; {wert1} periods not reported.",
+  "dd8ab69dbab3c939": "Banked resets: not reported",
+  "1e9621aeeee107c7": "Banked resets{wert1}: {wert2}",
+  "2618f719f70ea08b": "; {wert1} accounts not reported.",
+  "8af4b38898057feb": "Reported reset {wert1}; awaiting updated limits.",
+  "d1bee805c8f36d2e": "Next regular reset: {wert1} (local time)",
+  "704aa959538bef9d": "Reset {wert1}",
+  "9cf23f083f7972a5": "Reset not reported",
+  "406cf17d189659b3": "Plan capacity unknown",
+  "c857c8be9de91e96": "{wert1}× Plus allowance",
+  "3cc1f794a13362a3": "Period not reported",
+  "0ad7129610c185d0": "{wert1} of 7 days elapsed",
+  "b60f459fb8db2e35": " · {wert1} banked resets",
+  "bb93a6b25a665caf": "Updated {wert1}{wert2}. ",
+  "1c85b4d0c20fe79e": "Weekly limit, all accounts",
+  "9d0d140b8a0adc64": "Weekly limit, {wert1}",
+  "1adcb13cb72e241e": "Next banked reset expiry: ",
+  "a65b8555371d94f1": [
+    {
+      "t": "time",
+      "i": 1,
+      "c": {
+        "i": 2,
+        "k": "_gt_value_2",
+        "v": "v"
+      }
+    },
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    },
+    "(local time)"
+  ],
+  "8e6cd74a25516aeb": [
+    "(",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "% remaining)"
+  ],
+  "62df421af7bf6c4c": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ": weekly limit unavailable"
+  ],
+  "0e4537e499b33191": "Outer ring: weekly allowance remaining. Inner segments: seven days elapsed. +N: banked resets."
 }

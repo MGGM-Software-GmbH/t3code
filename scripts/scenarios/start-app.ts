@@ -72,6 +72,12 @@ export const prepareHome = Effect.fn("startApp.prepareHome")(function* (home: st
     name: "no-model",
     source: 'process.stderr.write("scenarios run no model\\n");\nprocess.exit(1);',
   });
+  const remoteEditor = path.join(home, "bin", "code");
+  yield* fs.writeFileString(
+    remoteEditor,
+    '#!/bin/sh\nwhile test -f "$0.wait"; do sleep 0.1; done\nexit 69\n',
+  );
+  yield* fs.chmod(remoteEditor, 0o755);
   yield* fs.writeFileString(
     path.join(home, "userdata/settings.json"),
     yield* encodeSettings({
@@ -139,6 +145,7 @@ const startApp = Effect.fn("startApp")(function* (input: {
     ),
     T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
     ...SCENARIO_MACHINE_ENV,
+    T3CODE_VSCODE_REMOTE_CLI: "true",
   };
   const devRunner = (mode: string, args: ReadonlyArray<string>) => [
     "scripts/dev-runner.ts",

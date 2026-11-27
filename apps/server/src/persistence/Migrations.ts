@@ -87,49 +87,61 @@ import Migration0073 from "./Migrations/073_ActiveTurnItemIndexes.ts";
 import Migration0074 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSearch.ts";
 import Migration0075 from "./Migrations/075_SubagentDeliveryState.ts";
 import Migration0076 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
-import Migration0077 from "./Migrations/077_RepairBooleanSettledOverride.ts";
-import Migration0078 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
-import Migration0079 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
-import Migration0080 from "./Migrations/080_ScheduledTaskThreadMode.ts";
-import Migration0081 from "./Migrations/081_ProjectionMessageSearchText.ts";
-import Migration0082 from "./Migrations/082_TurnItemConversationIndex.ts";
-import Migration0083 from "./Migrations/083_CommandReadIndexes.ts";
-import Migration0084 from "./Migrations/084_LastExecutedRunIndex.ts";
-import Migration0085 from "./Migrations/085_TurnItemCounts.ts";
-import Migration0086 from "./Migrations/086_QueuedTurnInputIndex.ts";
-import Migration0087 from "./Migrations/087_ProjectionProjectsCustomTitle.ts";
-import Migration0088 from "./Migrations/088_TurnItemTypeStatusIndex.ts";
-import Migration0089 from "./Migrations/089_ShellThreadReadIndexes.ts";
-import Migration0090 from "./Migrations/090_AuthConnectDevices.ts";
-import Migration0091 from "./Migrations/091_AuthConnectDeniedRequests.ts";
-import Migration0092 from "./Migrations/092_QueuedTurnInputIndexJsonValid.ts";
-import Migration0093 from "./Migrations/093_ProviderTurnAttemptIndex.ts";
-import Migration0094 from "./Migrations/094_TurnItemMessageOrdinalIndex.ts";
-import Migration0095 from "./Migrations/095_TurnItemInlineWorkOutput.ts";
-import Migration0096 from "./Migrations/096_RepairStaleTitleRegeneration.ts";
-import Migration0097 from "./Migrations/097_IssueTrackerBindings.ts";
-import Migration0098 from "./Migrations/098_ActiveShellIndexIndexes.ts";
-import Migration0099 from "./Migrations/099_BackgroundRecoveryIndexes.ts";
-import Migration0100 from "./Migrations/100_TurnStartReadIndexes.ts";
-import Migration0101 from "./Migrations/101_DelegatedTaskReadIndexes.ts";
-import Migration0102 from "./Migrations/102_ThreadItemCounts.ts";
-import Migration0103 from "./Migrations/103_IssueTrackerAdditionalScopes.ts";
-import Migration0104 from "./Migrations/104_ProjectionProjectsTrackedFolders.ts";
-import Migration0105 from "./Migrations/105_TaskFolders.ts";
-import Migration0106 from "./Migrations/106_WorktreePathKeyIndex.ts";
-import Migration0107 from "./Migrations/107_DeferredSlashCommandIndex.ts";
-import Migration0108 from "./Migrations/108_AgentFeedback.ts";
-import Migration0109 from "./Migrations/109_IssueTrackerAccounts.ts";
-import Migration0110 from "./Migrations/110_Workflows.ts";
-import Migration0111 from "./Migrations/111_SupersededRunAttemptIndex.ts";
-import Migration0112 from "./Migrations/112_LayoutCommandApprovals.ts";
-import Migration0113 from "./Migrations/113_WorkflowSkippedRuns.ts";
-import Migration0114 from "./Migrations/114_WorkflowRunIndexes.ts";
-import Migration0115 from "./Migrations/115_WorkflowRunTags.ts";
-import Migration0116 from "./Migrations/116_ForkHistoryMembership.ts";
-import Migration0117 from "./Migrations/117_WorkflowMailSender.ts";
-import Migration0118 from "./Migrations/118_WorkflowPools.ts";
-import Migration0119 from "./Migrations/119_WorkflowRunSubject.ts";
+import Migration0077 from "./Migrations/077_FogBugz.ts";
+import Migration0078 from "./Migrations/078_FogBugzProjectGroups.ts";
+import Migration0079 from "./Migrations/079_FogBugzAutomation.ts";
+import Migration0085 from "./Migrations/085_FogBugzAreas.ts";
+
+const stableIntegrationMigrations = [
+  [73, "ActiveTurnItemIndexes", Migration0073],
+  [74, "ExcludeAttachmentPlaceholdersFromSearch", Migration0074],
+  [75, "SubagentDeliveryState", Migration0075],
+  [76, "ProjectionProjectsPinArchive", Migration0076],
+] as const;
+import Migration0080 from "./Migrations/080_RepairBooleanSettledOverride.ts";
+import Migration0081 from "./Migrations/081_DropOrchestrationEventCorrelationIndex.ts";
+
+import Migration0082 from "./Migrations/082_DelegatedRecoveryIndexes.ts";
+import Migration0083 from "./Migrations/083_ScheduledTaskThreadMode.ts";
+import Migration0084 from "./Migrations/084_ProjectionMessageSearchText.ts";
+import Migration0086 from "./Migrations/086_TurnItemConversationIndex.ts";
+import Migration0087 from "./Migrations/087_CommandReadIndexes.ts";
+import Migration0088 from "./Migrations/088_LastExecutedRunIndex.ts";
+import Migration0089 from "./Migrations/089_TurnItemCounts.ts";
+import Migration0090 from "./Migrations/090_QueuedTurnInputIndex.ts";
+import Migration0091 from "./Migrations/091_ProjectionProjectsCustomTitle.ts";
+import Migration0092 from "./Migrations/092_TurnItemTypeStatusIndex.ts";
+import Migration0093 from "./Migrations/093_ShellThreadReadIndexes.ts";
+import Migration0094 from "./Migrations/094_AuthConnectDevices.ts";
+import Migration0095 from "./Migrations/095_AuthConnectDeniedRequests.ts";
+import Migration0096 from "./Migrations/096_QueuedTurnInputIndexJsonValid.ts";
+import Migration0097 from "./Migrations/097_ProviderTurnAttemptIndex.ts";
+import Migration0098 from "./Migrations/098_TurnItemMessageOrdinalIndex.ts";
+import Migration0099 from "./Migrations/099_TurnItemInlineWorkOutput.ts";
+import Migration0100 from "./Migrations/100_RepairStaleTitleRegeneration.ts";
+import Migration0101 from "./Migrations/101_IssueTrackerBindings.ts";
+import Migration0102 from "./Migrations/102_ActiveShellIndexIndexes.ts";
+import Migration0103 from "./Migrations/103_BackgroundRecoveryIndexes.ts";
+import Migration0104 from "./Migrations/104_TurnStartReadIndexes.ts";
+import Migration0105 from "./Migrations/105_DelegatedTaskReadIndexes.ts";
+import Migration0106 from "./Migrations/106_ThreadItemCounts.ts";
+import Migration0107 from "./Migrations/107_IssueTrackerAdditionalScopes.ts";
+import Migration0108 from "./Migrations/108_ProjectionProjectsTrackedFolders.ts";
+import Migration0109 from "./Migrations/109_TaskFolders.ts";
+import Migration0110 from "./Migrations/110_WorktreePathKeyIndex.ts";
+import Migration0111 from "./Migrations/111_DeferredSlashCommandIndex.ts";
+import Migration0112 from "./Migrations/112_AgentFeedback.ts";
+import Migration0113 from "./Migrations/113_IssueTrackerAccounts.ts";
+import Migration0114 from "./Migrations/114_Workflows.ts";
+import Migration0115 from "./Migrations/115_SupersededRunAttemptIndex.ts";
+import Migration0116 from "./Migrations/116_LayoutCommandApprovals.ts";
+import Migration0117 from "./Migrations/117_WorkflowSkippedRuns.ts";
+import Migration0118 from "./Migrations/118_WorkflowRunIndexes.ts";
+import Migration0119 from "./Migrations/119_WorkflowRunTags.ts";
+import Migration0120 from "./Migrations/120_ForkHistoryMembership.ts";
+import Migration0121 from "./Migrations/121_WorkflowMailSender.ts";
+import Migration0122 from "./Migrations/122_WorkflowPools.ts";
+import Migration0123 from "./Migrations/123_WorkflowRunSubject.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -205,53 +217,54 @@ const migrationEntries = [
   [70, "PeerLinks", Migration0070],
   [71, "PeerLinkFence", Migration0071],
   [72, "WaitingLinkRequestIndex", Migration0072],
-  [73, "ActiveTurnItemIndexes", Migration0073],
-  [74, "ExcludeAttachmentPlaceholdersFromSearch", Migration0074],
-  [75, "SubagentDeliveryState", Migration0075],
-  [76, "ProjectionProjectsPinArchive", Migration0076],
-  [77, "RepairBooleanSettledOverride", Migration0077],
-  [78, "DropOrchestrationEventCorrelationIndex", Migration0078],
-  [79, "DelegatedRecoveryIndexes", Migration0079],
-  [80, "ScheduledTaskThreadMode", Migration0080],
-  [81, "ProjectionMessageSearchText", Migration0081],
-  [82, "TurnItemConversationIndex", Migration0082],
-  [83, "CommandReadIndexes", Migration0083],
-  [84, "LastExecutedRunIndex", Migration0084],
-  [85, "TurnItemCounts", Migration0085],
-  [86, "QueuedTurnInputIndex", Migration0086],
-  [87, "ProjectionProjectsCustomTitle", Migration0087],
-  [88, "TurnItemTypeStatusIndex", Migration0088],
-  [89, "ShellThreadReadIndexes", Migration0089],
-  [90, "AuthConnectDevices", Migration0090],
-  [91, "AuthConnectDeniedRequests", Migration0091],
-  [92, "QueuedTurnInputIndexJsonValid", Migration0092],
-  [93, "ProviderTurnAttemptIndex", Migration0093],
-  [94, "TurnItemMessageOrdinalIndex", Migration0094],
-  [95, "TurnItemInlineWorkOutput", Migration0095],
-  [96, "RepairStaleTitleRegeneration", Migration0096],
-  [97, "IssueTrackerBindings", Migration0097],
-  [98, "ActiveShellIndexIndexes", Migration0098],
-  [99, "BackgroundRecoveryIndexes", Migration0099],
-  [100, "TurnStartReadIndexes", Migration0100],
-  [101, "DelegatedTaskReadIndexes", Migration0101],
-  [102, "ThreadItemCounts", Migration0102],
-  [103, "IssueTrackerAdditionalScopes", Migration0103],
-  [104, "ProjectionProjectsTrackedFolders", Migration0104],
-  [105, "TaskFolders", Migration0105],
-  [106, "WorktreePathKeyIndex", Migration0106],
-  [107, "DeferredSlashCommandIndex", Migration0107],
-  [108, "AgentFeedback", Migration0108],
-  [109, "IssueTrackerAccounts", Migration0109],
-  [110, "Workflows", Migration0110],
-  [111, "SupersededRunAttemptIndex", Migration0111],
-  [112, "LayoutCommandApprovals", Migration0112],
-  [113, "WorkflowSkippedRuns", Migration0113],
-  [114, "WorkflowRunIndexes", Migration0114],
-  [115, "WorkflowRunTags", Migration0115],
-  [116, "ForkHistoryMembership", Migration0116],
-  [117, "WorkflowMailSender", Migration0117],
-  [118, "WorkflowPools", Migration0118],
-  [119, "WorkflowRunSubject", Migration0119],
+  ...stableIntegrationMigrations,
+  [77, "FogBugz", Migration0077],
+  [78, "FogBugzProjectGroups", Migration0078],
+  [79, "FogBugzAutomation", Migration0079],
+  [80, "RepairBooleanSettledOverride", Migration0080],
+  [81, "DropOrchestrationEventCorrelationIndex", Migration0081],
+  [82, "DelegatedRecoveryIndexes", Migration0082],
+  [83, "ScheduledTaskThreadMode", Migration0083],
+  [84, "ProjectionMessageSearchText", Migration0084],
+  [85, "FogBugzAreas", Migration0085],
+  [86, "TurnItemConversationIndex", Migration0086],
+  [87, "CommandReadIndexes", Migration0087],
+  [88, "LastExecutedRunIndex", Migration0088],
+  [89, "TurnItemCounts", Migration0089],
+  [90, "QueuedTurnInputIndex", Migration0090],
+  [91, "ProjectionProjectsCustomTitle", Migration0091],
+  [92, "TurnItemTypeStatusIndex", Migration0092],
+  [93, "ShellThreadReadIndexes", Migration0093],
+  [94, "AuthConnectDevices", Migration0094],
+  [95, "AuthConnectDeniedRequests", Migration0095],
+  [96, "QueuedTurnInputIndexJsonValid", Migration0096],
+  [97, "ProviderTurnAttemptIndex", Migration0097],
+  [98, "TurnItemMessageOrdinalIndex", Migration0098],
+  [99, "TurnItemInlineWorkOutput", Migration0099],
+  [100, "RepairStaleTitleRegeneration", Migration0100],
+  [101, "IssueTrackerBindings", Migration0101],
+  [102, "ActiveShellIndexIndexes", Migration0102],
+  [103, "BackgroundRecoveryIndexes", Migration0103],
+  [104, "TurnStartReadIndexes", Migration0104],
+  [105, "DelegatedTaskReadIndexes", Migration0105],
+  [106, "ThreadItemCounts", Migration0106],
+  [107, "IssueTrackerAdditionalScopes", Migration0107],
+  [108, "ProjectionProjectsTrackedFolders", Migration0108],
+  [109, "TaskFolders", Migration0109],
+  [110, "WorktreePathKeyIndex", Migration0110],
+  [111, "DeferredSlashCommandIndex", Migration0111],
+  [112, "AgentFeedback", Migration0112],
+  [113, "IssueTrackerAccounts", Migration0113],
+  [114, "Workflows", Migration0114],
+  [115, "SupersededRunAttemptIndex", Migration0115],
+  [116, "LayoutCommandApprovals", Migration0116],
+  [117, "WorkflowSkippedRuns", Migration0117],
+  [118, "WorkflowRunIndexes", Migration0118],
+  [119, "WorkflowRunTags", Migration0119],
+  [120, "ForkHistoryMembership", Migration0120],
+  [121, "WorkflowMailSender", Migration0121],
+  [122, "WorkflowPools", Migration0122],
+  [123, "WorkflowRunSubject", Migration0123],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -331,6 +344,43 @@ export const hasPendingMigrations = Effect.fn("hasPendingMigrations")(function* 
 
 const run = Migrator.make({});
 
+// FogBugz previews occupied 73-75; preserve their data while reserving main's migration ids.
+const reconcileFogBugzPreview = Effect.fn("reconcileFogBugzPreview")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const tables =
+        yield* sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'effect_sql_migrations'`;
+      if (tables.length === 0) return [];
+      const recorded = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+      SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id >= 73 ORDER BY migration_id
+    `;
+      if (!recorded.some((row) => row.migration_id === 73 && row.name === "FogBugz")) return [];
+      const names = ["FogBugz", "FogBugzProjectGroups", "FogBugzAutomation"];
+      if (
+        recorded.some((row, index) => row.migration_id !== 73 + index || row.name !== names[index])
+      ) {
+        return yield* new Migrator.MigrationError({
+          kind: "BadState",
+          message: "Cannot upgrade FogBugz preview with unexpected later migrations.",
+        });
+      }
+      yield* assertV2MigrationsCanRun(72);
+      for (const row of recorded) {
+        yield* sql`UPDATE effect_sql_migrations SET migration_id = ${row.migration_id + 4}
+        WHERE migration_id = ${row.migration_id} AND name = ${row.name}`;
+      }
+      const executed: Array<readonly [number, string]> = [];
+      for (const [id, name, migration] of stableIntegrationMigrations) {
+        yield* migration;
+        yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (${id}, ${name})`;
+        executed.push([id, name]);
+      }
+      return executed;
+    }),
+  );
+});
+
 export interface RunMigrationsOptions {
   readonly toMigrationInclusive?: number | undefined;
 }
@@ -346,6 +396,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
   // The reconcile takes the write lock; CLI startup must not contend with the server for a no-op.
   const previewMigrations = includesV2 && hasPending ? yield* reconcileV2PreviewMigration() : [];
+  const fogbugzMigrations =
+    hasPending && (toMigrationInclusive === undefined || toMigrationInclusive >= 79)
+      ? yield* reconcileFogBugzPreview()
+      : [];
   if (includesV2) {
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
   }
@@ -366,7 +420,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   );
   // One transaction per migration: an index build on a large database can take minutes, and a
   // restart then resumes after the last finished migration instead of rolling all of them back.
-  const executedMigrations: Array<readonly [id: number, name: string]> = [...previewMigrations];
+  const executedMigrations: Array<readonly [id: number, name: string]> = [
+    ...previewMigrations,
+    ...fogbugzMigrations,
+  ];
   yield* Effect.gen(function* () {
     for (const [index, [id, name]] of pending.entries()) {
       if (Option.isSome(progress)) {

@@ -66,6 +66,90 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
 
   describe("materializeCodexShadowHome", () => {
     it.effect.skipIf(!symlinksSupported)(
+      "links the session index and its lock before either exists and preserves a native rewrite",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const shared = yield* makeTempDir("t3code-codex-shared-");
+          const shadow = yield* makeTempDir("t3code-codex-shadow-");
+          const layout = yield* resolveCodexHomeLayout(
+            decodeCodexSettings({ homePath: shared, shadowHomePath: shadow }),
+          );
+          const index = path.join(shadow, "session_index.jsonl");
+          const lock = path.join(shadow, "session_index.jsonl.lock");
+          yield* materializeCodexShadowHome(layout);
+          expect(yield* fs.readLink(index)).toBe(path.join(shared, "session_index.jsonl"));
+          expect(yield* fs.readLink(lock)).toBe(path.join(shared, "session_index.jsonl.lock"));
+          yield* writeTextFile(index, "shared names\n");
+          yield* writeTextFile(lock, "");
+          const replacement = path.join(shadow, "session-index-replacement");
+          yield* writeTextFile(replacement, "names after Codex rewrite\n");
+          yield* fs.rename(replacement, index);
+          yield* materializeCodexShadowHome(layout);
+          expect(yield* fs.readFileString(index)).toBe("names after Codex rewrite\n");
+          expect(yield* fs.readFileString(path.join(shared, "session_index.jsonl"))).toBe(
+            "shared names\n",
+          );
+          expect(yield* fs.readLink(lock)).toBe(path.join(shared, "session_index.jsonl.lock"));
+        }),
+    );
+
+    it.effect.skipIf(!symlinksSupported)(
+      "keeps an independently created shadow index and its existing lock across starts",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const shared = yield* makeTempDir("t3code-codex-shared-");
+          const shadow = yield* makeTempDir("t3code-codex-shadow-");
+          const layout = yield* resolveCodexHomeLayout(
+            decodeCodexSettings({ homePath: shared, shadowHomePath: shadow }),
+          );
+          for (const home of [shared, shadow]) {
+            yield* writeTextFile(path.join(home, "session_index.jsonl.lock"), "");
+          }
+          const index = path.join(shadow, "session_index.jsonl");
+          const lock = path.join(shadow, "session_index.jsonl.lock");
+          const lockInode = (yield* fs.stat(lock)).ino;
+          yield* writeTextFile(path.join(shared, "session_index.jsonl"), "shared names\n");
+          yield* materializeCodexShadowHome(layout);
+          expect(yield* fs.exists(index)).toBe(false);
+          yield* writeTextFile(index, "shadow names\n");
+          yield* materializeCodexShadowHome(layout);
+          expect((yield* fs.stat(lock)).ino).toEqual(lockInode);
+          expect(yield* fs.readFileString(index)).toBe("shadow names\n");
+          expect(yield* fs.readFileString(path.join(shared, "session_index.jsonl"))).toBe(
+            "shared names\n",
+          );
+        }),
+    );
+
+    it.effect.skipIf(!symlinksSupported)(
+      "refuses a shared index guarded by a different existing lock without replacing either",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const shared = yield* makeTempDir("t3code-codex-shared-");
+          const shadow = yield* makeTempDir("t3code-codex-shadow-");
+          const layout = yield* resolveCodexHomeLayout(
+            decodeCodexSettings({ homePath: shared, shadowHomePath: shadow }),
+          );
+          const index = path.join(shared, "session_index.jsonl");
+          const lock = path.join(shadow, "session_index.jsonl.lock");
+          yield* writeTextFile(index, "names\n");
+          yield* fs.symlink(index, path.join(shadow, "session_index.jsonl"));
+          yield* writeTextFile(lock, "");
+          const inode = (yield* fs.stat(lock)).ino;
+          const error = yield* materializeCodexShadowHome(layout).pipe(Effect.flip);
+          expect(error).toBeInstanceOf(CodexShadowHomeEntryConflictError);
+          expect((yield* fs.stat(lock)).ino).toEqual(inode);
+          expect(yield* fs.readFileString(index)).toBe("names\n");
+        }),
+    );
+
+    it.effect.skipIf(!symlinksSupported)(
       "keeps Finder metadata local across repeated shadow home setup",
       () =>
         Effect.gen(function* () {
@@ -125,6 +209,10 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           yield* fileSystem.makeDirectory(shadowHome, { recursive: true });
           yield* writeTextFile(path.join(shadowHome, "auth.json"), '{"shadow":true}\n');
           yield* writeTextFile(path.join(shadowHome, "auth.lock"), "");
+          const sharedAuthLock = path.join(sharedHome, "auth.json.lock");
+          const shadowAuthLock = path.join(shadowHome, "auth.json.lock");
+          yield* writeTextFile(sharedAuthLock, "shared lock");
+          yield* writeTextFile(shadowAuthLock, "shadow lock");
           yield* fileSystem.symlink(
             path.join(sharedHome, "models_cache.json"),
             path.join(shadowHome, "models_cache.json"),
@@ -162,6 +250,14 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           expect(authLinkResult._tag).toBe("Failure");
           expect(authContents).toContain("shadow");
           expect(authLockLinkResult._tag).toBe("Failure");
+          expect(yield* fileSystem.readFileString(shadowAuthLock)).toBe("shadow lock");
+
+          // Older servers could link the lock before Codex created its shadow copy.
+          yield* fileSystem.remove(shadowAuthLock);
+          yield* fileSystem.symlink(sharedAuthLock, shadowAuthLock);
+          yield* materializeCodexShadowHome(layout);
+          expect(yield* fileSystem.exists(shadowAuthLock)).toBe(false);
+          expect(yield* fileSystem.readFileString(sharedAuthLock)).toBe("shared lock");
         }),
     );
 

@@ -136,6 +136,66 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
     }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
   );
 
+  it.effect("keeps a paired browser socket and its scopes until 30 days after the last use", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const paired = yield* sessions.issue({
+        subject: "one-time-token",
+        scopes: ["orchestration:read"],
+      });
+      const invalidated = yield* Deferred.make<void>();
+      const watcher = yield* sessions
+        .awaitInvalidation(paired.sessionId)
+        .pipe(
+          Effect.andThen(Deferred.succeed(invalidated, undefined)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+      yield* TestClock.adjust(Duration.days(29));
+      const first = yield* sessions.renewPairedBrowserCookie(paired.token);
+      yield* TestClock.adjust(Duration.days(29));
+      const last = yield* sessions.renewPairedBrowserCookie(first.token);
+      expect(yield* sessions.verify(last.token)).toMatchObject({
+        sessionId: paired.sessionId,
+        scopes: ["orchestration:read"],
+        expiresAt: last.expiresAt,
+      });
+      expect((yield* Effect.flip(sessions.renewPairedBrowserCookie(paired.token)))._tag).toBe(
+        "SessionTokenNotRenewableError",
+      );
+      yield* TestClock.adjust(Duration.millis(Duration.toMillis(Duration.days(30)) - 1));
+      expect(yield* Deferred.isDone(invalidated)).toBe(false);
+      yield* sessions.verify(last.token);
+      yield* TestClock.adjust(Duration.millis(1));
+      yield* Fiber.join(watcher);
+      expect((yield* Effect.flip(sessions.verify(last.token)))._tag).toBe(
+        "SessionTokenExpiredError",
+      );
+      expect((yield* Effect.flip(sessions.renewPairedBrowserCookie(last.token)))._tag).toBe(
+        "SessionTokenNotRenewableError",
+      );
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
+  it.effect(
+    "never renews revoked browser cookies or other session types through browser activity",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const paired = yield* sessions.issue({ subject: "one-time-token" });
+        yield* sessions.revoke(paired.sessionId);
+        const bearer = yield* sessions.issue({
+          subject: "one-time-token",
+          method: "bearer-access-token",
+        });
+        const desktop = yield* sessions.issue({ subject: "desktop" });
+        for (const session of [paired, bearer, desktop]) {
+          expect((yield* Effect.flip(sessions.renewPairedBrowserCookie(session.token)))._tag).toBe(
+            "SessionTokenNotRenewableError",
+          );
+        }
+      }).pipe(Effect.provide(layerSessionStore())),
+  );
+
   it.effect.each([
     { name: "a renewal for the same key", renewal: {}, closesAtMinute: 119 },
     {

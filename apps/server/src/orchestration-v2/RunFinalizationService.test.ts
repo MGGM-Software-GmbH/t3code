@@ -25,6 +25,7 @@ import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import * as CheckpointCapture from "./CheckpointCaptureService.ts";
@@ -56,6 +57,12 @@ const finalizationLayer = (
   return RunFinalization.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({
+          finishTurn: () =>
+            Effect.sync(() => {
+              steps.push("case-git");
+            }),
+        }),
         Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
           execute: () =>
             Effect.sync(() => {
@@ -120,7 +127,7 @@ it.effect("completes finalization when the post-checkpoint workspace refresh fai
     const service = yield* RunFinalization.RunFinalizationService;
     yield* service.finalize({ threadId, runId, scopeId });
     // Only the tracked repository this run checkpointed is refreshed.
-    assert.deepEqual(captured, ["checkpoint", "refresh", "repositories:/api"]);
+    assert.deepEqual(captured, ["case-git", "checkpoint", "refresh", "repositories:/api"]);
   }).pipe(Effect.provide(layer));
 });
 

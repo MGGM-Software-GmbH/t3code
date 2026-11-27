@@ -21,6 +21,8 @@ import * as Layer from "effect/Layer";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
+import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
 
 // No project in these tests tracks a repository, so no thread works in a task folder.
 export const layerNoTaskFolders = Layer.mock(TaskFolders.TaskFolders)({
@@ -33,6 +35,13 @@ export const layer = Layer.mergeAll(
     runForThread: () => Effect.succeed({ status: "no-script" }),
   }),
   layerNoTaskFolders,
+  Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({
+    prepareTurn: () => Effect.succeed(null),
+    finishTurn: () => Effect.void,
+  }),
+  Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
+    refreshReviewComments: ({ records }) => Effect.succeed([...records]),
+  }),
   Layer.mock(GitWorkflow.GitWorkflowService)({
     pruneWorktrees: () => Effect.void,
     createWorktree: () => Effect.succeed({} as never),

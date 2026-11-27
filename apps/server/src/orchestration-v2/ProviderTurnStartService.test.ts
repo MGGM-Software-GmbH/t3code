@@ -28,6 +28,8 @@ import {
   ProjectId,
   EnvironmentId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  ComposerContextId,
+  type ComposerContextRecord,
   type OrchestrationV2ThreadProjection,
   OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
@@ -54,6 +56,8 @@ import {
   withCheckpointRestoreReservation,
   withWorkspaceLease,
 } from "../workspace/workspaceLease.ts";
+import * as FogBugzCaseGit from "../fogbugz/FogBugzCaseGit.ts";
+import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import {
   layerThreadWorktreeRestore,
@@ -102,8 +106,19 @@ const normalize = (target: string) => {
   }
   return `/${parts.join("/")}`;
 };
-const layerWorktreeLocation = (worktreesDir = managedWorktreesDir) =>
+const layerWorktreeLocation = (
+  worktreesDir = managedWorktreesDir,
+  caseContext: { text: string; cwd: string; canWrite: boolean } | null = null,
+  onPrepareCase?: () => void,
+) =>
   Layer.mergeAll(
+    Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({
+      prepareTurn: () =>
+        Effect.sync(() => {
+          onPrepareCase?.();
+          return caseContext;
+        }),
+    }),
     Path.layer,
     Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as ServerConfig.ServerConfig["Service"]),
     ServerSettings.layerTest(),
@@ -179,6 +194,9 @@ function startWithMissingWorktree(
           runForThread: () => Effect.succeed({ status: "no-script" }),
         }),
         Layer.mock(ThreadWorktreeRestore)({ takeRecreated: () => Effect.undefined }),
+        Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
+          refreshReviewComments: ({ records }) => Effect.succeed([...records]),
+        }),
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
@@ -208,6 +226,7 @@ function startWithMissingWorktree(
           getById: () =>
             Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
         }),
+        Layer.mock(FogBugzCaseGit.FogBugzCaseGit)({ prepareTurn: () => Effect.succeed(null) }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getForkSourceRunIds: () => Effect.succeed(projection.runs.map((run) => run.id)),
           getThreadRecords: () => {
@@ -481,6 +500,10 @@ function makeLocalCommandHarness(input: {
   readonly canForkWhileSourceRunning?: boolean;
   readonly exposesNativeTurnId?: boolean;
   readonly goalDriver?: "opencode" | "antigravity";
+  readonly caseContext?: { text: string; cwd: string; canWrite: boolean };
+  readonly onPrepareCase?: () => void;
+  readonly contextRecords?: ReadonlyArray<ComposerContextRecord>;
+  readonly refreshReviewComments?: WorkspaceFileSystem.WorkspaceFileSystem["Service"]["refreshReviewComments"];
   readonly worktreePath?: string;
   readonly worktreesDir?: string;
   readonly workspaceRoot?: string;
@@ -588,6 +611,9 @@ function makeLocalCommandHarness(input: {
     nodeId: rootNodeId,
     role: "user",
     text: input.text,
+    ...(input.contextRecords === undefined
+      ? {}
+      : { context: { version: 1, records: input.contextRecords } }),
     attachments: [],
     streaming: false,
     createdBy: input.createdBy ?? "user",
@@ -1170,6 +1196,7 @@ function makeLocalCommandHarness(input: {
     ensureThread: fallbackEnsureThread,
   };
   const startTurn = vi.fn((_turn: ProviderAdapter.ProviderAdapterV2TurnInput) => Effect.void);
+  const nativeStart = vi.fn(() => Effect.void);
   const sideChatThread = {
     ...providerThread,
     nativeThreadRef: {
@@ -1220,6 +1247,7 @@ function makeLocalCommandHarness(input: {
                 ? Effect.succeed({
                     driver: providerThread.driver,
                     providerSession,
+                    startTurn: nativeStart,
                     ensureThread: () => Effect.succeed(providerThread),
                     resumeThread: () => Effect.succeed(projection.providerThreads[0]),
                   } as never)
@@ -1355,6 +1383,10 @@ function makeLocalCommandHarness(input: {
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
+          refreshReviewComments:
+            input.refreshReviewComments ?? (({ records }) => Effect.succeed([...records])),
+        }),
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({
           prepareProviderHandoff,
         }),
@@ -1387,7 +1419,7 @@ function makeLocalCommandHarness(input: {
               };
             }),
         }),
-        layerWorktreeLocation(input.worktreesDir),
+        layerWorktreeLocation(input.worktreesDir, input.caseContext, input.onPrepareCase),
         layerNoTaskFolders,
         input.fileSystem === undefined
           ? FileSystem.layerNoop({ exists: () => Effect.succeed(true) })
@@ -1465,6 +1497,7 @@ function makeLocalCommandHarness(input: {
     createWorktree,
     open,
     fallbackEnsureThread,
+    nativeStart,
     writeIfRunCurrent,
     startRootRun,
     startTurn,
@@ -3451,6 +3484,48 @@ effectIt.effect("fails the run instead of replacing a native thread another clie
   }),
 );
 
+effectIt.effect.each([false, true])(
+  "delivers resumed case instructions unless preparation is interrupted: %s",
+  (interrupted) =>
+    Effect.gen(function* () {
+      const text = "Case #42: put PRP.md in /case-files/42/repo, never in docs/prp/.";
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        previousTurn: { runStatus: "completed", turnStatus: "completed" },
+        caseContext: { text, cwd: "/case-files/42/repo", canWrite: true },
+        onPrepareCase: () => {
+          if (!interrupted) return;
+          const projection = harness.projection();
+          harness.setProjection({
+            ...projection,
+            runs: projection.runs.map((run) =>
+              run.status === "running" ? { ...run, status: "interrupted" } : run,
+            ),
+          });
+        },
+      });
+      yield* harness.start;
+      const input = harness.startRootRun.mock.calls[0]![0];
+      yield* input.session.startTurn({
+        message: input.message,
+        runtimePolicy: { runtimeMode: "auto", interactionMode: "default", cwd: "/project" },
+      } as never);
+      if (interrupted) {
+        expect(harness.nativeStart).not.toHaveBeenCalled();
+        return;
+      }
+      expect(harness.nativeStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({ text: `${text}\n\nUser message:\nContinue` }),
+          runtimePolicy: expect.objectContaining({
+            cwd: "/project",
+            sandboxPolicy: { type: "workspaceWrite", writableRoots: ["/case-files/42/repo"] },
+          }),
+        }),
+      );
+    }),
+);
+
 effectIt.effect("does not mistake a failed state read for a superseded run", () =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({ text: "Continue", failReadsAfterRunning: true });
@@ -3591,4 +3666,60 @@ effectIt.effect("rejects citation expansion before opening a provider session", 
     ]);
     expect(harness.projection().messages[0]?.text).toBe(text);
   }),
+);
+effectIt.effect("does not open a provider when queued review context cannot be read", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      refreshReviewComments: () =>
+        Effect.fail(
+          new WorkspaceFileSystem.WorkspaceReviewCommentTruncatedError({
+            workspaceRoot: "/tmp/queued-review",
+            relativePath: "source.ts",
+          }),
+        ),
+    });
+    const error = yield* harness.start.pipe(Effect.flip);
+    expect(error.cause).toBeInstanceOf(WorkspaceFileSystem.WorkspaceReviewCommentTruncatedError);
+    expect(harness.open).not.toHaveBeenCalled();
+    expect(harness.startRootRun).not.toHaveBeenCalled();
+  }),
+);
+
+effectIt.effect(
+  "refreshes queued file context in the dispatch workspace before starting the provider",
+  () =>
+    Effect.gen(function* () {
+      const record: ComposerContextRecord = {
+        version: 1,
+        contextId: ComposerContextId.make("queued-review"),
+        label: "source.ts:L5",
+        kind: "review-comment",
+        sectionId: "file:source.ts",
+        sectionTitle: "File (current lines)",
+        filePath: "source.ts",
+        startIndex: 4,
+        endIndex: 4,
+        rangeLabel: "L5",
+        text: "Check this value",
+        diff: "const target = true;",
+      };
+      const refresh = vi.fn<
+        WorkspaceFileSystem.WorkspaceFileSystem["Service"]["refreshReviewComments"]
+      >(({ records }) => Effect.succeed(records.map((value) => ({ ...value, rangeLabel: "L6" }))));
+      const harness = makeLocalCommandHarness({
+        text: "Review [source.ts:L5](t3-context://v1/review-comment/queued-review)",
+        worktreePath: "/tmp/queued-review-worktree",
+        contextRecords: [record],
+        refreshReviewComments: refresh,
+        failReadsAfterRunning: true,
+      });
+      yield* harness.start;
+      expect(refresh).toHaveBeenCalledWith({
+        cwd: "/tmp/queued-review-worktree",
+        records: [record],
+      });
+      expect(harness.startRootRun.mock.calls[0]?.[0].message.text).toContain("L6");
+      expect(harness.startRootRun.mock.calls[0]?.[0].message.text).toContain(record.diff);
+    }),
 );

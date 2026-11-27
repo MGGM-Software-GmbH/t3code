@@ -20,6 +20,9 @@ model.
   Narrower clients receive explicit scopes.
 - **No recoverable secrets in read models.** Only the creation response returns a raw pairing
   credential; access listings expose metadata only.
+- **Paired browser sessions.** Opening or returning to the web app and interacting with it renew
+  the cookie and the same server session for 30 days. A quiet tab and background socket traffic
+  do not renew it. An expired or revoked session requires pairing again.
 - **DPoP binding.** Browser cookies, bearer tokens, and DPoP tokens share the scoped session model.
   DPoP binds tokens to a client proof key; an invalid proof must fail rather than fall back to
   bearer auth. Plain paired DPoP sessions renew in place so live sockets and Sharing & access rows

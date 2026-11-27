@@ -155,7 +155,7 @@ import { issueTrackerEnvironment } from "../state/issueTrackers";
 import { useEnvironmentQuery } from "../state/query";
 import { readThreadShell, useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
-import { shellEnvironment } from "../state/shell";
+import { useOpenEditorWithFeedback } from "../useOpenEditorWithFeedback";
 import { assetEnvironment } from "../state/assets";
 import {
   readEnvironmentScope,
@@ -411,10 +411,9 @@ const GITHUB_ALERT_PRESENTATIONS: Record<
 
 function normalizeMarkdownLinkHrefKey(href: string): string {
   const normalizedHref = normalizeMarkdownLinkDestination(href);
-  const rewrittenHref = rewriteMarkdownFileUriHref(normalizedHref) ?? normalizedHref;
-  return WINDOWS_DRIVE_PATH_REGEX.test(rewrittenHref)
-    ? rewrittenHref.replaceAll("\\", "/")
-    : rewrittenHref;
+  return WINDOWS_DRIVE_PATH_REGEX.test(normalizedHref)
+    ? normalizedHref.replaceAll("\\", "/")
+    : normalizedHref;
 }
 
 /** A component per element, with the hast node it renders, as react-markdown typed them. */
@@ -448,7 +447,8 @@ function markdownUrlTransform(href: string) {
   if (isWindowsDrivePathHref(href)) return href;
   if (isLocalEditorFileHref(href)) return href;
   if (parseMarkdownSandboxFileLink(href)) return href;
-  return rewriteMarkdownFileUriHref(href) ?? safeUrl(href);
+  // Keep the scheme until file-link resolution can distinguish URI escapes from literal host paths.
+  return rewriteMarkdownFileUriHref(href) !== null ? href : safeUrl(href);
 }
 
 const NO_MARKDOWN_EDITORS: ReadonlyArray<EditorId> = [];
@@ -748,9 +748,7 @@ function useChatMarkdownState(
   const [preferredEditor] = usePreferredEditor(availableEditors);
   const preferredEditorMenuLabel = openInEditorMenuLabel(preferredEditor, messages);
   const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors, cwd);
-  const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
-    reportFailure: false,
-  });
+  const openInEditor = useOpenEditorWithFeedback("caller");
   const revealFileInFileManager = (filePath: string) => {
     if (environmentId === null) {
       return Promise.resolve(

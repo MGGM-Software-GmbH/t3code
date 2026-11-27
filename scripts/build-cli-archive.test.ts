@@ -9,7 +9,35 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { awaitCliNotarization, signMacArchiveContents } from "./build-cli-archive.ts";
+import {
+  awaitCliNotarization,
+  decodeWorkspaceConfig,
+  encodeStageWorkspaceConfig,
+  signMacArchiveContents,
+} from "./build-cli-archive.ts";
+
+it.effect("retains exact release-age approvals through workspace YAML codecs", () =>
+  Effect.gen(function* () {
+    for (const policy of [
+      "minimumReleaseAge: 4320\nminimumReleaseAgeExclude:\n  - '@cursor/sdk@1.5.0'\n",
+      "{}\n",
+    ]) {
+      const workspace = yield* decodeWorkspaceConfig(policy);
+      const staged = yield* encodeStageWorkspaceConfig({
+        supportedArchitectures: { os: ["linux"], cpu: ["x64"], libc: ["glibc"] },
+        ...workspace,
+      });
+      assert.deepStrictEqual(yield* decodeWorkspaceConfig(staged), workspace);
+      if (policy !== "{}\n") {
+        assert.deepStrictEqual(workspace.minimumReleaseAgeExclude, ["@cursor/sdk@1.5.0"]);
+        assert.strictEqual(workspace.minimumReleaseAge, 4320);
+      } else {
+        assert.isUndefined(workspace.minimumReleaseAge);
+        assert.isUndefined(workspace.minimumReleaseAgeExclude);
+      }
+    }
+  }),
+);
 
 const signedEnv = {
   T3CODE_CLI_MAC_SIGN_IDENTITY: "Developer ID Application: Test (TEAM)",

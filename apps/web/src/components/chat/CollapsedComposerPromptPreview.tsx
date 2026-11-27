@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { isProviderSkillUserInvocable } from "@t3tools/client-runtime/providerSkills";
 import type { ServerProviderSkill } from "@t3tools/contracts";
 import { assistantCitationLabel } from "@t3tools/shared/assistantCitations";
@@ -5,6 +6,7 @@ import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { fileDisplayName } from "@t3tools/shared/path";
 import {
   CircleDashedIcon,
+  HashIcon,
   ImageIcon,
   MessageCircleIcon,
   MessagesSquareIcon,
@@ -54,6 +56,14 @@ function resolvedContextRecord(
   return entry;
 }
 
+function* segmentiereMitPosition(prompt: string) {
+  let offset = 0;
+  for (const segment of splitPromptIntoComposerSegments(prompt)) {
+    yield { key: offset, segment };
+    offset += segment.type === "text" ? segment.text.length : segment.source.length;
+  }
+}
+
 /**
  * The draft as the editor's chips, drawn inert: the collapsed row is a single button that
  * expands the composer, so these chips carry no popovers, links or focus stops.
@@ -64,16 +74,23 @@ export function CollapsedComposerPromptPreview(props: {
   contextRecords: ComposerDraftContextRecords;
   theme: Theme;
 }) {
-  let offset = 0;
-  return splitPromptIntoComposerSegments(props.prompt).map((segment) => {
-    const key = offset;
-    offset += segment.type === "text" ? segment.text.length : segment.source.length;
+  const uebersetzen = useGT();
+  return [...segmentiereMitPosition(props.prompt)].map(({ key, segment }) => {
     switch (segment.type) {
       case "text":
         return segment.text;
       // The editor's model chip is a popover trigger, which cannot nest in the row's button.
       case "model":
         return segment.source;
+      case "fogbugz-reference":
+        return (
+          <ContextChip key={key} kind="neutral">
+            <HashIcon aria-hidden="true" />
+            <ContextChipLabel>
+              {uebersetzen("FogBugz #{wert1}", { wert1: segment.caseId })}
+            </ContextChipLabel>
+          </ContextChip>
+        );
       case "citation":
         return (
           <ContextChip key={key} kind="citation">

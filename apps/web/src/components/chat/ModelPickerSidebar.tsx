@@ -1,5 +1,12 @@
+import { useGT, Var } from "gt-react";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
+import {
+  antigravityGeminiWeeklyWindows,
+  remainingPercent,
+  weeklyLimitWindow,
+  shouldShowWeeklyLimit,
+} from "@t3tools/shared/usageLimits";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { msg, T, useMessages } from "gt-react";
 import { StarIcon } from "lucide-react";
@@ -7,6 +14,9 @@ import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import type { MessageResolver } from "../../i18n/messages";
+import { useNowMinute } from "../../hooks/useNowMinute";
+import { formatGermanTimestamp } from "../../timestampFormat";
+import { resetExpiringSoon } from "../usage/resetCreditExpiry";
 import {
   isProviderInstancePickerReady,
   shouldShowInstanceBadge,
@@ -57,11 +67,14 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   selectableUnavailableInstanceIds?: ReadonlySet<ProviderInstanceId>;
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
 }) {
+  const uebersetzen = useGT();
   const m = useMessages();
   const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
     props.onSelectInstance(instanceId);
   };
   const showFavorites = props.showFavorites ?? true;
+  const minute = useNowMinute();
+  const now = Date.parse(`${minute}:00.000Z`);
   const [hoveredInstanceId, setHoveredInstanceId] = useState<ProviderInstanceId | null>(null);
   const sidebarContentRef = useRef<HTMLDivElement>(null);
   const [selectedIndicatorTop, setSelectedIndicatorTop] = useState<number | null>(null);
@@ -88,7 +101,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
   return (
     <Toolbar.Root
-      className="w-11 shrink-0 overflow-hidden bg-muted/30"
+      className="w-14 shrink-0 overflow-hidden bg-muted/30"
       data-model-picker-sidebar="true"
       aria-label={m(msg("Providers"))}
       orientation="vertical"
@@ -118,7 +131,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                     render={
                       <Toolbar.Button
                         className={cn(
-                          "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                          "relative isolate flex h-9 w-full cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
                         )}
                         onClick={() => handleSelect("favorites")}
                         type="button"
@@ -152,6 +165,27 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isSelected = props.selectedInstanceId === entry.instanceId;
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+            const limits = entry.snapshot.usageLimits;
+            const showLimit =
+              shouldShowWeeklyLimit(entry.snapshot) &&
+              (entry.snapshot.driver !== "antigravity" ||
+                (!isUnavailable && entry.snapshot.auth.status === "authenticated"));
+            const weekly = limits
+              ? weeklyLimitWindow(limits, { driver: entry.snapshot.driver })
+              : null;
+            const extraGeminiWindows =
+              limits && entry.snapshot.driver === "antigravity"
+                ? antigravityGeminiWeeklyWindows(limits).filter(
+                    (window) => window.id !== weekly?.id,
+                  )
+                : [];
+            const percent = weekly ? remainingPercent(weekly) : null;
+            const credits = limits && !limits.unavailable ? limits.resetCredits : undefined;
+            const expiringSoon =
+              (credits?.availableCount ?? 0) > 0 && resetExpiringSoon(credits?.nextExpiresAt, now);
+            const limitLabel =
+              percent === null ? "Weekly limit unavailable" : `${percent}% remaining`;
+            const creditsLabel = credits ? ` · ${credits.availableCount} banked resets` : "";
 
             const tooltip = isUnavailable
               ? describeUnavailableInstance(entry, m)
@@ -162,7 +196,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const button = (
               <Toolbar.Button
                 className={cn(
-                  "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                  "relative isolate flex min-h-14 w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-md py-1.5 transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
                   isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
                 )}
                 data-provider-accent-color={entry.accentColor}
@@ -180,6 +214,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 aria-pressed={isSelected}
                 type="button"
                 aria-label={isUnavailable || isContextDisabled ? tooltip : entry.displayName}
+                aria-description={showLimit ? `${limitLabel}${creditsLabel}` : undefined}
               >
                 <ProviderInstanceIcon
                   driverKind={entry.driverKind}
@@ -199,6 +234,36 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   }
                   {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
+                {showLimit ? (
+                  <span className="flex w-10 flex-col gap-0.5">
+                    <span
+                      className="flex items-center justify-center gap-0.5 text-3xs leading-none tabular-nums text-muted-foreground"
+                      aria-hidden="true"
+                    >
+                      <span>{percent === null ? "?" : `${percent}%`}</span>
+                      {credits && credits.availableCount > 0 ? (
+                        <span className={cn(expiringSoon && "text-reset-expiry-foreground")}>
+                          +{credits.availableCount}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span
+                      role={percent === null ? "img" : "meter"}
+                      aria-label={`${entry.displayName}: ${limitLabel}${creditsLabel}`}
+                      aria-valuemin={percent === null ? undefined : 0}
+                      aria-valuemax={percent === null ? undefined : 100}
+                      aria-valuenow={percent ?? undefined}
+                      className="h-0.75 overflow-hidden rounded-full bg-foreground/10"
+                    >
+                      {percent !== null ? (
+                        <span
+                          className="block h-full rounded-full bg-muted-foreground"
+                          style={{ width: `${percent}%` }}
+                        />
+                      ) : null}
+                    </span>
+                  </span>
+                ) : null}
               </Toolbar.Button>
             );
 
@@ -222,6 +287,35 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                     align="center"
                   >
                     {tooltip}
+                    {showLimit ? (
+                      <div className="mt-1 text-muted-foreground">
+                        {limitLabel}
+                        {creditsLabel}
+                      </div>
+                    ) : null}
+                    {extraGeminiWindows.map((window) => (
+                      <div key={window.id} className="text-muted-foreground">
+                        {`${window.label}: ${uebersetzen("{wert1}% remaining", { wert1: remainingPercent(window) })}`}
+                      </div>
+                    ))}
+                    {credits && credits.availableCount > 0 ? (
+                      <div
+                        className={cn(
+                          expiringSoon ? "text-reset-expiry-foreground" : "text-muted-foreground",
+                        )}
+                      >
+                        <T>
+                          Next banked reset expiry:<Var> </Var>
+                          <Var>
+                            {credits.nextExpiresAt
+                              ? uebersetzen("{wert1} (local time)", {
+                                  wert1: formatGermanTimestamp(credits.nextExpiresAt),
+                                })
+                              : uebersetzen("not reported")}
+                          </Var>
+                        </T>
+                      </div>
+                    ) : null}
                   </TooltipPopup>
                 </Tooltip>
               </div>

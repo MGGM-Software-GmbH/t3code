@@ -17,6 +17,7 @@ import {
   type PreviewAutomationResizeResult,
   type PreviewAutomationSnapshot,
   type PreviewAutomationStatus,
+  PdSecretsError,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -30,6 +31,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
@@ -37,6 +39,7 @@ import { beforeEach, expect, vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as PdSecrets from "../environment/PdSecrets.ts";
 import * as Broker from "../mcp/PreviewAutomationBroker.ts";
 import * as DesktopChannel from "./DesktopBrowserChannel.ts";
 import * as Manager from "./Manager.ts";
@@ -290,6 +293,7 @@ function makeContext(onClose?: (context: BrowserContext) => void, initialUrl = "
   const context = {
     page,
     sessions,
+    addCookies: vi.fn(async () => {}),
     cssViewport,
     newPage: async () => page as unknown as Page,
     grantPermissions: vi.fn(async () => {}),
@@ -455,6 +459,10 @@ const asSession = (providerSessionId: string) => ({
   thread: { ...testThread, providerSessionId },
 });
 const dependencies = Layer.mergeAll(
+  Layer.mock(PdSecrets.PdSecrets)({
+    browserCredentials: () => Effect.fail(new PdSecretsError({ reason: "browser_disabled" })),
+    browserSignInAvailable: () => Effect.succeed(false),
+  }),
   Broker.layer,
   Manager.layer,
   Layer.succeed(ServerEnvironment.ServerEnvironment, {
@@ -643,6 +651,44 @@ it.effect("tells the desktop once per thread when its agent turns start and end"
     expect(yield* Queue.take(turns)).toEqual([threadId, false]);
     expect(yield* Queue.size(turns)).toBe(0);
   }).pipe(Effect.scoped, Effect.provide(layer)),
+);
+
+it.live.each([false, true])(
+  "installs an authenticated session before navigating the browser (desktop: %s)",
+  (desktop) =>
+    Effect.gen(function* () {
+      const browser = yield* ServerBrowser.ServerBrowser;
+      desktopRendersNext = desktop;
+      const snapshot = yield* browser.openAuthenticated(
+        {
+          threadId: scope.thread.threadId,
+          url: "https://fogbugz.example/default.asp?ixBug=42",
+          profileId: "incognito",
+          colorScheme: "dark",
+        },
+        { baseUrl: "https://fogbugz.example/", cookie: "fixture-session" },
+      );
+      yield* browser.attachViewer(viewerInput(PreviewTabId.make(snapshot.tabId), true));
+      const context = desktop ? desktopConnections[0]!.context : contexts[0]!;
+      expect(context.addCookies).toHaveBeenCalledWith([
+        {
+          name: "fbToken",
+          value: "fixture-session",
+          url: "https://fogbugz.example/",
+          httpOnly: true,
+          secure: true,
+          sameSite: "Lax",
+        },
+      ]);
+      expect(context.addCookies.mock.invocationCallOrder[0]).toBeLessThan(
+        context.page.goto.mock.invocationCallOrder[0]!,
+      );
+      expect(context.page.emulateMedia).toHaveBeenCalledWith({ colorScheme: "dark" });
+      expect(context.page.emulateMedia.mock.invocationCallOrder[0]).toBeLessThan(
+        context.page.goto.mock.invocationCallOrder[0]!,
+      );
+      expect(JSON.stringify(snapshot)).not.toContain("fixture-session");
+    }).pipe(Effect.scoped, Effect.provide(layer)),
 );
 
 it.effect("preview_open reports its navigation timeout instead of the request budget", () =>
@@ -1538,6 +1584,37 @@ it.effect("enforces provider ownership and explicit targets when a session has m
       expect((yield* manager.list({ threadId: scope.thread.threadId })).sessions).toContainEqual(
         expect.objectContaining({ tabId: unclaimed.tabId }),
       );
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live.each([70, 100])("preserves quality %i and resolution during scrolling", (quality) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { browser, broker, tabId } = yield* ready;
+      const viewer = yield* browser.attachViewer({ ...viewerInput(tabId, true), quality });
+      const session = contexts[0]!.sessions.at(-1)!;
+      using _now = vi.spyOn(Date, "now").mockReturnValue(1000);
+      yield* viewer.input({ type: "takeControl" });
+      yield* viewer.input({ type: "wheel", x: 50, y: 50, deltaX: 0, deltaY: 100 });
+      for (const sessionId of [1, 2, 3, 4]) {
+        session.emit("Page.screencastFrame", { data: "ZnJhbWU=", sessionId });
+      }
+      yield* viewer.input({ type: "releaseControl" });
+      // Capturing waits for queued screencast changes before resuming the stream.
+      yield* broker.invoke<PreviewAutomationSnapshot>({
+        scope,
+        tabId,
+        operation: "snapshot",
+        input: {},
+      });
+      const starts = session.send.mock.calls.filter(
+        ([method]) => method === "Page.startScreencast",
+      );
+      expect(starts.length).toBeGreaterThan(0);
+      for (const [, params] of starts) {
+        expect(params).toEqual({ format: "jpeg", quality, maxWidth: 1280, maxHeight: 800 });
+      }
     }),
   ).pipe(Effect.provide(layer)),
 );
@@ -4603,6 +4680,74 @@ it.effect("a popup opens in its opener's appearance", () =>
       expect(event.snapshot.colorScheme).toBe("dark");
     }),
   ).pipe(Effect.provide(layer)),
+);
+
+it.effect("checks credential origin and tab ownership before reading pd-secrets", () =>
+  Effect.gen(function* () {
+    const { browser, broker, tabId } = yield* ready;
+    const pdSecrets = yield* PdSecrets.PdSecrets;
+    const read = vi.spyOn(pdSecrets, "browserCredentials");
+    const fields = contexts[0]!.page.locator;
+    const fieldLookups = fields.mock.calls.length;
+    yield* broker.invoke({
+      scope,
+      tabId,
+      operation: "navigate",
+      input: { url: "https://login.test/" },
+    });
+    const invoke = (expectedOrigin: string, caller = scope) =>
+      broker
+        .invoke<object>({
+          scope: caller,
+          tabId,
+          operation: "fillCredentials",
+          input: { credential: "OPS_LOKAL", expectedOrigin },
+        })
+        .pipe(Effect.flip);
+    expect((yield* invoke("https://other.test")).message).toContain("expected secure login origin");
+    expect(read).not.toHaveBeenCalled();
+    expect((yield* invoke("https://login.test")).message).toContain("disabled");
+    expect(read).toHaveBeenCalledTimes(1);
+    yield* invoke("https://login.test", asSession("another-agent"));
+    expect(read).toHaveBeenCalledTimes(1);
+    {
+      using now = vi.spyOn(performance, "now").mockReturnValue(0);
+      const expired = Redacted.make({ username: "synthetic-user", password: "synthetic-password" });
+      read.mockImplementationOnce(() =>
+        Effect.sync(() => {
+          now.mockReturnValue(1_000_000);
+          return expired;
+        }),
+      );
+      expect((yield* invoke("https://login.test"))._tag).toBe("PreviewAutomationTimeoutError");
+      expect(() => Redacted.value(expired)).toThrow();
+    }
+    const requested = yield* Deferred.make<void>();
+    const credentials =
+      yield* Deferred.make<Redacted.Redacted<{ username: string; password: string }>>();
+    read.mockImplementation(() =>
+      Deferred.succeed(requested, undefined).pipe(Effect.andThen(Deferred.await(credentials))),
+    );
+    const running = yield* invoke("https://login.test").pipe(Effect.forkScoped);
+    yield* Deferred.await(requested);
+    const viewer = yield* browser.attachViewer(viewerInput(tabId, true));
+    const takeover = yield* viewer.input({ type: "takeControl" }).pipe(Effect.forkScoped);
+    let control = yield* Queue.take(viewer.output);
+    while (control._tag !== "control" || control.controller !== "you") {
+      control = yield* Queue.take(viewer.output);
+    }
+    yield* Deferred.succeed(
+      credentials,
+      Redacted.make({ username: "synthetic-user", password: "synthetic-password" }),
+    );
+    expect((yield* Fiber.join(running))._tag).toBe("PreviewAutomationControlInterruptedError");
+    yield* Fiber.join(takeover);
+    expect((yield* invoke("https://login.test"))._tag).toBe(
+      "PreviewAutomationControlInterruptedError",
+    );
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(fields).toHaveBeenCalledTimes(fieldLookups);
+  }).pipe(Effect.scoped, Effect.provide(layer)),
 );
 
 it.live("a page's title change without navigation reaches its session", () =>

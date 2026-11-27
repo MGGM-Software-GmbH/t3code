@@ -4906,7 +4906,6 @@
   "d71048f4fb9cf44a": "동기화 대기 중",
   "0a260c7744afd0be": "대기 중",
   "ad78fae7d373cf21": "작업 중",
-  "be451f475c514b37": "깨어남 알림 닫기",
   "54ccc22be28a985d": "사용자 지정…",
   "bdd8716a3d6f1a53": "스레드 정렬…",
   "e4c22e8809f2f431": "고정 해제",
@@ -5684,5 +5683,10 @@
   "99451a5d2d40440f": "{by}에서 철회했습니다.",
   "3ee30a50b70fffab": "{by}에서 철회했습니다: {reason}",
   "201490988858b511": "{by}에서 철회함",
-  "46d614fa7b4bf1e5": "워크플로 실행"
+  "46d614fa7b4bf1e5": "워크플로 실행",
+  "79f9ab280094d5eb": "Monthly weekdays are not available here",
+  "1f41516b2ca0eb5b": "Update this environment to schedule a weekday of each month.",
+  "af115fe96798d68a": "Week of month",
+  "ee6590d81a6db8dd": "{wert1} of every month",
+  "162ce6c96258a8b8": "Dismiss {wert1} notification"
 }

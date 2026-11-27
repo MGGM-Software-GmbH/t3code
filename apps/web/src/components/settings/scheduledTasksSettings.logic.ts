@@ -68,6 +68,15 @@ export function scheduleLabel(
   const weekdays = schedule.weekdays ?? [];
   const time = formatTimeOfDay(schedule.timeOfDay, timestampFormat);
   const zone = scheduleTimeZoneLabel(timeZone, runAt);
+  if (schedule.weekOfMonth != null) {
+    const occurrence = (
+      { [-1]: "Last", 1: "First", 2: "Second", 3: "Third", 4: "Fourth", 5: "Fifth" } as Readonly<
+        Record<number, string>
+      >
+    )[schedule.weekOfMonth];
+    const days = weekdays.map((day) => weekdayShortLabel(day, locale)).join(", ");
+    return `${occurrence} ${days} of every month at ${time}${zone === undefined ? "" : ` ${zone}`}`;
+  }
   if (weekdays.length === 0) {
     return zone === undefined
       ? resolve(msg("Daily at {time}", { time }))
@@ -127,6 +136,7 @@ export interface DraftState {
   /** The stored ISO run time, sent back unchanged when the field was not edited. */
   readonly savedRunAt: string;
   readonly weekdays: ReadonlySet<number>;
+  readonly weekOfMonth?: number | null;
   readonly projectId: string;
   readonly threadId: string;
   /** The thread the form opened with, so a save can tell a cleared destination from an unbound one. */
@@ -305,6 +315,7 @@ export function scheduleFromDraft(draft: DraftState): ScheduledTaskUpsertSchedul
     type: "fixed_time",
     timeOfDay: draft.timeOfDay,
     ...(selectedEveryDay ? {} : { weekdays: [...draft.weekdays].toSorted() }),
+    ...(draft.weekOfMonth === undefined ? {} : { weekOfMonth: draft.weekOfMonth }),
   };
 }
 
@@ -328,6 +339,9 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     runAt: schedule.type === "once" ? toDateTimeLocalValue(new Date(schedule.runAt)) : "",
     savedRunAt: schedule.type === "once" ? schedule.runAt : "",
     weekdays,
+    ...(schedule.type === "fixed_time" && schedule.weekOfMonth !== undefined
+      ? { weekOfMonth: schedule.weekOfMonth }
+      : {}),
     projectId: task.projectId,
     threadId: task.threadId ?? "",
     savedThreadId: task.threadId ?? "",

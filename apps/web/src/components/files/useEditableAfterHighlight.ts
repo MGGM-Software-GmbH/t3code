@@ -7,8 +7,10 @@ import {
 import { useWorkerPool } from "@pierre/diffs/react";
 import type { WorkerPoolManager } from "@pierre/diffs/worker";
 import { useEffect, useState } from "react";
+import { isDwsFile } from "~/hooks/useFileHighlighter";
 
 function needsWorkerHighlight(workerPool: WorkerPoolManager | undefined, file: FileContents) {
+  if (isDwsFile(file.name)) return false;
   if (workerPool?.isWorkingPool() !== true) return false;
   if ((file.lang ?? getFiletypeFromFileName(file.name)) === "text") return false;
   let lines = 1;

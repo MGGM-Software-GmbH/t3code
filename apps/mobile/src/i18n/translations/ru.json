@@ -5000,7 +5000,6 @@
   "d71048f4fb9cf44a": "Ожидает синхронизации",
   "0a260c7744afd0be": "Ожидает",
   "ad78fae7d373cf21": "Работает",
-  "be451f475c514b37": "Скрыть уведомление о пробуждении",
   "54ccc22be28a985d": "Другое…",
   "bdd8716a3d6f1a53": "Упорядочить треды…",
   "e4c22e8809f2f431": "Открепить",
@@ -5780,5 +5779,10 @@
   "99451a5d2d40440f": "Отозван: {by}.",
   "3ee30a50b70fffab": "Отозван ({by}): {reason}",
   "201490988858b511": "отозван: {by}",
-  "46d614fa7b4bf1e5": "Запуски воркфлоу"
+  "46d614fa7b4bf1e5": "Запуски воркфлоу",
+  "79f9ab280094d5eb": "Monthly weekdays are not available here",
+  "1f41516b2ca0eb5b": "Update this environment to schedule a weekday of each month.",
+  "af115fe96798d68a": "Week of month",
+  "ee6590d81a6db8dd": "{wert1} of every month",
+  "162ce6c96258a8b8": "Dismiss {wert1} notification"
 }

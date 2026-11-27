@@ -209,6 +209,10 @@ function markdownPreview(
   contents = "- [ ] Keep the rest of this file\n",
   relativePath = "tasks.md",
 ) {
+  return sourcePreview(relativePath, contents, truncated);
+}
+
+function sourcePreview(relativePath: string, contents: string, truncated = false) {
   state.file = {
     relativePath,
     contents,
@@ -921,5 +925,26 @@ describe("rendered Markdown scroll position", () => {
     await vi.waitFor(() => expect(readingPosition()?.heading).toBe("Section 0"));
     await screen.rerender(preview("first"));
     await expectReadingPosition(saved);
+  });
+});
+describe("DWS file editing", () => {
+  it.each(["example.dws", "example.shtml"])("highlights and saves %s", async (relativePath) => {
+    using _settings = setup();
+    const contents = "<% var QueryName := 'sql_test'; %>\nconst value = \"<%= QueryName %>\";\n";
+    await using screen = await render(sourcePreview(relativePath, contents));
+    const editor = screen.getByRole("textbox");
+    await expect.element(editor).toBeVisible();
+    const element = editor.element();
+    expect(element.querySelectorAll("span[style*='color:']").length).toBeGreaterThan(3);
+    using _timers = fakeTimers();
+    await editor.click();
+    const { userEvent } = await import("vite-plus/test/browser");
+    await userEvent.keyboard("{Control>}{End}{/Control}// Test");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).toHaveBeenCalledWith({
+      environmentId,
+      input: { cwd: "/workspace", relativePath, contents: `${contents}// Test` },
+    });
+    expect(element.querySelectorAll("span[style*='color:']").length).toBeGreaterThan(3);
   });
 });

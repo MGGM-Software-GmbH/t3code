@@ -328,6 +328,8 @@ publicHoistPattern:
   - "@cursor/sdk-*"
 
 minimumReleaseAgeExclude:
+  # Pinned by the stable Vite+ lockfile; its transitive benchmark package shares that update.
+  - "tinybench@6.2.5"
   - "@legendapp/list@3.9.0"
   - "@effect/tsgo-darwin-arm64@0.67.1"
   - "@effect/tsgo-darwin-x64@0.67.1"

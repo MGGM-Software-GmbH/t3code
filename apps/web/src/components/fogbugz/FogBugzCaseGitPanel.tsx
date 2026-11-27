@@ -1,0 +1,630 @@
+import { msg, useGT, useMessages, T, Var } from "gt-react";
+import { useAtomValue } from "@effect/atom-react";
+import type {
+  FogBugzCaseGitCheckout,
+  FogBugzCaseFilesInput,
+  FogBugzCaseGitState,
+  FogBugzCaseGitInput,
+} from "@t3tools/contracts";
+import { FogBugzError } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+
+import * as Schema from "effect/Schema";
+import { GitBranch, GitCommitHorizontal, RotateCcw, RefreshCw } from "lucide-react";
+import {
+  runAttachmentUploadCycle,
+  deletePendingAttachmentUpload,
+} from "@t3tools/client-runtime/state/attachments";
+import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+import { useEffect, useEffectEvent, useRef, useState, type ComponentProps } from "react";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
+import { fogbugzEnvironment } from "~/state/fogbugz";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { formatEnvironmentQueryError, useEnvironmentQuery } from "~/state/query";
+import FilePreviewPanel from "../files/FilePreviewPanel";
+import { Button } from "../ui/button";
+import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+import {
+  Dialog,
+  DialogPopup,
+  DialogHeader,
+  DialogTitle,
+  DialogPanel,
+  DialogFooter,
+} from "../ui/dialog";
+import { Input } from "../ui/input";
+import { attachmentEnvironment } from "~/state/attachments";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { readPreparedConnection } from "~/state/session";
+
+class FallDateiUploadFehler extends Schema.TaggedError<FallDateiUploadFehler>()(
+  "FallDateiUploadFehler",
+  {
+    message: Schema.String,
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
+) {}
+
+const isFogBugzError = Schema.is(FogBugzError);
+
+const uebertrageFallDatei = Effect.fn("FogBugzCaseGitPanel.upload")(function* (
+  datei: File,
+  url: string,
+  resolve: ReturnType<typeof useMessages>,
+) {
+  const bytes = yield* Effect.tryPromise({
+    try: () => datei.arrayBuffer(),
+    catch: (error) =>
+      new FallDateiUploadFehler({
+        message: resolve(msg("Could not read the case file")),
+        cause: error,
+      }),
+  });
+  const response = yield* HttpClient.execute(
+    HttpClientRequest.post(url).pipe(
+      HttpClientRequest.bodyUint8Array(new Uint8Array(bytes)),
+      HttpClientRequest.setHeader("Content-Type", datei.type || "application/octet-stream"),
+    ),
+  );
+  if (response.status < 200 || response.status >= 300) {
+    return yield* new FallDateiUploadFehler({
+      message: resolve(msg("Upload rejected ({status})", { status: response.status })),
+    });
+  }
+}, Effect.provide(FetchHttpClient.layer));
+
+type Props = Pick<
+  ComponentProps<typeof FilePreviewPanel>,
+  | "threadRef"
+  | "composerDraftTarget"
+  | "keybindings"
+  | "availableEditors"
+  | "workspaceMutationId"
+  | "openInShortcutEnabled"
+>;
+
+async function settleCaseFileOperation<Result>(
+  operation: () => Promise<Result>,
+  onFailure: (failure: unknown) => Result,
+  onSettled: () => void,
+): Promise<Result> {
+  try {
+    return await operation();
+  } catch (failure) {
+    return onFailure(failure);
+  } finally {
+    onSettled();
+  }
+}
+
+export function FogBugzCaseGitPanel(props: Props) {
+  const { environmentId, threadId } = props.threadRef;
+  const permission = useAtomValue(fogbugzEnvironment.ensureCaseGit.permissionAtom(environmentId));
+  const link = useEnvironmentQuery(
+    fogbugzEnvironment.thread({ environmentId, input: { threadId } }),
+  );
+  if (!permission)
+    return (
+      <p className="p-4 text-sm text-muted-foreground">
+        <T>Source control permission is required to prepare case files.</T>
+      </p>
+    );
+  if (link.error)
+    return (
+      <div className="space-y-3 p-4 text-sm">
+        <p role="alert">{link.error}</p>
+        <Button onClick={link.refresh}>
+          <T>Retry</T>
+        </Button>
+      </div>
+    );
+  if (!link.isSuccess)
+    return (
+      <p role="status" className="p-4 text-sm text-muted-foreground">
+        <T>Loading case…</T>
+      </p>
+    );
+  if (!link.data)
+    return (
+      <p className="p-4 text-sm text-muted-foreground">
+        <T>Link this thread to a FogBugz case to open its Git files.</T>
+      </p>
+    );
+  return <CaseGitFiles key={`${environmentId}:${threadId}:${link.data.caseId}`} {...props} />;
+}
+
+function CaseGitFiles(props: Props) {
+  const uebersetzen = useGT();
+  const resolve = useMessages();
+  const { environmentId, threadId } = props.threadRef;
+  const prepare = useAtomCommand(fogbugzEnvironment.ensureCaseGit, { reportFailure: false });
+  const mutate = useAtomCommand(fogbugzEnvironment.mutateCaseFiles, { reportFailure: false });
+  const manageGit = useAtomCommand(fogbugzEnvironment.manageCaseGit, { reportFailure: false });
+  const gitPermission = useAtomValue(
+    fogbugzEnvironment.manageCaseGit.permissionAtom(environmentId),
+  );
+  const [gitDialog, setGitDialog] = useState<"commit" | "revert" | null>(null);
+  const [gitState, setGitState] = useState<typeof FogBugzCaseGitState.Type | null>(null);
+  const [commitMessage, setCommitMessage] = useState("Update case files");
+  const writePermission = useAtomValue(
+    fogbugzEnvironment.mutateCaseFiles.permissionAtom(environmentId),
+  );
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [mutating, setMutating] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const [dialog, setDialog] = useState<{
+    type: "create-file" | "create-directory" | "delete";
+    path: string;
+  } | null>(null);
+  const [name, setName] = useState("");
+  const [checkout, setCheckout] = useState<typeof FogBugzCaseGitCheckout.Type | null>(null);
+  const [error, setError] = useState<{ message: string; unavailable: boolean } | null>(null);
+  const [relativePath, setRelativePath] = useState<string | null>(null);
+  const [folderTrail, setFolderTrail] = useState<string | undefined>();
+  const [pending, setPending] = useState(false);
+  const requestId = useRef(0);
+  const singleColumn = useMediaQuery("(max-width: 639px)");
+  async function runGit(action: typeof FogBugzCaseGitInput.Type.action) {
+    setMutating(true);
+    setMutationError(null);
+    return settleCaseFileOperation(
+      async () => {
+        const result = await manageGit({ environmentId, input: { threadId, action } });
+        if (result._tag !== "Success") throw new Error(formatEnvironmentQueryError(result.cause));
+        setGitState(result.value);
+        setCheckout(result.value.checkout);
+        setRevision((value) => value + 1);
+        if (action.type === "revert") {
+          setRelativePath(null);
+          setFolderTrail(undefined);
+        }
+        if (action.type !== "status") setGitDialog(null);
+        return true;
+      },
+      (failure) => {
+        setMutationError(
+          failure instanceof Error ? failure.message : uebersetzen("Could not update case Git."),
+        );
+        return false;
+      },
+      () => setMutating(false),
+    );
+  }
+  async function openGitDialog(action: "commit" | "revert") {
+    if (await runGit({ type: "status" })) setGitDialog(action);
+  }
+  async function change(action: typeof FogBugzCaseFilesInput.Type.action) {
+    const result = await mutate({ environmentId, input: { threadId, action } });
+    if (result._tag !== "Success") throw new Error(formatEnvironmentQueryError(result.cause));
+    if (
+      action.type === "delete" &&
+      relativePath &&
+      (relativePath === action.path || relativePath.startsWith(`${action.path}/`))
+    )
+      setRelativePath(null);
+    if (action.type === "create-file") setRelativePath(action.path);
+    setRevision((value) => value + 1);
+  }
+  async function runChange(action: typeof FogBugzCaseFilesInput.Type.action) {
+    if (mutating) return;
+    setMutating(true);
+    setMutationError(null);
+    await settleCaseFileOperation(
+      async () => {
+        await change(action);
+        setDialog(null);
+      },
+      (failure) => {
+        setMutationError(
+          failure instanceof Error ? failure.message : uebersetzen("Could not change case files."),
+        );
+      },
+      () => setMutating(false),
+    );
+  }
+  async function upload(files: File[], folder: string, containsDirectories = false) {
+    if (containsDirectories) {
+      setMutationError(
+        uebersetzen("Drop individual files. Create folders in the case file tree first."),
+      );
+      return;
+    }
+    if (mutating || !files.length) return;
+    setMutating(true);
+    setMutationError(null);
+    const attachments: Array<{ path: string; attachmentId: string | null }> = [];
+    const pendingIds: string[] = [];
+    await settleCaseFileOperation(
+      async () => {
+        for (const file of files) {
+          const path = folder ? `${folder}/${file.name}` : file.name;
+          if (file.size === 0) {
+            attachments.push({ path, attachmentId: null });
+            continue;
+          }
+          const result = await Effect.runPromise(
+            runAttachmentUploadCycle({
+              registry: appAtomRegistry,
+              createUploadUrl: attachmentEnvironment.createUploadUrl,
+              remove: attachmentEnvironment.remove,
+              environmentId,
+              upload: {
+                type: "file",
+                name: file.name,
+                mimeType: file.type || "application/octet-stream",
+                sizeBytes: file.size,
+              },
+              resolveUploadUrl: (url) => {
+                const connection = readPreparedConnection(environmentId);
+                return connection ? resolveAssetUrl(connection.httpBaseUrl, url) : null;
+              },
+              transport: (url) => uebertrageFallDatei(file, url, resolve),
+            }),
+          );
+          if (result.attachmentId !== null) pendingIds.push(result.attachmentId);
+          if (result.status !== "uploaded") throw new Error("Could not upload case files.");
+          attachments.push({
+            path,
+            attachmentId: result.attachmentId,
+          });
+        }
+        await change({ type: "upload", files: attachments });
+      },
+      (failure) => {
+        setMutationError(
+          failure instanceof Error ? failure.message : uebersetzen("Could not upload case files."),
+        );
+      },
+      () => {
+        for (const attachmentId of pendingIds)
+          deletePendingAttachmentUpload({
+            registry: appAtomRegistry,
+            remove: attachmentEnvironment.remove,
+            environmentId,
+            attachmentId,
+          });
+        setMutating(false);
+      },
+    );
+  }
+  async function load() {
+    const currentRequest = ++requestId.current;
+    const result = await prepare({ environmentId, input: { threadId } });
+    if (currentRequest !== requestId.current) return;
+    if (result._tag === "Success") {
+      setError(null);
+      setCheckout(result.value);
+    } else {
+      const failure = Cause.squash(result.cause);
+      setError({
+        message: formatEnvironmentQueryError(result.cause),
+        unavailable: isFogBugzError(failure) && failure.code === "case_git_unavailable",
+      });
+    }
+  }
+  const loadOnArrival = useEffectEvent(load);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Opening the surface provisions its external Git checkout.
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- Checkout state is published after the external Git request resolves.
+    void loadOnArrival();
+    return () => {
+      requestId.current++;
+    };
+  }, []);
+  if (error)
+    return (
+      <div className="space-y-3 p-4 text-sm">
+        <p role={error.unavailable ? "status" : "alert"}>{error.message}</p>
+        <Button onClick={() => void load()}>
+          <T>Retry</T>
+        </Button>
+      </div>
+    );
+  if (!checkout)
+    return (
+      <p role="status" className="p-4 text-sm text-muted-foreground">
+        <T>Preparing case Git checkout…</T>
+      </p>
+    );
+  return (
+    <div
+      className="flex h-full min-h-0 flex-col"
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect =
+          checkout.canWrite && writePermission && !mutating ? "copy" : "none";
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        if (checkout.canWrite && writePermission && !mutating)
+          void upload(
+            Array.from(event.dataTransfer.files),
+            "",
+            Array.from(event.dataTransfer.items).some(
+              (item) => item.webkitGetAsEntry()?.isDirectory,
+            ),
+          );
+      }}
+    >
+      {mutationError && (
+        <p role="alert" className="border-b px-4 py-2 text-sm text-destructive">
+          {mutationError}
+        </p>
+      )}
+      {mutating && (
+        <p role="status" className="border-b px-4 py-2 text-sm">
+          <T>Updating case files…</T>
+        </p>
+      )}
+      {checkout.syncIssue && (
+        <p role="status" className="border-b px-4 py-2 text-sm text-warning-foreground">
+          {checkout.syncIssue}
+        </p>
+      )}
+      <div className="flex min-h-0 flex-1">
+        <FilePreviewPanel
+          {...props}
+          absoluteFileReferences
+          workspaceMutationId={`${props.workspaceMutationId ?? ""}:${revision}`}
+          readOnly={!checkout.canWrite || mutating}
+          fileActions={{
+            toolbar: (
+              <Menu>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <MenuTrigger
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            aria-label={uebersetzen("Case Git actions")}
+                            disabled={!gitPermission || mutating || pending}
+                          />
+                        }
+                      />
+                    }
+                  >
+                    <GitBranch className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipPopup>
+                    {pending
+                      ? uebersetzen("Save or discard the open file before using Git actions")
+                      : uebersetzen("Case Git actions")}
+                  </TooltipPopup>
+                </Tooltip>
+                <MenuPopup>
+                  <MenuItem
+                    disabled={!checkout.canWrite}
+                    onClick={() => void openGitDialog("commit")}
+                  >
+                    <T>
+                      <GitCommitHorizontal />
+                      Commit…
+                    </T>
+                  </MenuItem>
+                  <MenuItem
+                    disabled={!checkout.canWrite}
+                    onClick={() => void openGitDialog("revert")}
+                  >
+                    <T>
+                      <RotateCcw />
+                      Revert…
+                    </T>
+                  </MenuItem>
+                  <MenuItem onClick={() => void runGit({ type: "status" })}>
+                    <T>
+                      <RefreshCw />
+                      Update
+                    </T>
+                  </MenuItem>
+                </MenuPopup>
+              </Menu>
+            ),
+            disabled: !checkout.canWrite || !writePermission || mutating,
+            create: (folder, directory) => {
+              setName("");
+              setMutationError(null);
+              setDialog({ type: directory ? "create-directory" : "create-file", path: folder });
+            },
+            delete: (path) => {
+              setMutationError(null);
+              setDialog({ type: "delete", path });
+            },
+            upload: (files, folder, containsDirectories) =>
+              void upload(files, folder, containsDirectories),
+          }}
+          singleColumn={singleColumn}
+          environmentId={environmentId}
+          cwd={checkout.cwd}
+          projectName={`Case #${checkout.caseId}`}
+          relativePath={relativePath}
+          revealLine={null}
+          revealRequestId={0}
+          onOpenFile={(file) => {
+            setRelativePath(file);
+            setPending(false);
+          }}
+          onNavigateFolder={(folder, trail) => {
+            setRelativePath(folder);
+            setFolderTrail(trail);
+            setPending(false);
+          }}
+          folderTrail={folderTrail}
+          onPendingChange={(_file, value) => setPending(value)}
+          selectedFilePending={pending}
+        />
+      </div>
+      <Dialog
+        open={gitDialog !== null}
+        onOpenChange={(open) => {
+          if (!open && !mutating) setGitDialog(null);
+        }}
+      >
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>
+              {gitDialog === "commit"
+                ? uebersetzen("Commit case files")
+                : uebersetzen("Revert case files")}
+            </DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            {mutationError && (
+              <p role="alert" className="mb-3 text-sm text-destructive">
+                {mutationError}
+              </p>
+            )}
+            <p className="text-sm">
+              {gitDialog === "commit"
+                ? uebersetzen("Commit all local file changes and publish case commits to FogBugz.")
+                : uebersetzen(
+                    "Discard all uncommitted changes in this case checkout, including new files. Existing commits and ignored files are kept.",
+                  )}
+            </p>
+            <p className="mt-2 break-all text-xs text-muted-foreground">{checkout.cwd}</p>
+            <ul className="my-3 max-h-48 overflow-auto text-sm">
+              {gitState?.paths.map((path) => (
+                <li className="break-all" key={path}>
+                  {path}
+                </li>
+              ))}
+            </ul>
+            {gitState?.paths.length === 0 && (
+              <p className="my-3 text-sm text-muted-foreground">
+                <T>No uncommitted changes.</T>
+              </p>
+            )}
+            {gitDialog === "commit" && (
+              <>
+                <label htmlFor="case-commit-message" className="text-sm">
+                  <T>Commit message</T>
+                </label>
+                <Input
+                  id="case-commit-message"
+                  value={commitMessage}
+                  maxLength={2000}
+                  onChange={(event) => setCommitMessage(event.target.value)}
+                />
+              </>
+            )}
+          </DialogPanel>
+          <DialogFooter>
+            <Button variant="outline" disabled={mutating} onClick={() => setGitDialog(null)}>
+              <T>Cancel</T>
+            </Button>
+            <Button
+              variant={gitDialog === "revert" ? "destructive" : "default"}
+              disabled={
+                mutating ||
+                !gitState ||
+                (gitDialog === "revert" ? gitState.paths.length === 0 : !commitMessage.trim())
+              }
+              onClick={() => {
+                if (gitState && gitDialog)
+                  void runGit(
+                    gitDialog === "commit"
+                      ? {
+                          type: "commit",
+                          revision: gitState.revision,
+                          message: commitMessage.trim(),
+                        }
+                      : { type: "revert", revision: gitState.revision },
+                  );
+              }}
+            >
+              {gitDialog === "commit"
+                ? uebersetzen("Commit and publish")
+                : uebersetzen("Discard changes")}
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+      <Dialog
+        open={dialog !== null}
+        onOpenChange={(open) => {
+          if (!open && !mutating) setDialog(null);
+        }}
+      >
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>
+              {dialog?.type === "delete"
+                ? uebersetzen("Delete case files")
+                : dialog?.type === "create-directory"
+                  ? uebersetzen("New folder")
+                  : uebersetzen("New file")}
+            </DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            {mutationError && (
+              <p role="alert" className="mb-3 text-sm text-destructive">
+                {mutationError}
+              </p>
+            )}
+            {dialog?.type === "delete" ? (
+              <p className="text-sm">
+                <T>
+                  Delete “
+                  <span className="break-all">
+                    <Var>{dialog.path}</Var>
+                  </span>
+                  ” and any files inside it from this checkout?
+                </T>
+              </p>
+            ) : (
+              <>
+                <label htmlFor="case-file-name" className="text-sm">
+                  <T>
+                    Name in <Var>{dialog?.path || uebersetzen("case root")}</Var>
+                  </T>
+                </label>
+                <Input
+                  id="case-file-name"
+                  autoFocus
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && name.trim() && dialog)
+                      void runChange({
+                        type: dialog.type,
+                        path: dialog.path ? `${dialog.path}/${name.trim()}` : name.trim(),
+                      });
+                  }}
+                />
+              </>
+            )}
+          </DialogPanel>
+          <DialogFooter>
+            <Button variant="outline" disabled={mutating} onClick={() => setDialog(null)}>
+              <T>Cancel</T>
+            </Button>
+            <Button
+              variant={dialog?.type === "delete" ? "destructive" : "default"}
+              disabled={mutating || (dialog?.type !== "delete" && !name.trim())}
+              onClick={() => {
+                if (dialog)
+                  void runChange({
+                    type: dialog.type,
+                    path:
+                      dialog.type === "delete"
+                        ? dialog.path
+                        : dialog.path
+                          ? `${dialog.path}/${name.trim()}`
+                          : name.trim(),
+                  });
+              }}
+            >
+              {dialog?.type === "delete" ? "Delete" : uebersetzen("Create")}
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+    </div>
+  );
+}
