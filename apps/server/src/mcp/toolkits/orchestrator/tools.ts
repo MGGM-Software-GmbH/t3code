@@ -1,4 +1,7 @@
 import {
+  FogBugzId,
+  McpCapabilityUnavailableError,
+  ThreadId,
   OrchestratorMcpCapabilitiesInput,
   OrchestratorMcpCapabilitiesResult,
   OrchestrationV2StopWorkflowInput,
@@ -265,6 +268,24 @@ const ThreadReadTool = Tool.make("t3_thread_read", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
 
+const LinkFogBugzCaseTool = Tool.make("link_fogbugz_case", {
+  description:
+    "Link an existing FogBugz case to this T3 thread by its numeric caseId. Replaces this thread's previous FogBugz link. The case itself is unchanged.",
+  parameters: Schema.Struct({ caseId: FogBugzId }),
+  success: Schema.Struct({ threadId: ThreadId, caseId: FogBugzId }),
+  failure: Schema.Union([OrchestratorMcpFailure, McpCapabilityUnavailableError]),
+  failureMode: "return",
+  dependencies: [
+    McpInvocationContext.McpInvocationContext,
+    ThreadManagementService.ThreadManagementService,
+    FogBugzService,
+  ],
+})
+  .annotate(Tool.Title, "Link FogBugz case to this thread")
+  .annotate(Tool.Destructive, true)
+  .annotate(Tool.Idempotent, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
+
 const ThreadUpdateTool = Tool.make("t3_thread_update", {
   description:
     "Rename a thread (`action:'rename'` with `title`) or regenerate its title. Omit `threadId` for this thread. Workspace and branch cannot change here.",
@@ -377,6 +398,7 @@ export const OrchestratorToolkit = Toolkit.make(
   CreateThreadsTool,
   ThreadListTool,
   ThreadReadTool,
+  LinkFogBugzCaseTool,
   ThreadUpdateTool,
   ThreadSendTool,
   ThreadWaitTool,

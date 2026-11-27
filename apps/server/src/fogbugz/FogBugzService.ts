@@ -254,15 +254,19 @@ export const layer = Layer.effect(
               })),
       );
     });
-    const threadLinks = Effect.fn("FogBugz.threadLinks")(function* () {
+    const threadLinks = Effect.fn("FogBugz.threadLinks")(function* (threadId?: ThreadId) {
       const current = yield* connection();
       if (!current) return [];
+      // Case lists label each linked thread. Thread details label its linked case.
       const rows = yield* sql<{
         threadId: ThreadId;
         projectId: ProjectId;
         caseId: number;
         title: string;
-      }>`SELECT links.thread_id AS "threadId", links.project_id AS "projectId", links.case_id AS "caseId", thread.title FROM fogbugz_threads links JOIN orchestration_v2_projection_threads thread ON thread.thread_id = links.thread_id WHERE thread.deleted_at IS NULL`.pipe(
+      }>`SELECT links.thread_id AS "threadId", links.project_id AS "projectId", links.case_id AS "caseId",
+                ${threadId === undefined ? sql`thread.title` : sql`links.title`} AS title
+           FROM fogbugz_threads links JOIN orchestration_v2_projection_threads thread ON thread.thread_id = links.thread_id
+          WHERE thread.deleted_at IS NULL ${threadId === undefined ? sql`` : sql`AND links.thread_id = ${threadId}`}`.pipe(
         Effect.mapError(storageError),
       );
       return rows.map((row) => ({
@@ -691,14 +695,7 @@ export const layer = Layer.effect(
         };
       }),
       thread: Effect.fn("FogBugz.thread")(function* (threadId) {
-        const linked = (yield* threadLinks()).find((item) => item.threadId === threadId);
-        if (!linked) return null;
-        const rows = yield* sql<{
-          title: string;
-        }>`SELECT title FROM fogbugz_threads WHERE thread_id = ${threadId}`.pipe(
-          Effect.mapError(storageError),
-        );
-        return rows[0] ? { ...linked, title: rows[0].title } : null;
+        return (yield* threadLinks(threadId))[0] ?? null;
       }),
       prepareThread,
       caseGitRepository: Effect.fn("FogBugz.caseGitRepository")(function* (threadId) {

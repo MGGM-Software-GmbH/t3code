@@ -176,6 +176,23 @@ const handlers = {
       return { ...result, fogbugz: linkedCase };
     }),
   ),
+  link_fogbugz_case: McpToolAccess.actsAsCaller(({ caseId }) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.requireMcpCapability("orchestration");
+      const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "link_fogbugz_case");
+      const fogbugz = yield* FogBugzService;
+      const link = { threadId: thread.threadId, caseId };
+      yield* fogbugz
+        .linkThread(link)
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message }),
+          ),
+        );
+      return link;
+    }),
+  ),
   t3_thread_update: McpToolAccess.writesThreads(
     (input) => [input.threadId],
     (input) =>

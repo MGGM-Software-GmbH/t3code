@@ -1,10 +1,11 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import { vi } from "vite-plus/test";
 import * as Sqlite from "../persistence/Sqlite.ts";
@@ -12,6 +13,11 @@ import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
 import { FogBugzService, layer } from "./FogBugzService.ts";
 import { createThread } from "./FogBugzThreads.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
+import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
+import * as McpToolAccess from "../mcp/McpToolAccess.ts";
+import { liveThreadsLayer } from "../mcp/McpToolAccess.testkit.ts";
+import * as OrchestratorHandlers from "../mcp/toolkits/orchestrator/handlers.ts";
+import { OrchestratorToolkit } from "../mcp/toolkits/orchestrator/tools.ts";
 import { CommandId, ProviderInstanceId } from "@t3tools/contracts";
 
 const projectId = ProjectId.make("project-fogbugz");
@@ -632,6 +638,62 @@ describe("FogBugz integration persistence and access", () => {
       }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
     },
   );
+
+  it.effect("links the calling MCP thread using only a FogBugz case number", () => {
+    const test = fixture();
+    return Effect.gen(function* () {
+      using _fetch = vi.spyOn(globalThis, "fetch").mockImplementation(test.fetch);
+      yield* seed;
+      const service = yield* FogBugzService;
+      yield* service.connect(credentials);
+      const toolkit = yield* OrchestratorToolkit.pipe(
+        Effect.provide(McpToolAccess.HandlersLayer.layer(OrchestratorHandlers.layer)),
+      );
+      const call = (
+        caseId: number,
+        capabilities: McpInvocationContext.McpInvocationScope["capabilities"],
+      ) =>
+        toolkit.handle("link_fogbugz_case", { caseId }).pipe(
+          Stream.unwrap,
+          Stream.runCollect,
+          Effect.provideService(McpInvocationContext.McpInvocationContext, {
+            environmentId: EnvironmentId.make("test"),
+            requestNamespace: "test",
+            issuedAt: 0,
+            thread: {
+              threadId,
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              providerSessionId: "test",
+            },
+            client: undefined,
+            capabilities,
+          }),
+          Effect.provide(liveThreadsLayer),
+        );
+      const start = test.requests.length;
+      const denied = yield* call(42, new Set());
+      expect(denied.at(-1)).toMatchObject({
+        isFailure: true,
+        result: { _tag: "McpCapabilityUnavailableError", capability: "orchestration" },
+      });
+      expect(test.requests).toHaveLength(start);
+      const allowed = new Set(["orchestration"] as const);
+      for (const caseId of [42, 42, 43]) {
+        const result = yield* call(caseId, allowed);
+        expect(result.at(-1)?.result).toEqual({ threadId, caseId });
+        expect(yield* service.thread(threadId)).toMatchObject({ caseId, title: `Case ${caseId}` });
+      }
+      const missing = yield* call(999, allowed);
+      expect(missing.at(-1)).toMatchObject({
+        isFailure: true,
+        result: { message: "The FogBugz case or project is not accessible to this account." },
+      });
+      expect((yield* service.thread(threadId))?.caseId).toBe(43);
+      expect(new Set(test.requests.slice(start).map((request) => request.get("cmd")))).toEqual(
+        new Set(["listCategories", "search"]),
+      );
+    }).pipe(Effect.provide(test.service.pipe(Layer.provideMerge(test.dependencies))));
+  });
 
   it.effect("links accessible cases by number independently of the project mapping", () => {
     const test = fixture();

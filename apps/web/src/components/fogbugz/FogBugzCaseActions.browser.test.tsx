@@ -46,7 +46,7 @@ import {
   emitThreadShell,
   type FakeDriver,
 } from "../../../test/fakeEnvironment";
-import { render } from "../../../test/render";
+import { act, fakeTimers, render } from "../../../test/render";
 import { fogbugzCasePrompt } from "./fogbugzCaseActions";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { buildSidebarProjectSnapshots } from "~/sidebarProjectGrouping";
@@ -241,6 +241,55 @@ it("shows case metadata and acknowledges reactivated threads on wide and narrow 
       }),
     ),
   );
+});
+
+it("shows a case linked by an agent while thread details are open", async () => {
+  const thread = threadWithHistory("agent-case-link", 1);
+  let linked: typeof FogBugzThreadLink.Type | null = null;
+  using _environment = installFakeEnvironment([thread], {
+    [WS_METHODS.fogbugzStatus]: () =>
+      Effect.succeed({
+        connection: {
+          id: "connection",
+          baseUrl: "https://fogbugz.example/",
+          username: "test@example.test",
+          personId: 7,
+          personName: "Test User",
+          authenticated: true,
+          capabilities: { projectGroups: true, browserSession: true, caseGit: false },
+        },
+        projects: [],
+      }),
+    [WS_METHODS.fogbugzThread]: () => Effect.succeed(linked),
+    [WS_METHODS.fogbugzThreadCases]: () => Effect.succeed([]),
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    panelAnimationDurationMs: 0,
+  });
+  await page.viewport(1400, 900);
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  using _timers = fakeTimers();
+  // AppRoot owns the live thread and its details panel.
+  await using screen = await render(<AppRoot router={router} />, { router: false });
+  const title = screen.getByText("#54231: Assigned case", { exact: true });
+  await expect
+    .element(screen.getByRole("button", { name: "Link FogBugz case", exact: true }))
+    .toBeVisible();
+  expect(title.query()).toBeNull();
+  linked = {
+    threadId: thread.id,
+    projectId: ProjectId.make("project-render"),
+    caseId: 54231,
+    title: "Assigned case",
+    url: "https://fogbugz.example/default.asp?ixBug=54231",
+  };
+  await act(() => vi.advanceTimersByTimeAsync(30_000));
+  await expect.element(title).toBeVisible();
 });
 
 it("links, opens and unlinks a case without a project mapping on wide and narrow screens", async () => {

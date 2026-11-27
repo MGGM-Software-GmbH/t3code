@@ -170,6 +170,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   ),
   set_issue_state: tool(["Change", "Changing", "Changed", "an issue's state"], "set-issue-state"),
   link_issue: tool(["Link", "Linking", "Linked", "an issue"], "link-issue"),
+  link_fogbugz_case: tool(["Link", "Linking", "Linked", "a FogBugz case"], "link-issue"),
   unlink_issue: tool(["Unlink", "Unlinking", "Unlinked", "an issue"], "unlink-issue"),
   list_thread_issues: tool(["Check", "Checking", "Checked", "linked issues"], "list-thread-issues"),
   pull_request_read: tool(["Read", "Reading", "Read", "a pull request"], "read-pr", "pull-request"),

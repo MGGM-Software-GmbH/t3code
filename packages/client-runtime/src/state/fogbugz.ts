@@ -65,6 +65,7 @@ export function createFogBugzEnvironmentAtoms<R, E>(
       label: "fogbugz:thread",
       tag: WS_METHODS.fogbugzThread,
       refreshTrigger,
+      refreshIntervalMs: 30_000,
     }),
     connect: createEnvironmentRpcCommand(runtime, {
       label: "fogbugz:connect",
